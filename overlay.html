@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Download Confirmation</title>
+  <link rel="stylesheet" href="overlay.css">
+</head>
+<body>
+  <div id="overlay">
+    <div id="saving-to">Saving to: <span id="path"></span></div>
+    <div id="edit-rules-section" style="display: none;">
+      <h3>Edit Rules</h3>
+      <div>
+        <label>Rule Type:</label>
+        <select id="rule-type">
+          <option value="domain">Domain</option>
+          <option value="filetype">Filetype</option>
+        </select>
+      </div>
+      <div id="domain-rule">
+        <label>Domain:</label>
+        <input type="text" id="domain-input">
+        <label>Folder:</label>
+        <input type="text" id="domain-folder">
+        <button id="choose-domain-folder">Choose Folder</button>
+      </div>
+      <div id="filetype-rule" style="display: none;">
+        <label>Map <span id="current-filetype"></span> to:</label>
+        <select id="filetype-mapping">
+          <option value="folder">A Folder</option>
+          <option value="group">A Group</option>
+        </select>
+        <div id="folder-mapping">
+          <input type="text" id="filetype-folder">
+          <button id="choose-filetype-folder">Choose Folder</button>
+        </div>
+        <div id="group-mapping" style="display: none;">
+          <select id="group-select"></select>
+          <button id="create-new-group">Create New Group</button>
+        </div>
+      </div>
+      <button id="apply-rule">Apply Rule</button>
+      <button id="cancel-edit">Cancel</button>
+    </div>
+    <button id="edit-rules">Edit Rules</button>
+    <div id="bottom-bar">
+      <button id="change-location">Change Location</button>
+      <div id="countdown-container">
+        <div id="countdown-bar"></div>
+        <button id="save">Save</button>
+      </div>
+    </div>
+  </div>
+  <script src="overlay.js"></script>
+</body>
+</html>

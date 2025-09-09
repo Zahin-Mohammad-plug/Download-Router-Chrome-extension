@@ -5,24 +5,48 @@
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
-  <h1>Download Router Options</h1>
+  <div class="container">
+    <header>
+      <h1>Download Router</h1>
+      <p>Create rules to automatically organize your downloads.</p>
+    </header>
 
-  <h2>Rules</h2>
-  <div id="rules-container"></div>
-  <button id="add-rule">Add Rule</button>
+    <main>
+      <section id="rules-section">
+        <h2>Rules</h2>
+        <div id="rules-container"></div>
+        <button id="add-rule" class="add-btn">+ Add Rule</button>
+      </section>
 
-  <h2>Settings</h2>
-  <div>
-    <label for="tie-breaker">When both domain and extension match, prefer:</label>
-    <select id="tie-breaker">
-      <option value="domain">Domain</option>
-      <option value="extension">Extension</option>
-      <option value="ask">Ask</option>
-    </select>
+      <section id="groups-section">
+        <h2>Groups</h2>
+        <p>Group extensions together to apply the same folder rule.</p>
+        <div id="groups-container"></div>
+        <button id="add-group" class="add-btn">+ Add Group</button>
+      </section>
+
+      <section id="settings-section">
+        <h2>Settings</h2>
+        <div class="setting">
+          <label for="default-path">Default Download Path:</label>
+          <input type="text" id="default-path" placeholder="e.g., General Downloads">
+        </div>
+        <div class="setting">
+          <label for="tie-breaker">When both domain and extension match, prefer:</label>
+          <select id="tie-breaker">
+            <option value="domain">Domain</option>
+            <option value="extension">Extension / Group</option>
+            <option value="ask">Ask Every Time</option>
+          </select>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <button id="save-options">Save Changes</button>
+      <div id="status"></div>
+    </footer>
   </div>
-
-  <button id="save-options">Save</button>
-  <div id="status"></div>
 
   <script src="options.js"></script>
 </body>
