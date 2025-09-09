@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Download Router Options</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <h1>Download Router Options</h1>
+
+  <h2>Rules</h2>
+  <div id="rules-container"></div>
+  <button id="add-rule">Add Rule</button>
+
+  <h2>Settings</h2>
+  <div>
+    <label for="tie-breaker">When both domain and extension match, prefer:</label>
+    <select id="tie-breaker">
+      <option value="domain">Domain</option>
+      <option value="extension">Extension</option>
+      <option value="ask">Ask</option>
+    </select>
+  </div>
+
+  <button id="save-options">Save</button>
+  <div id="status"></div>
+
+  <script src="options.js"></script>
+</body>
+</html>

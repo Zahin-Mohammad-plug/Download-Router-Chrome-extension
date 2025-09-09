@@ -1,0 +1,32 @@
+body {
+  font-family: sans-serif;
+  padding: 1em;
+  width: 400px;
+}
+
+h1, h2 {
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 5px;
+}
+
+.rule {
+  display: flex;
+  margin-bottom: 10px;
+  align-items: center;
+}
+
+.rule select, .rule input {
+  margin-right: 10px;
+  padding: 5px;
+}
+
+.rule .delete-rule {
+  cursor: pointer;
+  color: red;
+  font-weight: bold;
+}
+
+#status {
+  margin-top: 10px;
+  color: green;
+}
