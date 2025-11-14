@@ -14,19 +14,23 @@ class PopupApp {
   }
 
   async loadData() {
-    const data = await chrome.storage.sync.get([
+    const syncData = await chrome.storage.sync.get([
       'rules', 
       'groups', 
-      'extensionEnabled', 
-      'recentDownloads',
-      'downloadCount'
+      'extensionEnabled'
     ]);
     
-    this.rules = data.rules || [];
-    this.groups = data.groups || {};
-    this.isExtensionEnabled = data.extensionEnabled !== false;
-    this.recentDownloads = data.recentDownloads || [];
-    this.downloadCount = data.downloadCount || 0;
+    // Get stats from background script
+    const stats = await chrome.runtime.sendMessage({ type: 'getStats' });
+    
+    this.rules = syncData.rules || [];
+    this.groups = syncData.groups || {};
+    this.isExtensionEnabled = syncData.extensionEnabled !== false;
+    this.stats = stats || {
+      totalDownloads: 0,
+      routedDownloads: 0,
+      recentActivity: []
+    };
   }
 
   setupEventListeners() {
@@ -56,7 +60,7 @@ class PopupApp {
     // Update stats
     document.getElementById('rules-count').textContent = this.rules.length;
     document.getElementById('groups-count').textContent = Object.keys(this.groups).length;
-    document.getElementById('downloads-count').textContent = this.downloadCount;
+    document.getElementById('downloads-count').textContent = this.stats.totalDownloads;
 
     // Update toggle button
     const toggleBtn = document.getElementById('toggle-extension');
@@ -79,8 +83,9 @@ class PopupApp {
 
   loadRecentActivity() {
     const activityList = document.getElementById('activity-list');
+    const activities = this.stats.recentActivity || [];
     
-    if (this.recentDownloads.length === 0) {
+    if (activities.length === 0) {
       activityList.innerHTML = `
         <div class="empty-state">
           <div class="empty-icon">📋</div>
@@ -90,22 +95,23 @@ class PopupApp {
       return;
     }
 
-    activityList.innerHTML = this.recentDownloads
+    activityList.innerHTML = activities
       .slice(0, 5) // Show only last 5
-      .map(download => this.createActivityItem(download))
+      .map(activity => this.createActivityItem(activity))
       .join('');
   }
 
-  createActivityItem(download) {
-    const timeAgo = this.getTimeAgo(download.timestamp);
-    const icon = this.getFileIcon(download.extension);
+  createActivityItem(activity) {
+    const timeAgo = this.getTimeAgo(activity.timestamp);
+    const icon = this.getFileIcon(activity.filename);
+    const routedBadge = activity.routed ? '<span class="routed-badge">📁</span>' : '';
     
     return `
-      <div class="activity-item">
+      <div class="activity-item ${activity.routed ? 'routed' : ''}">
         <div class="activity-icon">${icon}</div>
         <div class="activity-info">
-          <div class="activity-filename" title="${download.filename}">${download.filename}</div>
-          <div class="activity-path" title="${download.folder}">${download.folder}</div>
+          <div class="activity-filename" title="${activity.filename}">${activity.filename} ${routedBadge}</div>
+          <div class="activity-path" title="${activity.folder}">${activity.folder}</div>
         </div>
         <div class="activity-time">${timeAgo}</div>
       </div>
@@ -197,6 +203,30 @@ class PopupApp {
       toast.style.animation = 'slideOut 0.3s ease';
       setTimeout(() => toast.remove(), 300);
     }, 2000);
+  }
+
+  getFileIcon(filename) {
+    const extension = filename.split('.').pop().toLowerCase();
+    const iconMap = {
+      // Images
+      'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'bmp': '🖼️', 'svg': '🖼️',
+      // Videos
+      'mp4': '🎬', 'mov': '🎬', 'avi': '🎬', 'mkv': '🎬', 'wmv': '🎬', 'flv': '🎬',
+      // Audio
+      'mp3': '🎵', 'wav': '🎵', 'flac': '🎵', 'aac': '🎵',
+      // Documents
+      'pdf': '📄', 'doc': '📝', 'docx': '📝', 'txt': '📝', 'rtf': '📝',
+      // Archives
+      'zip': '📦', 'rar': '📦', '7z': '📦', 'tar': '📦', 'gz': '📦',
+      // Code
+      'js': '💻', 'html': '💻', 'css': '💻', 'py': '💻', 'cpp': '💻',
+      // 3D Files
+      'stl': '🧊', 'obj': '🧊', '3mf': '🧊',
+      // Software
+      'exe': '⚙️', 'msi': '⚙️', 'dmg': '⚙️', 'deb': '⚙️'
+    };
+    
+    return iconMap[extension] || '📄';
   }
 }
 
