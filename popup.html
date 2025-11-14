@@ -5,14 +5,64 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="popup-container">
-    <div class="header">
-      <img src="icons/icon48.png" alt="icon">
-      <h2>Download Router</h2>
-    </div>
-    <p>Your downloads are being automatically organized.</p>
-    <button id="open-options">Manage Rules</button>
+  <div class="app-container">
+    <header class="app-header">
+      <div class="header-content">
+        <div class="app-icon">📁</div>
+        <div class="app-title">
+          <h1>Download Router</h1>
+          <p class="app-subtitle">Smart file organization</p>
+        </div>
+        <div class="status-indicator" id="status-indicator"></div>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <div class="quick-stats" id="quick-stats">
+        <div class="stat-item">
+          <span class="stat-number" id="rules-count">0</span>
+          <span class="stat-label">Rules</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-number" id="groups-count">0</span>
+          <span class="stat-label">Groups</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-number" id="downloads-count">0</span>
+          <span class="stat-label">Routed</span>
+        </div>
+      </div>
+
+      <div class="recent-activity" id="recent-activity">
+        <h3>Recent Downloads</h3>
+        <div class="activity-list" id="activity-list">
+          <div class="empty-state">
+            <div class="empty-icon">📋</div>
+            <p>No recent downloads</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="quick-actions">
+        <button class="action-btn primary" id="open-options">
+          <span class="btn-icon">⚙️</span>
+          Configure Rules
+        </button>
+        <button class="action-btn secondary" id="toggle-extension">
+          <span class="btn-icon" id="toggle-icon">⏸️</span>
+          <span id="toggle-text">Pause</span>
+        </button>
+      </div>
+    </main>
+
+    <footer class="app-footer">
+      <div class="footer-links">
+        <a href="#" id="help-link">Help</a>
+        <a href="#" id="feedback-link">Feedback</a>
+      </div>
+    </footer>
   </div>
+
   <script src="popup.js"></script>
 </body>
 </html>

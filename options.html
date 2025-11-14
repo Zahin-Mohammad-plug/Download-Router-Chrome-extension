@@ -1,51 +1,205 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Download Router Options</title>
+  <title>Download Router - Settings</title>
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>Download Router</h1>
-      <p>Create rules to automatically organize your downloads.</p>
+  <div class="app-container">
+    <header class="app-header">
+      <div class="header-content">
+        <div class="app-icon">📁</div>
+        <div class="app-title">
+          <h1>Download Router Settings</h1>
+          <p class="app-subtitle">Configure your download routing rules</p>
+        </div>
+      </div>
+      <nav class="tab-navigation">
+        <button class="tab-btn active" data-tab="rules">Rules</button>
+        <button class="tab-btn" data-tab="groups">Groups</button>
+        <button class="tab-btn" data-tab="settings">Settings</button>
+        <button class="tab-btn" data-tab="folders">Folders</button>
+      </nav>
     </header>
 
-    <main>
-      <section id="rules-section">
-        <h2>Rules</h2>
-        <div id="rules-container"></div>
-        <button id="add-rule" class="add-btn">+ Add Rule</button>
-      </section>
-
-      <section id="groups-section">
-        <h2>Groups</h2>
-        <p>Group extensions together to apply the same folder rule.</p>
-        <div id="groups-container"></div>
-        <button id="add-group" class="add-btn">+ Add Group</button>
-      </section>
-
-      <section id="settings-section">
-        <h2>Settings</h2>
-        <div class="setting">
-          <label for="default-path">Default Download Path:</label>
-          <input type="text" id="default-path" placeholder="e.g., General Downloads">
+    <main class="app-main">
+      <!-- Rules Tab -->
+      <div class="tab-content active" id="rules-tab">
+        <div class="section-header">
+          <h2>Download Rules</h2>
+          <p class="section-description">Create rules to automatically route downloads to specific folders</p>
         </div>
-        <div class="setting">
-          <label for="tie-breaker">When both domain and extension match, prefer:</label>
-          <select id="tie-breaker">
-            <option value="domain">Domain</option>
-            <option value="extension">Extension / Group</option>
-            <option value="ask">Ask Every Time</option>
-          </select>
+        
+        <div class="rules-container" id="rules-container">
+          <div class="empty-state" id="rules-empty">
+            <div class="empty-icon">📋</div>
+            <h3>No rules configured</h3>
+            <p>Create your first rule to start organizing downloads automatically</p>
+          </div>
         </div>
-      </section>
+        
+        <div class="section-actions">
+          <button class="btn primary" id="add-rule">
+            <span class="btn-icon">➕</span>
+            Add Rule
+          </button>
+        </div>
+      </div>
+
+      <!-- Groups Tab -->
+      <div class="tab-content" id="groups-tab">
+        <div class="section-header">
+          <h2>File Groups</h2>
+          <p class="section-description">Organize file types into groups for easier management</p>
+        </div>
+        
+        <div class="groups-container" id="groups-container">
+          <div class="empty-state" id="groups-empty">
+            <div class="empty-icon">📁</div>
+            <h3>No groups configured</h3>
+            <p>Create groups to organize similar file types together</p>
+          </div>
+        </div>
+        
+        <div class="section-actions">
+          <button class="btn primary" id="add-group">
+            <span class="btn-icon">➕</span>
+            Add Group
+          </button>
+          <button class="btn secondary" id="load-defaults">
+            <span class="btn-icon">🔄</span>
+            Load Default Groups
+          </button>
+        </div>
+      </div>
+
+      <!-- Settings Tab -->
+      <div class="tab-content" id="settings-tab">
+        <div class="section-header">
+          <h2>General Settings</h2>
+          <p class="section-description">Configure how Download Router behaves</p>
+        </div>
+        
+        <div class="settings-grid">
+          <div class="setting-card">
+            <div class="setting-header">
+              <h3>Confirmation Overlay</h3>
+              <label class="toggle-switch">
+                <input type="checkbox" id="confirmation-enabled" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <p class="setting-description">Show a confirmation overlay before saving downloads</p>
+            
+            <div class="setting-option" id="timeout-setting">
+              <label for="confirmation-timeout">Auto-save timeout (seconds):</label>
+              <input type="range" id="confirmation-timeout" min="1" max="30" value="5" class="range-input">
+              <span class="range-value" id="timeout-value">5s</span>
+            </div>
+          </div>
+
+          <div class="setting-card">
+            <div class="setting-header">
+              <h3>Rule Priority</h3>
+            </div>
+            <p class="setting-description">When both domain and extension rules match, prefer:</p>
+            
+            <div class="radio-group">
+              <label class="radio-option">
+                <input type="radio" name="tie-breaker" value="domain" checked>
+                <span class="radio-custom"></span>
+                <div class="radio-content">
+                  <strong>Domain Rules</strong>
+                  <small>Prioritize website-specific folders</small>
+                </div>
+              </label>
+              <label class="radio-option">
+                <input type="radio" name="tie-breaker" value="extension">
+                <span class="radio-custom"></span>
+                <div class="radio-content">
+                  <strong>File Type Rules</strong>
+                  <small>Prioritize file extension groups</small>
+                </div>
+              </label>
+              <label class="radio-option">
+                <input type="radio" name="tie-breaker" value="ask">
+                <span class="radio-custom"></span>
+                <div class="radio-content">
+                  <strong>Ask Every Time</strong>
+                  <small>Show options in overlay</small>
+                </div>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Folders Tab -->
+      <div class="tab-content" id="folders-tab">
+        <div class="section-header">
+          <h2>Download Folders</h2>
+          <p class="section-description">Manage and browse your download folder structure</p>
+        </div>
+        
+        <div class="folder-browser">
+          <div class="folder-toolbar">
+            <div class="folder-path" id="current-path">
+              <span class="path-icon">📁</span>
+              <span id="path-text">Downloads</span>
+            </div>
+            <button class="btn secondary small" id="refresh-folders">
+              <span class="btn-icon">🔄</span>
+              Refresh
+            </button>
+          </div>
+          
+          <div class="folder-list" id="folder-list">
+            <div class="loading-state">
+              <div class="spinner"></div>
+              <p>Loading folders...</p>
+            </div>
+          </div>
+          
+          <div class="folder-actions">
+            <button class="btn secondary" id="create-folder">
+              <span class="btn-icon">📁</span>
+              Create Folder
+            </button>
+          </div>
+        </div>
+      </div>
     </main>
 
-    <footer>
-      <button id="save-options">Save Changes</button>
-      <div id="status"></div>
+    <footer class="app-footer">
+      <div class="footer-actions">
+        <button class="btn success" id="save-options">
+          <span class="btn-icon">💾</span>
+          Save Changes
+        </button>
+        <button class="btn secondary" id="reset-options">
+          <span class="btn-icon">🔄</span>
+          Reset to Defaults
+        </button>
+      </div>
+      <div class="status-message" id="status"></div>
     </footer>
+  </div>
+
+  <!-- Modals -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal" id="folder-picker-modal">
+      <div class="modal-header">
+        <h3>Choose Folder</h3>
+        <button class="modal-close" id="close-modal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="folder-tree" id="folder-tree"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn secondary" id="modal-cancel">Cancel</button>
+        <button class="btn primary" id="modal-select">Select Folder</button>
+      </div>
+    </div>
   </div>
 
   <script src="options.js"></script>
