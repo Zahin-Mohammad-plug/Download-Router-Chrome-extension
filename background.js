@@ -11,10 +11,37 @@
  * - Manage download confirmation overlays and fallback notifications
  * - Track download statistics and activity history
  * - Handle rule and group management operations
+ * - Communicate with companion app via Native Messaging API
  */
+
+// Load native messaging client via importScripts (Manifest V3 supports this in service workers)
+let nativeMessagingClient;
+try {
+  importScripts('lib/native-messaging-client.js');
+  // Native messaging client should be available on self after importScripts
+  nativeMessagingClient = self.nativeMessagingClient;
+} catch (e) {
+  console.error('Failed to load native messaging client:', e);
+  // Define minimal stub if loading fails
+  nativeMessagingClient = {
+    checkCompanionApp: () => Promise.resolve({ installed: false }),
+    pickFolder: () => Promise.reject(new Error('Native messaging not available')),
+    verifyFolder: () => Promise.resolve(false),
+    moveFile: () => Promise.resolve(false)
+  };
+}
 
 // Map to track pending downloads that are awaiting user confirmation or processing
 let pendingDownloads = new Map();
+
+// Companion app status cache
+let companionAppStatus = {
+  installed: false,
+  version: null,
+  platform: null,
+  lastChecked: 0,
+  checkInProgress: false
+};
 
 /**
  * Path Utility Functions
@@ -295,6 +322,12 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Route messages to appropriate handler functions based on message type
   if (message.type === 'proceedWithDownload') {
+    // Merge updated downloadInfo from content script into pendingDownloads
+    // This ensures flags like useAbsolutePath are preserved
+    const downloadInfo = pendingDownloads.get(message.downloadInfo.id);
+    if (downloadInfo) {
+      Object.assign(downloadInfo, message.downloadInfo);
+    }
     // proceedWithDownload: Processes and saves the download with specified path
     proceedWithDownload(message.downloadInfo.id, message.downloadInfo.resolvedPath);
   } else if (message.type === 'addRule') {
@@ -311,6 +344,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // getStats: Returns download statistics asynchronously
     // Must return true for async sendResponse operations
     getStats().then(stats => sendResponse(stats));
+    return true; // Required for async sendResponse
+  } else if (message.type === 'pickFolderNative') {
+    // pickFolderNative: Request native folder picker from companion app
+    pickFolderNative(message.startPath).then(path => {
+      sendResponse({ success: true, path: path });
+    }).catch(error => {
+      sendResponse({ success: false, error: error.message });
+    });
+    return true; // Required for async sendResponse
+  } else if (message.type === 'checkCompanionApp') {
+    // checkCompanionApp: Check if companion app is installed
+    checkCompanionAppStatus().then(status => {
+      sendResponse(status);
+    });
+    return true; // Required for async sendResponse
+  } else if (message.type === 'verifyFolderNative') {
+    // verifyFolderNative: Verify folder exists using companion app
+    verifyFolderNative(message.path).then(exists => {
+      sendResponse({ success: true, exists: exists });
+    }).catch(error => {
+      sendResponse({ success: false, error: error.message });
+    });
+    return true; // Required for async sendResponse
+  } else if (message.type === 'moveFileNative') {
+    // moveFileNative: Move file using companion app (post-download)
+    moveFileNative(message.source, message.destination).then(success => {
+      sendResponse({ success: success });
+    }).catch(error => {
+      sendResponse({ success: false, error: error.message });
+    });
     return true; // Required for async sendResponse
   }
 });
@@ -471,12 +534,60 @@ async function getStats() {
  * External Dependencies:
  *   - chrome.downloads API: For monitoring download state changes
  */
-chrome.downloads.onChanged.addListener((downloadDelta) => {
+chrome.downloads.onChanged.addListener(async (downloadDelta) => {
   // Only update stats when download transitions to 'complete' state
   // downloadDelta.state.current: Current state of the download
   if (downloadDelta.state && downloadDelta.state.current === 'complete') {
+    const downloadId = downloadDelta.id;
+    const downloadInfo = pendingDownloads.get(downloadId);
+    
+    // Check if file needs to be moved to absolute path
+    if (downloadInfo && downloadInfo.needsMove && downloadInfo.absoluteDestination) {
+      try {
+        // Get the actual download file path from Chrome
+        // chrome.downloads.search: Searches for downloads matching criteria
+        //   Inputs: Query object with id
+        //   Outputs: Promise resolving to array of DownloadItem objects
+        const downloads = await chrome.downloads.search({ id: downloadId });
+        if (downloads && downloads.length > 0) {
+          const downloadItem = downloads[0];
+          const sourcePath = downloadItem.filename; // Full absolute path to downloaded file
+          
+          // Move file using companion app
+          const moveSuccess = await moveFileNative(sourcePath, downloadInfo.absoluteDestination);
+          
+          if (moveSuccess) {
+            console.log(`File moved: ${sourcePath} -> ${downloadInfo.absoluteDestination}`);
+            // Update notification
+            chrome.notifications.create({
+              type: 'basic',
+              iconUrl: 'icons/icon128.png',
+              title: 'File Routed',
+              message: `Moved ${downloadInfo.filename} to ${downloadInfo.absoluteDestination.split(/[/\\]/).pop()}`
+            });
+          } else {
+            console.error('Failed to move file to absolute destination');
+            // Show error notification
+            chrome.notifications.create({
+              type: 'basic',
+              iconUrl: 'icons/icon128.png',
+              title: 'Routing Failed',
+              message: `Could not move ${downloadInfo.filename}. File saved in Downloads.`
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error during post-download file move:', error);
+      }
+    }
+    
     // updateDownloadStats: Updates statistics with completed download information
-    updateDownloadStats(downloadDelta.id);
+    updateDownloadStats(downloadId);
+    
+    // Clean up pending download tracking after move completes (or if no move needed)
+    if (downloadInfo) {
+      pendingDownloads.delete(downloadId);
+    }
   }
 });
 
@@ -570,22 +681,46 @@ function proceedWithDownload(downloadId, customPath = null) {
   const downloadInfo = pendingDownloads.get(downloadId);
   if (!downloadInfo) return; // Exit if download info not found
   
-  // Normalize and construct final path
+  // Check if this is an absolute path that requires post-download move
+  const isAbsolutePath = downloadInfo.useAbsolutePath || 
+    (customPath && /^(\/|[A-Za-z]:\\)/.test(customPath)) ||
+    (downloadInfo.resolvedPath && /^(\/|[A-Za-z]:\\)/.test(downloadInfo.resolvedPath));
+  
+  let absoluteDestinationPath = null;
   let finalPath;
+  
+  // Normalize and construct final path
   if (customPath) {
     // User provided a custom path - could be a folder name or full path
     // Check if it contains path separators (full path) or is just a folder name
     const normalizedCustomPath = normalizePath(customPath);
-    if (normalizedCustomPath.includes('/')) {
-      // User provided a full path - normalize it
+    if (/^(\/|[A-Za-z]:\\)/.test(customPath)) {
+      // User provided an absolute path - download to Downloads, then move
+      absoluteDestinationPath = customPath;
+      finalPath = downloadInfo.filename; // Download to Downloads root
+    } else if (normalizedCustomPath.includes('/')) {
+      // User provided a relative path - normalize it
       finalPath = normalizedCustomPath;
     } else {
       // User provided just a folder name - build relative path
       finalPath = buildRelativePath(normalizedCustomPath, downloadInfo.filename);
     }
   } else {
-    // Use resolved path from rules (already normalized during construction)
-    finalPath = downloadInfo.resolvedPath;
+    // Use resolved path from rules
+    if (isAbsolutePath && downloadInfo.resolvedPath) {
+      // Absolute path from native picker - download to Downloads, then move
+      absoluteDestinationPath = downloadInfo.resolvedPath;
+      finalPath = downloadInfo.filename; // Download to Downloads root
+    } else {
+      // Relative path - use as-is
+      finalPath = downloadInfo.resolvedPath;
+    }
+  }
+  
+  // Store absolute destination for post-download move
+  if (absoluteDestinationPath) {
+    downloadInfo.absoluteDestination = absoluteDestinationPath;
+    downloadInfo.needsMove = true;
   }
   
   // Call the original suggest callback to finalize download path
@@ -601,16 +736,18 @@ function proceedWithDownload(downloadId, customPath = null) {
   // chrome.notifications.create: Creates system notification
   //   Inputs: Notification options object (creates with auto-generated ID if none provided)
   //   Outputs: Creates notification in Chrome's notification center
+  const displayPath = absoluteDestinationPath || finalPath;
+  const folderName = displayPath.split(/[/\\]/).filter(p => p).pop() || 'Downloads';
+  
   chrome.notifications.create({
     type: 'basic',
     iconUrl: 'icons/icon128.png',
     title: 'Download Routed',
-    // Extract folder name from path for cleaner message display
-    message: `Saved ${downloadInfo.filename} to ${finalPath.split('/')[0] || 'Downloads'}`
+    message: `Saved ${downloadInfo.filename} to ${folderName}`
   });
   
-  // Remove from pending downloads tracking (download is now processed)
-  pendingDownloads.delete(downloadId);
+  // Note: Don't delete from pendingDownloads yet - we need it for post-download move
+  // It will be cleaned up after file move completes
 }
 
 /**
@@ -773,3 +910,153 @@ function getDefaultGroups() {
     }
   };
 }
+
+/**
+ * Checks companion app installation status and caches result.
+ * 
+ * Inputs: None
+ * 
+ * Outputs: Promise resolving to companion app status object
+ * 
+ * External Dependencies:
+ *   - nativeMessagingClient: Native messaging client from lib/native-messaging-client.js
+ */
+async function checkCompanionAppStatus() {
+  // Return cached status if checked recently (within 5 minutes)
+  const now = Date.now();
+  if (companionAppStatus.lastChecked > 0 && (now - companionAppStatus.lastChecked) < 300000) {
+    return companionAppStatus;
+  }
+
+  // Prevent concurrent checks
+  if (companionAppStatus.checkInProgress) {
+    return companionAppStatus;
+  }
+
+  // Check if native messaging client is available
+  if (!nativeMessagingClient || !nativeMessagingClient.checkCompanionApp) {
+    return {
+      installed: false,
+      version: null,
+      platform: null,
+      lastChecked: now,
+      checkInProgress: false,
+      error: 'Native messaging client not loaded'
+    };
+  }
+
+  companionAppStatus.checkInProgress = true;
+
+  try {
+    // nativeMessagingClient.checkCompanionApp: Checks if companion app is installed
+    const status = await nativeMessagingClient.checkCompanionApp();
+    
+    companionAppStatus = {
+      installed: status.installed || false,
+      version: status.version || null,
+      platform: status.platform || null,
+      lastChecked: now,
+      checkInProgress: false,
+      error: status.error || null
+    };
+
+    // Store status in local storage for popup/options access
+    chrome.storage.local.set({ companionAppStatus: companionAppStatus });
+  } catch (error) {
+    companionAppStatus = {
+      installed: false,
+      version: null,
+      platform: null,
+      lastChecked: now,
+      checkInProgress: false,
+      error: error.message
+    };
+  }
+
+  return companionAppStatus;
+}
+
+/**
+ * Picks a folder using native OS dialog via companion app.
+ * 
+ * Inputs:
+ *   - startPath: Optional string absolute path to start dialog at
+ * 
+ * Outputs: Promise resolving to selected absolute path string or null if cancelled
+ * 
+ * External Dependencies:
+ *   - nativeMessagingClient: Native messaging client
+ */
+async function pickFolderNative(startPath = null) {
+  if (!nativeMessagingClient || !nativeMessagingClient.pickFolder) {
+    throw new Error('Native messaging client not available');
+  }
+  
+  try {
+    const path = await nativeMessagingClient.pickFolder(startPath);
+    return path;
+  } catch (error) {
+    throw new Error(`Failed to pick folder: ${error.message}`);
+  }
+}
+
+/**
+ * Verifies if a folder exists using companion app.
+ * 
+ * Inputs:
+ *   - folderPath: String absolute path to folder
+ * 
+ * Outputs: Promise resolving to boolean (true if exists)
+ * 
+ * External Dependencies:
+ *   - nativeMessagingClient: Native messaging client
+ */
+async function verifyFolderNative(folderPath) {
+  if (!nativeMessagingClient || !nativeMessagingClient.verifyFolder) {
+    return false;
+  }
+  
+  try {
+    return await nativeMessagingClient.verifyFolder(folderPath);
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Moves a file using companion app (for post-download routing).
+ * 
+ * Inputs:
+ *   - sourcePath: String absolute path to source file
+ *   - destinationPath: String absolute path to destination
+ * 
+ * Outputs: Promise resolving to boolean (true if moved successfully)
+ * 
+ * External Dependencies:
+ *   - nativeMessagingClient: Native messaging client
+ */
+async function moveFileNative(sourcePath, destinationPath) {
+  if (!nativeMessagingClient || !nativeMessagingClient.moveFile) {
+    console.error('Native messaging client not available for file move');
+    return false;
+  }
+  
+  try {
+    return await nativeMessagingClient.moveFile(sourcePath, destinationPath);
+  } catch (error) {
+    console.error('Failed to move file:', error);
+    return false;
+  }
+}
+
+// Check companion app status on extension startup
+chrome.runtime.onStartup.addListener(() => {
+  checkCompanionAppStatus();
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  checkCompanionAppStatus();
+});
+
+// Initial check
+checkCompanionAppStatus();

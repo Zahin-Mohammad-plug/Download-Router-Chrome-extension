@@ -1,0 +1,9 @@
+{
+  "name": "com.downloadrouter.host",
+  "description": "Download Router Companion - Native Messaging Host",
+  "path": "COMPANION_EXECUTABLE_PATH",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://YOUR_EXTENSION_ID/"
+  ]
+}

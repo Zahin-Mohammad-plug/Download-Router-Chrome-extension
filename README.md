@@ -35,12 +35,32 @@ Automatically organize your downloads by routing them to specific folders based 
 
 ## 🚀 Installation
 
-### Manual Installation
+### Extension Installation
 1. Download or clone this repository
 2. Open Chrome and navigate to `chrome://extensions/`
 3. Enable "Developer mode" in the top right
 4. Click "Load unpacked" and select the extension folder
 5. The Download Router icon will appear in your extension toolbar
+
+### Companion App Installation (Recommended)
+For native folder picker and absolute path support, install the companion app:
+
+**macOS:**
+1. Download the DMG from [Releases](https://github.com/Zahin-Mohammad-plug/Download-Router-Chrome-extension/releases)
+2. Install the companion app
+3. Run the installation script to register with Chrome
+
+**Windows:**
+1. Download the EXE installer from [Releases](https://github.com/Zahin-Mohammad-plug/Download-Router-Chrome-extension/releases)
+2. Run the installer (automatically registers with Chrome)
+
+See [COMPANION_INSTALL.md](COMPANION_INSTALL.md) for detailed installation instructions.
+
+**Note:** The extension works without the companion app, but with limited features (relative paths only within Downloads directory). The companion app enables:
+- Native OS folder picker dialogs
+- Absolute path support (save anywhere on your computer)
+- Folder verification and automatic creation
+- Post-download file routing to any location
 
 ### From Chrome Web Store
 *Coming soon - pending review*

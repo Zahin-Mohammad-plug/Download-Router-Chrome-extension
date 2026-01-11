@@ -590,8 +590,8 @@ class DownloadOverlay {
           </div>
           
           <div class="overlay-actions">
-            <button class="action-btn edit-rules-btn">[E] Edit Rules</button>
-            <button class="action-btn change-location-btn">[ ] Change Location</button>
+            <button class="action-btn edit-rules-btn">✏️ Edit Rules</button>
+            <button class="action-btn change-location-btn">📁 Change Location</button>
             
             <div class="countdown-section">
               <div class="countdown-bar">
@@ -610,17 +610,17 @@ class DownloadOverlay {
               <div class="rule-type-selector">
                 <label>
                   <input type="radio" name="ruleType" value="domain" checked>
-                  Route domain -> folder
+                  Route domain → folder
                 </label>
                 <label>
                   <input type="radio" name="ruleType" value="extension">
-                  Route file type -> group/folder
+                  Route file type → group/folder
                 </label>
               </div>
               
               <div class="domain-rule-config">
                 <div class="rule-row">
-                  <span>${this.currentDownloadInfo.domain}</span> -> 
+                  <span>${this.currentDownloadInfo.domain}</span> → 
                   <input type="text" class="folder-input" placeholder="Choose folder">
                   <button class="browse-btn">Browse</button>
                 </div>
@@ -986,6 +986,7 @@ class DownloadOverlay {
   /**
    * Applies location change from location picker to current download.
    * Updates resolved path and closes location picker.
+   * Handles both absolute paths (from native picker) and relative paths (manual input).
    * 
    * Inputs: None (reads input value from shadow root)
    * 
@@ -995,14 +996,22 @@ class DownloadOverlay {
     const root = this.shadowRoot;
     const newLocation = root.querySelector('.location-picker .folder-input').value;
     if (newLocation) {
-      // Normalize the path - could be a full path or just folder name
-      const normalizedPath = normalizePath(newLocation);
-      if (normalizedPath.includes('/')) {
-        // User provided a full path
-        this.currentDownloadInfo.resolvedPath = normalizedPath;
+      // Check if it's an absolute path (starts with / on Unix or C:\ on Windows)
+      const isAbsolutePath = /^(\/|[A-Za-z]:\\)/.test(newLocation);
+      
+      if (isAbsolutePath) {
+        // Absolute path from native picker - store as-is (will need post-download move)
+        this.currentDownloadInfo.resolvedPath = newLocation;
+        this.currentDownloadInfo.useAbsolutePath = true; // Flag for post-download move
       } else {
-        // User provided just a folder name - build relative path
-        this.currentDownloadInfo.resolvedPath = buildRelativePath(normalizedPath, this.currentDownloadInfo.filename);
+        // Relative path - normalize and build relative path
+        const normalizedPath = normalizePath(newLocation);
+        if (normalizedPath.includes('/')) {
+          this.currentDownloadInfo.resolvedPath = normalizedPath;
+        } else {
+          this.currentDownloadInfo.resolvedPath = buildRelativePath(normalizedPath, this.currentDownloadInfo.filename);
+        }
+        this.currentDownloadInfo.useAbsolutePath = false;
       }
       root.querySelector('.overlay-path').textContent = this.currentDownloadInfo.resolvedPath;
     }

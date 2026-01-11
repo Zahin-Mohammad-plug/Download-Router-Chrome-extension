@@ -75,6 +75,64 @@ class OptionsApp {
     this.renderCurrentTab();
     // Load available folders for browser
     this.loadFolders();
+    // Check companion app status and update UI
+    this.checkCompanionAppStatus();
+  }
+
+  /**
+   * Checks companion app installation status and updates UI indicators.
+   * 
+   * Inputs: None
+   * 
+   * Outputs: None (updates UI elements)
+   * 
+   * External Dependencies:
+   *   - chrome.runtime.sendMessage: Chrome API for communicating with background script
+   */
+  async checkCompanionAppStatus() {
+    try {
+      const status = await chrome.runtime.sendMessage({ type: 'checkCompanionApp' });
+      
+      // Update UI with companion app status
+      // Add status indicator to settings tab or header
+      const settingsTab = document.getElementById('settings-tab');
+      if (settingsTab && status) {
+        let statusElement = document.getElementById('companion-status');
+        if (!statusElement) {
+          statusElement = document.createElement('div');
+          statusElement.id = 'companion-status';
+          statusElement.style.cssText = 'padding: 12px; margin: 16px 0; border-radius: 8px; font-size: 13px;';
+          settingsTab.insertBefore(statusElement, settingsTab.firstChild);
+        }
+        
+        if (status.installed) {
+          statusElement.style.background = '#e8f5e9';
+          statusElement.style.color = '#2e7d32';
+          statusElement.style.border = '1px solid #4caf50';
+          statusElement.innerHTML = `
+            <strong>✓ Companion App Installed</strong><br>
+            Version ${status.version || 'unknown'} on ${status.platform || 'unknown'}
+          `;
+        } else {
+          statusElement.style.background = '#fff3e0';
+          statusElement.style.color = '#e65100';
+          statusElement.style.border = '1px solid #ff9800';
+          statusElement.innerHTML = `
+            <strong>⚠ Companion App Not Installed</strong><br>
+            Install the companion app for native folder picker and absolute path support.<br>
+            <a href="#" id="companion-install-link" style="color: #e65100; text-decoration: underline;">Download & Install</a>
+          `;
+          
+          // Add install link handler
+          document.getElementById('companion-install-link')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            chrome.tabs.create({ url: 'https://github.com/Zahin-Mohammad-plug/Download-Router-Chrome-extension/releases' });
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check companion app status:', error);
+    }
   }
 
   /**
@@ -464,9 +522,49 @@ class OptionsApp {
     });
   }
 
+  /**
+   * Loads folders from file system using companion app, or falls back to default list.
+   * 
+   * Inputs: None
+   * 
+   * Outputs: None (updates this.availableFolders and renders UI)
+   * 
+   * External Dependencies:
+   *   - chrome.runtime.sendMessage: Chrome API for communicating with background script
+   */
   async loadFolders() {
-    // Simulate folder loading - in a real implementation, this would fetch actual folders
-    this.availableFolders = this.getCommonFolders();
+    try {
+      // Check if companion app is available
+      const companionStatus = await chrome.runtime.sendMessage({ type: 'checkCompanionApp' });
+      
+      if (companionStatus && companionStatus.installed) {
+        // Get default Downloads path (platform-specific)
+        // For now, use currentPath or default to Downloads
+        const defaultPath = this.currentPath || 'Downloads';
+        
+        // Request folder listing from companion app
+        // Note: This requires absolute path, so we'll need to resolve Downloads path
+        // For now, use default list until we implement path resolution
+        this.availableFolders = this.getCommonFolders();
+        
+        // Show indicator that companion app is available
+        const folderList = document.getElementById('folder-list');
+        if (folderList) {
+          const statusIndicator = document.createElement('div');
+          statusIndicator.style.cssText = 'padding: 8px; background: #e3f2fd; color: #1565c0; font-size: 12px; border-radius: 4px; margin-bottom: 8px;';
+          statusIndicator.textContent = '✓ Companion app detected - Native folder picker available';
+          folderList.parentElement.insertBefore(statusIndicator, folderList);
+        }
+      } else {
+        // Fallback to default list
+        this.availableFolders = this.getCommonFolders();
+      }
+    } catch (error) {
+      // Fallback to default list on error
+      console.log('Companion app not available, using default folder list');
+      this.availableFolders = this.getCommonFolders();
+    }
+    
     this.renderFolders();
   }
 
@@ -506,12 +604,60 @@ class OptionsApp {
     });
   }
 
-  openFolderPicker(callback) {
+  /**
+   * Opens folder picker - uses native OS dialog if companion app available, otherwise shows modal.
+   * 
+   * Inputs:
+   *   - callback: Function to call with selected folder path
+   * 
+   * Outputs: None (calls callback with selected path)
+   * 
+   * External Dependencies:
+   *   - chrome.runtime.sendMessage: Chrome API for communicating with background script
+   */
+  async openFolderPicker(callback) {
     this.folderSelectCallback = callback;
+    
+    try {
+      // Check if companion app is available
+      const companionStatus = await chrome.runtime.sendMessage({ type: 'checkCompanionApp' });
+      
+      if (companionStatus && companionStatus.installed) {
+        // Use native folder picker
+        try {
+          const response = await chrome.runtime.sendMessage({
+            type: 'pickFolderNative',
+            startPath: this.currentPath || null
+          });
+          
+          if (response.success && response.path) {
+            // User selected a folder via native picker
+            if (callback) {
+              callback(response.path);
+            }
+            return;
+          } else if (response.error && !response.error.includes('cancelled')) {
+            // Error (but not cancellation) - fall through to modal
+            console.error('Native folder picker error:', response.error);
+          } else {
+            // User cancelled - don't show modal
+            return;
+          }
+        } catch (error) {
+          // Native picker failed - fall through to modal fallback
+          console.log('Native picker not available, using modal fallback:', error.message);
+        }
+      }
+    } catch (error) {
+      // Companion app check failed - use modal fallback
+      console.log('Companion app check failed, using modal fallback');
+    }
+    
+    // Fallback: Show modal with default folder list
     const modal = document.getElementById('modal-overlay');
     const folderTree = document.getElementById('folder-tree');
     
-    // Populate folder tree
+    // Populate folder tree with available folders
     const foldersHTML = this.availableFolders.map(folder => 
       this.createFolderHTML(folder)
     ).join('');
