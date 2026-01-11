@@ -1,26 +1,99 @@
-// Enhanced Options Page with Shadow DOM, Folder Picker, and Modern UI
+/**
+ * options.js
+ * 
+ * Purpose: Options page for the Download Router Chrome extension.
+ * Role: Provides comprehensive interface for managing routing rules, file type groups,
+ *       settings configuration, and folder browser. Serves as the main configuration center.
+ * 
+ * Key Responsibilities:
+ * - Manage routing rules (domain and extension-based)
+ * - Configure file type groups with folders
+ * - Adjust extension settings (confirmation, timeouts, tie-breakers)
+ * - Browse and manage download folders
+ * - Save and reset configuration options
+ * 
+ * Architecture:
+ * - Tabbed interface with separate sections for rules, groups, settings, and folders
+ * - Modal folder picker for visual folder selection
+ * - Real-time validation and conflict detection
+ * - Persistent storage synchronization across Chrome instances
+ */
 
+/**
+ * OptionsApp class
+ * Manages the options page interface and configuration management.
+ * Handles all user interactions for configuring the extension.
+ */
 class OptionsApp {
+  /**
+   * Initializes the OptionsApp instance.
+   * Sets default state and begins initialization process.
+   * 
+   * Inputs: None
+   * Outputs: None (calls init method)
+   */
   constructor() {
+    // Current active tab name ('rules', 'groups', 'settings', or 'folders')
     this.currentTab = 'rules';
+    // Current download path being viewed
     this.currentPath = '';
+    // Array of available folders for browsing
     this.availableFolders = [];
+    // Currently selected folder in folder picker
     this.selectedFolder = '';
+    // Array of routing rules
     this.rules = [];
+    // Object mapping group names to group configurations
     this.groups = {};
+    // Object containing extension settings
     this.settings = {};
     this.init();
   }
 
+  /**
+   * Initializes options page by loading data and setting up UI.
+   * Loads configuration, sets up event handlers, and renders initial view.
+   * 
+   * Inputs: None
+   * Outputs: None (updates UI and sets up listeners)
+   * 
+   * External Dependencies:
+   *   - loadData: Method in this class to retrieve data from storage
+   *   - setupEventListeners: Method in this class to attach event handlers
+   *   - setupTabNavigation: Method in this class to configure tab switching
+   *   - renderCurrentTab: Method in this class to render active tab content
+   *   - loadFolders: Method in this class to populate folder list
+   */
   async init() {
+    // Load configuration data from Chrome storage
     await this.loadData();
+    // Attach event handlers to UI elements
     this.setupEventListeners();
+    // Configure tab navigation system
     this.setupTabNavigation();
+    // Render the currently active tab
     this.renderCurrentTab();
+    // Load available folders for browser
     this.loadFolders();
   }
 
+  /**
+   * Loads extension configuration data from Chrome sync storage.
+   * Retrieves rules, groups, settings, and folder information.
+   * 
+   * Inputs: None
+   * 
+   * Outputs: None (updates instance properties)
+   * 
+   * External Dependencies:
+   *   - chrome.storage.sync: Chrome API for retrieving sync storage data
+   *   - getDefaultGroups: Method in this class to get default group structure
+   *   - getCommonFolders: Method in this class to get default folder list
+   */
   async loadData() {
+    // chrome.storage.sync.get: Retrieves data from sync storage
+    //   Inputs: Array of keys to retrieve
+    //   Outputs: Promise resolving to object with stored values
     const data = await chrome.storage.sync.get([
       'rules', 
       'groups', 
@@ -31,37 +104,60 @@ class OptionsApp {
       'availableFolders'
     ]);
     
+    // Store retrieved data with defaults if not present
     this.rules = data.rules || [];
+    // Use default groups if none exist in storage
     this.groups = data.groups || this.getDefaultGroups();
+    // Build settings object with defaults
     this.settings = {
       tieBreaker: data.tieBreaker || 'domain',
       confirmationEnabled: data.confirmationEnabled !== false,
+      // Convert timeout from milliseconds to seconds for display
       confirmationTimeout: (data.confirmationTimeout || 5000) / 1000
     };
     this.currentPath = data.downloadPath || 'Downloads';
+    // Use default folders if none exist in storage
     this.availableFolders = data.availableFolders || this.getCommonFolders();
   }
 
+  /**
+   * Attaches event listeners to all interactive UI elements.
+   * Sets up handlers for save, reset, add, settings, and folder operations.
+   * 
+   * Inputs: None (uses DOM elements from options.html)
+   * 
+   * Outputs: None (attaches event listeners)
+   * 
+   * External Dependencies:
+   *   - document.getElementById: Browser DOM API to find elements
+   *   - addEventListener: Browser DOM API to attach event handlers
+   *   - setupSettingsListeners: Method in this class for settings-specific handlers
+   *   - setupModalListeners: Method in this class for modal interactions
+   */
   setupEventListeners() {
-    // Save options
+    // Save options button - saves all configuration to storage
     document.getElementById('save-options').addEventListener('click', () => this.saveOptions());
     
-    // Reset options
+    // Reset options button - resets all settings to defaults
     document.getElementById('reset-options').addEventListener('click', () => this.resetOptions());
     
-    // Add rule/group
+    // Add new rule button
     document.getElementById('add-rule').addEventListener('click', () => this.addRule());
+    // Add new group button
     document.getElementById('add-group').addEventListener('click', () => this.addGroup());
+    // Load default groups button - restores default file type groups
     document.getElementById('load-defaults').addEventListener('click', () => this.loadDefaultGroups());
     
-    // Settings
+    // Set up settings-specific event listeners
     this.setupSettingsListeners();
     
-    // Folder browser
+    // Folder browser controls
+    // Refresh folders button - reloads folder list
     document.getElementById('refresh-folders').addEventListener('click', () => this.loadFolders());
+    // Create folder button - prompts user to create new folder
     document.getElementById('create-folder').addEventListener('click', () => this.createFolder());
     
-    // Modal
+    // Set up modal interaction listeners
     this.setupModalListeners();
   }
 
@@ -488,6 +584,16 @@ class OptionsApp {
     this.renderGroups();
   }
 
+  /**
+   * Returns default file type groups with predefined extensions and folders.
+   * Provides sensible defaults for common file categories.
+   * 
+   * Inputs: None
+   * 
+   * Outputs: Object mapping group names to group objects, where each group contains:
+   *   - extensions: String comma-separated list of file extensions
+   *   - folder: String target folder name for this group
+   */
   getDefaultGroups() {
     return {
       videos: {
@@ -517,13 +623,37 @@ class OptionsApp {
     };
   }
 
+  /**
+   * Saves all configuration options to Chrome sync storage.
+   * Collects current settings from UI and persists them.
+   * 
+   * Inputs: None (reads values from DOM elements)
+   * 
+   * Outputs: None (saves to storage and shows status)
+   * 
+   * External Dependencies:
+   *   - document.getElementById: Browser DOM API to find elements
+   *   - document.querySelector: Browser DOM API to find elements
+   *   - chrome.storage.sync.set: Chrome API for saving data
+   *   - showStatus: Method in this class to display feedback
+   */
   async saveOptions() {
-    // Collect settings
+    // Collect current settings from UI form elements
+    // checked: Boolean property indicating checkbox state
     const confirmationEnabled = document.getElementById('confirmation-enabled').checked;
+    // parseInt: Converts string to integer, multiply by 1000 to convert seconds to milliseconds
+    //   Inputs: String value
+    //   Outputs: Integer
     const confirmationTimeout = parseInt(document.getElementById('confirmation-timeout').value) * 1000;
+    // querySelector: Finds first matching element
+    //   Inputs: CSS selector string ('input[name="tie-breaker"]:checked')
+    //   Outputs: Element or null
     const tieBreaker = document.querySelector('input[name="tie-breaker"]:checked').value;
     
-    // Save to storage
+    // Save all configuration to sync storage
+    // chrome.storage.sync.set: Stores data in sync storage
+    //   Inputs: Object with key-value pairs
+    //   Outputs: Promise resolving when stored
     await chrome.storage.sync.set({
       rules: this.rules,
       groups: this.groups,
@@ -533,6 +663,8 @@ class OptionsApp {
       availableFolders: this.availableFolders
     });
     
+    // Show success message to user
+    // showStatus: Displays status message in UI
     this.showStatus('Settings saved successfully!', 'success');
   }
 

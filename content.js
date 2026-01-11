@@ -1,31 +1,101 @@
-// Enhanced Content Script with Shadow DOM and Fallback Notifications
+/**
+ * content.js
+ * 
+ * Purpose: Content script for the Download Router Chrome extension.
+ * Role: Manages the Shadow DOM overlay system that displays download confirmation dialogs
+ *       directly on web pages. Handles user interactions, countdown timers, and rule editing
+ *       within the overlay interface.
+ * 
+ * Key Responsibilities:
+ * - Create and manage Shadow DOM overlay for download confirmations
+ * - Handle user interactions (save, edit rules, change location)
+ * - Manage countdown timer for auto-save functionality
+ * - Provide inline rule editing capabilities
+ * - Fallback to notification system when overlay injection fails
+ * 
+ * Architecture:
+ * - Uses Shadow DOM for style isolation to prevent conflicts with website CSS
+ * - Communicates with background.js via Chrome runtime messaging
+ * - Self-contained overlay system with embedded CSS and HTML
+ */
 
+/**
+ * DownloadOverlay class
+ * Manages the download confirmation overlay system using Shadow DOM.
+ * Provides a professional UI for confirming and modifying download destinations.
+ */
 class DownloadOverlay {
+  /**
+   * Initializes the DownloadOverlay instance.
+   * Sets up properties and message listener for background script communication.
+   * 
+   * Inputs: None
+   * Outputs: None (initializes instance properties and listeners)
+   */
   constructor() {
+    // Shadow DOM root element (isolated styling)
     this.shadowRoot = null;
+    // Reference to current overlay DOM element
     this.currentOverlay = null;
+    // Interval timer ID for countdown animation
     this.countdownTimer = null;
+    // Current download information object
     this.currentDownloadInfo = null;
+    // ID of fallback notification if overlay injection fails
     this.fallbackNotificationId = null;
+    // Flag indicating if rules editor panel is currently visible
     this.rulesEditorVisible = false;
+    // Flag indicating if location picker panel is currently visible
     this.locationPickerVisible = false;
+    // Remaining time in milliseconds for countdown (default 5 seconds)
     this.timeLeft = 5000; // 5 seconds
     this.init();
   }
 
+  /**
+   * Initializes message listener for communication with background script.
+   * Listens for download overlay display requests.
+   * 
+   * Inputs: None
+   * Outputs: None (sets up event listener)
+   * 
+   * External Dependencies:
+   *   - chrome.runtime API: For receiving messages from background script
+   */
   init() {
-    // Listen for messages from background script
+    // chrome.runtime.onMessage.addListener: Listens for messages from extension background script
+    //   Inputs: Callback function (message, sender, sendResponse)
+    //   Outputs: None (sets up listener)
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.type === 'showDownloadOverlay') {
+        // Show overlay with download information
         this.showDownloadOverlay(message.downloadInfo);
       }
     });
   }
 
+  /**
+   * Creates the Shadow DOM container for isolated overlay styling.
+   * Attaches shadow root to a host element and injects CSS styles.
+   * 
+   * Inputs: None
+   * 
+   * Outputs: ShadowRoot object for overlay content injection
+   * 
+   * External Dependencies:
+   *   - document.createElement: Browser DOM API for creating elements
+   *   - document.body.appendChild: Browser DOM API for adding elements to page
+   *   - attachShadow: Browser Shadow DOM API for creating shadow root
+   *   - getCSS: Method in this class that returns CSS string
+   */
   createShadowDOM() {
-    // Create shadow host
+    // Create shadow host element (container in page DOM)
+    // document.createElement: Creates new DOM element
+    //   Inputs: Tag name string ('div')
+    //   Outputs: HTMLElement object
     const host = document.createElement('div');
     host.id = 'download-router-shadow-host';
+    // Apply styles to prevent host from interfering with page interactions
     host.style.cssText = `
       position: fixed !important;
       top: 0 !important;
@@ -36,18 +106,37 @@ class DownloadOverlay {
       z-index: 2147483647 !important;
     `;
 
-    // Create shadow root
+    // Create shadow root with closed mode (prevents external access)
+    // attachShadow: Creates Shadow DOM root for style isolation
+    //   Inputs: Options object { mode: 'closed' }
+    //   Outputs: ShadowRoot object
     this.shadowRoot = host.attachShadow({ mode: 'closed' });
     
-    // Add CSS variables and styles
+    // Create and inject CSS styles into shadow root
     const style = document.createElement('style');
+    // getCSS: Returns CSS string with all overlay styles
     style.textContent = this.getCSS();
+    // appendChild: Adds element to shadow root
+    //   Inputs: Element to append
+    //   Outputs: Appended element
     this.shadowRoot.appendChild(style);
 
+    // Add host to page body
+    // document.body.appendChild: Adds element to page DOM
+    //   Inputs: Element to append
+    //   Outputs: Appended element
     document.body.appendChild(host);
     return this.shadowRoot;
   }
 
+  /**
+   * Returns CSS string containing all styles for the overlay interface.
+   * Includes CSS variables, component styles, animations, and dark mode support.
+   * 
+   * Inputs: None
+   * 
+   * Outputs: String containing complete CSS stylesheet for overlay
+   */
   getCSS() {
     return `
       :host {
@@ -377,23 +466,57 @@ class DownloadOverlay {
     `;
   }
 
+  /**
+   * Displays the download confirmation overlay with download information.
+   * Handles overlay creation, content injection, and fallback to notifications.
+   * 
+   * Inputs:
+   *   - downloadInfo: Object containing download metadata (id, filename, resolvedPath, etc.)
+   * 
+   * Outputs: None (creates and displays overlay UI)
+   * 
+   * External Dependencies:
+   *   - createShadowDOM: Method in this class to create shadow root
+   *   - createOverlayContent: Method in this class to generate HTML content
+   *   - setupEventListeners: Method in this class to attach event handlers
+   *   - startCountdown: Method in this class to begin auto-save countdown
+   *   - showFallbackNotification: Method in this class for error handling
+   */
   async showDownloadOverlay(downloadInfo) {
     try {
-      // Try to inject overlay
+      // Create shadow DOM if it doesn't exist
       if (!this.shadowRoot) {
         this.createShadowDOM();
       }
 
+      // Store download info and initialize overlay
       this.currentDownloadInfo = downloadInfo;
+      // createOverlayContent: Generates and injects HTML into shadow root
       this.createOverlayContent();
+      // setupEventListeners: Attaches click handlers and event listeners
       this.setupEventListeners();
+      // startCountdown: Begins countdown timer for auto-save
       this.startCountdown();
     } catch (error) {
+      // Fall back to notification system if overlay injection fails
       console.error('Failed to show overlay, using fallback notification:', error);
+      // showFallbackNotification: Requests background script to show Chrome notification
       this.showFallbackNotification(downloadInfo);
     }
   }
 
+  /**
+   * Creates and injects HTML content into the shadow root.
+   * Generates overlay structure with header, actions, rules editor, and location picker.
+   * 
+   * Inputs: None (uses this.currentDownloadInfo)
+   * 
+   * Outputs: None (updates shadow root innerHTML and stores overlay reference)
+   * 
+   * External Dependencies:
+   *   - this.shadowRoot: Shadow root element created by createShadowDOM
+   *   - this.currentDownloadInfo: Download information set by showDownloadOverlay
+   */
   createOverlayContent() {
     const overlayHTML = `
       <div class="overlay-container">
@@ -500,42 +623,98 @@ class DownloadOverlay {
       </div>
     `;
 
+    // Preserve style element and append new HTML content
+    // querySelector: Finds first matching element in shadow root
+    //   Inputs: CSS selector string
+    //   Outputs: Element or null
+    // outerHTML: Gets element's HTML including itself
+    //   Inputs: None
+    //   Outputs: HTML string
     this.shadowRoot.innerHTML = this.shadowRoot.querySelector('style').outerHTML + overlayHTML;
+    // Store reference to overlay container for later manipulation
     this.currentOverlay = this.shadowRoot.querySelector('.overlay-container');
   }
 
+  /**
+   * Attaches event listeners to overlay buttons and interactive elements.
+   * Sets up handlers for save, edit rules, change location, and panel navigation.
+   * 
+   * Inputs: None (uses elements in this.shadowRoot)
+   * 
+   * Outputs: None (attaches event listeners to DOM elements)
+   * 
+   * External Dependencies:
+   *   - this.shadowRoot: Shadow root containing overlay elements
+   *   - setupRulesEditorEvents: Method in this class to set up rules editor handlers
+   *   - setupLocationPickerEvents: Method in this class to set up location picker handlers
+   */
   setupEventListeners() {
     const root = this.shadowRoot;
     
-    // Save button
+    // Attach click handler to Save button
+    // querySelector: Finds element by CSS class selector
+    //   Inputs: CSS selector string ('.save-btn')
+    //   Outputs: Element or null
+    // addEventListener: Attaches event handler to element
+    //   Inputs: Event type ('click'), callback function
+    //   Outputs: None (sets up listener)
     root.querySelector('.save-btn').addEventListener('click', () => {
+      // saveDownload: Sends message to background script to proceed with download
       this.saveDownload();
     });
     
-    // Edit rules button
+    // Attach click handler to Edit Rules button
     root.querySelector('.edit-rules-btn').addEventListener('click', () => {
+      // showRulesEditor: Displays rules editor panel
       this.showRulesEditor();
     });
     
-    // Change location button
+    // Attach click handler to Change Location button
     root.querySelector('.change-location-btn').addEventListener('click', () => {
+      // showLocationPicker: Displays location picker panel
       this.showLocationPicker();
     });
     
-    // Rules editor events
+    // Set up additional event handlers for panels
+    // setupRulesEditorEvents: Attaches handlers for rules editor interactions
     this.setupRulesEditorEvents();
+    // setupLocationPickerEvents: Attaches handlers for location picker interactions
     this.setupLocationPickerEvents();
   }
 
+  /**
+   * Attaches event listeners specific to the rules editor panel.
+   * Handles rule type selection, target type changes, and apply/cancel actions.
+   * 
+   * Inputs: None (uses elements in this.shadowRoot)
+   * 
+   * Outputs: None (attaches event listeners)
+   * 
+   * External Dependencies:
+   *   - this.shadowRoot: Shadow root containing rules editor elements
+   *   - applyRuleChanges: Method in this class to save rule changes
+   *   - hideRulesEditor: Method in this class to close rules editor
+   */
   setupRulesEditorEvents() {
     const root = this.shadowRoot;
     
-    // Rule type radio buttons
+    // Attach change handlers to rule type radio buttons (domain vs extension)
+    // querySelectorAll: Finds all matching elements
+    //   Inputs: CSS selector string ('input[name="ruleType"]')
+    //   Outputs: NodeList of elements
+    // forEach: Iterates over NodeList
+    //   Inputs: Callback function
+    //   Outputs: None (executes callback for each element)
     root.querySelectorAll('input[name="ruleType"]').forEach(radio => {
       radio.addEventListener('change', (e) => {
+        // Get references to configuration panels
         const domainConfig = root.querySelector('.domain-rule-config');
         const extensionConfig = root.querySelector('.extension-rule-config');
         
+        // Toggle visibility based on selected rule type
+        // classList.remove/add: Modifies element's class list
+        //   Inputs: Class name string
+        //   Outputs: None (modifies element)
         if (e.target.value === 'domain') {
           domainConfig.classList.remove('hidden');
           extensionConfig.classList.add('hidden');
@@ -574,6 +753,19 @@ class DownloadOverlay {
     });
   }
 
+  /**
+   * Attaches event listeners specific to the location picker panel.
+   * Handles apply and cancel actions for location changes.
+   * 
+   * Inputs: None (uses elements in this.shadowRoot)
+   * 
+   * Outputs: None (attaches event listeners)
+   * 
+   * External Dependencies:
+   *   - this.shadowRoot: Shadow root containing location picker elements
+   *   - applyLocationChange: Method in this class to save location change
+   *   - hideLocationPicker: Method in this class to close location picker
+   */
   setupLocationPickerEvents() {
     const root = this.shadowRoot;
     
@@ -588,34 +780,87 @@ class DownloadOverlay {
     });
   }
 
+  /**
+   * Displays the rules editor panel and pauses countdown.
+   * 
+   * Inputs: None (uses elements in this.shadowRoot)
+   * Outputs: None (updates UI and state)
+   * 
+   * External Dependencies:
+   *   - pauseCountdown: Method in this class to stop countdown timer
+   */
   showRulesEditor() {
+    // Pause countdown while user interacts with editor
     this.pauseCountdown();
     const rulesEditor = this.shadowRoot.querySelector('.rules-editor');
     rulesEditor.classList.add('visible');
     this.rulesEditorVisible = true;
   }
 
+  /**
+   * Hides the rules editor panel and resumes countdown.
+   * 
+   * Inputs: None (uses elements in this.shadowRoot)
+   * Outputs: None (updates UI and state)
+   * 
+   * External Dependencies:
+   *   - resumeCountdown: Method in this class to restart countdown timer
+   */
   hideRulesEditor() {
     const rulesEditor = this.shadowRoot.querySelector('.rules-editor');
     rulesEditor.classList.remove('visible');
     this.rulesEditorVisible = false;
+    // Resume countdown when editor is closed
     this.resumeCountdown();
   }
 
+  /**
+   * Displays the location picker panel and pauses countdown.
+   * 
+   * Inputs: None (uses elements in this.shadowRoot)
+   * Outputs: None (updates UI and state)
+   * 
+   * External Dependencies:
+   *   - pauseCountdown: Method in this class to stop countdown timer
+   */
   showLocationPicker() {
+    // Pause countdown while user interacts with location picker
     this.pauseCountdown();
     const locationPicker = this.shadowRoot.querySelector('.location-picker');
     locationPicker.classList.add('visible');
     this.locationPickerVisible = true;
   }
 
+  /**
+   * Hides the location picker panel and resumes countdown.
+   * 
+   * Inputs: None (uses elements in this.shadowRoot)
+   * Outputs: None (updates UI and state)
+   * 
+   * External Dependencies:
+   *   - resumeCountdown: Method in this class to restart countdown timer
+   */
   hideLocationPicker() {
     const locationPicker = this.shadowRoot.querySelector('.location-picker');
     locationPicker.classList.remove('visible');
     this.locationPickerVisible = false;
+    // Resume countdown when picker is closed
     this.resumeCountdown();
   }
 
+  /**
+   * Applies rule changes from the rules editor to storage.
+   * Sends message to background script to add/update rule, then updates overlay display.
+   * 
+   * Inputs: None (reads form values from shadow root)
+   * 
+   * Outputs: None (sends message to background script and updates UI)
+   * 
+   * External Dependencies:
+   *   - chrome.runtime.sendMessage: Chrome API for sending messages to background script
+   *   - this.currentDownloadInfo: Current download information object
+   *   - hideRulesEditor: Method in this class to close rules editor
+   */
   applyRuleChanges() {
     const root = this.shadowRoot;
     const ruleType = root.querySelector('input[name="ruleType"]:checked').value;
@@ -623,6 +868,9 @@ class DownloadOverlay {
     if (ruleType === 'domain') {
       const folder = root.querySelector('.domain-rule-config .folder-input').value;
       if (folder) {
+        // chrome.runtime.sendMessage: Sends message to background script
+        //   Inputs: Message object with type and data
+        //   Outputs: None (fire-and-forget message)
         chrome.runtime.sendMessage({
           type: 'addRule',
           rule: {
@@ -631,9 +879,11 @@ class DownloadOverlay {
             folder: folder
           }
         });
+        // Update resolved path with new folder
         this.currentDownloadInfo.resolvedPath = `${folder}/${this.currentDownloadInfo.filename}`;
       }
     } else {
+      // Extension rule configuration
       const targetType = root.querySelector('.extension-rule-config .target-select').value;
       if (targetType === 'folder') {
         const folder = root.querySelector('.folder-target .folder-input').value;
@@ -649,6 +899,7 @@ class DownloadOverlay {
           this.currentDownloadInfo.resolvedPath = `${folder}/${this.currentDownloadInfo.filename}`;
         }
       } else {
+        // Add to existing group
         const group = root.querySelector('.group-target .target-select').value;
         if (group) {
           chrome.runtime.sendMessage({
@@ -660,11 +911,23 @@ class DownloadOverlay {
       }
     }
     
-    // Update display
+    // Update overlay display with new resolved path
+    // textContent: Sets element's text content
+    //   Inputs: String text content
+    //   Outputs: None (modifies element)
     root.querySelector('.overlay-path').textContent = this.currentDownloadInfo.resolvedPath;
+    // Close rules editor panel
     this.hideRulesEditor();
   }
 
+  /**
+   * Applies location change from location picker to current download.
+   * Updates resolved path and closes location picker.
+   * 
+   * Inputs: None (reads input value from shadow root)
+   * 
+   * Outputs: None (updates download info and UI)
+   */
   applyLocationChange() {
     const root = this.shadowRoot;
     const newLocation = root.querySelector('.location-picker .folder-input').value;
@@ -675,76 +938,184 @@ class DownloadOverlay {
     this.hideLocationPicker();
   }
 
+  /**
+   * Starts the countdown timer for auto-save functionality.
+   * Updates visual progress bar and automatically saves after timeout.
+   * 
+   * Inputs: None (uses this.timeLeft and elements in this.shadowRoot)
+   * 
+   * Outputs: None (starts interval timer and updates UI)
+   * 
+   * External Dependencies:
+   *   - setInterval: Browser built-in function for repeated execution
+   *   - this.shadowRoot: Shadow root containing countdown bar element
+   *   - saveDownload: Method in this class to proceed with download
+   */
   startCountdown() {
+    // Get reference to countdown progress bar element
     const countdownFill = this.shadowRoot.querySelector('.countdown-fill');
+    // Reset countdown time to 5 seconds (5000 milliseconds)
     this.timeLeft = 5000; // Reset to 5 seconds
+    // Update interval: update progress bar every 50ms for smooth animation
     const interval = 50; // Update every 50ms
     
+    // setInterval: Browser built-in function for repeated execution
+    //   Inputs: Callback function, interval in milliseconds
+    //   Outputs: Interval ID (stored for cleanup)
     this.countdownTimer = setInterval(() => {
+      // Decrement remaining time
       this.timeLeft -= interval;
+      // Calculate percentage complete for progress bar (0-100%)
       const percentage = ((5000 - this.timeLeft) / 5000) * 100;
+      // Update progress bar width
+      // style.width: Sets element's width CSS property
+      //   Inputs: Width string with unit (percentage)
+      //   Outputs: None (modifies element style)
       countdownFill.style.width = percentage + '%';
       
+      // Auto-save when countdown reaches zero
       if (this.timeLeft <= 0) {
+        // clearInterval: Browser built-in function to stop interval
+        //   Inputs: Interval ID
+        //   Outputs: None (stops interval)
         clearInterval(this.countdownTimer);
+        // saveDownload: Proceeds with download immediately
         this.saveDownload();
       }
     }, interval);
   }
 
+  /**
+   * Pauses the countdown timer.
+   * Stops interval execution but preserves current time remaining.
+   * 
+   * Inputs: None
+   * Outputs: None (stops interval timer)
+   * 
+   * External Dependencies:
+   *   - clearInterval: Browser built-in function to stop interval
+   */
   pauseCountdown() {
     if (this.countdownTimer) {
+      // clearInterval: Stops the countdown interval
       clearInterval(this.countdownTimer);
     }
   }
 
+  /**
+   * Resumes the countdown timer if no editor panels are visible.
+   * Restarts from beginning if countdown was paused during panel interaction.
+   * 
+   * Inputs: None (checks this.rulesEditorVisible and this.locationPickerVisible)
+   * Outputs: None (restarts countdown if conditions met)
+   * 
+   * External Dependencies:
+   *   - startCountdown: Method in this class to begin countdown
+   */
   resumeCountdown() {
-    // Resume from current position if not in editor mode
+    // Only resume if no editor panels are currently visible
     if (!this.rulesEditorVisible && !this.locationPickerVisible) {
+      // startCountdown: Restarts countdown from beginning
       this.startCountdown();
     }
   }
 
+  /**
+   * Sends message to background script to proceed with download.
+   * Cleans up overlay UI after sending message.
+   * 
+   * Inputs: None (uses this.currentDownloadInfo)
+   * 
+   * Outputs: None (sends message to background script and cleans up)
+   * 
+   * External Dependencies:
+   *   - chrome.runtime.sendMessage: Chrome API for sending messages to background script
+   *   - this.currentDownloadInfo: Current download information object
+   *   - cleanup: Method in this class to remove overlay from DOM
+   */
   saveDownload() {
-    // Send message to background script to proceed with download
+    // chrome.runtime.sendMessage: Sends message to background script
+    //   Inputs: Message object with type and download info
+    //   Outputs: None (fire-and-forget message)
     chrome.runtime.sendMessage({
       type: 'proceedWithDownload',
       downloadInfo: this.currentDownloadInfo
     });
     
+    // Remove overlay from page after sending message
     this.cleanup();
   }
 
+  /**
+   * Cleans up overlay by removing DOM elements and resetting state.
+   * Stops countdown timer and removes shadow host from page.
+   * 
+   * Inputs: None
+   * Outputs: None (removes elements and resets properties)
+   * 
+   * External Dependencies:
+   *   - clearInterval: Browser built-in function to stop interval
+   *   - document.getElementById: Browser DOM API to find element
+   *   - Element.remove: Browser DOM API to remove element from DOM
+   */
   cleanup() {
+    // Stop countdown timer if running
     if (this.countdownTimer) {
       clearInterval(this.countdownTimer);
     }
     
+    // Find and remove shadow host element from page
+    // document.getElementById: Finds element by ID
+    //   Inputs: ID string
+    //   Outputs: Element or null
     const shadowHost = document.getElementById('download-router-shadow-host');
     if (shadowHost) {
+      // remove: Removes element from DOM
+      //   Inputs: None
+      //   Outputs: None (removes element)
       shadowHost.remove();
     }
+    // Reset all state properties
     this.shadowRoot = null;
     this.currentOverlay = null;
     this.rulesEditorVisible = false;
     this.locationPickerVisible = false;
   }
 
-  // Fallback notification when overlay injection fails
+  /**
+   * Shows fallback Chrome notification when overlay injection fails.
+   * Sends message to background script to display system notification.
+   * 
+   * Inputs:
+   *   - downloadInfo: Object containing download metadata
+   * 
+   * Outputs: None (requests notification via background script)
+   * 
+   * External Dependencies:
+   *   - chrome.runtime.sendMessage: Chrome API for sending messages to background script
+   *   - saveDownload: Method in this class (fallback if notification also fails)
+   */
   async showFallbackNotification(downloadInfo) {
     try {
-      // Create a rich notification with action buttons
+      // chrome.runtime.sendMessage: Sends message to background script to show notification
+      //   Inputs: Message object with type and download info
+      //   Outputs: Promise that resolves when message is sent
       this.fallbackNotificationId = await chrome.runtime.sendMessage({
         type: 'showFallbackNotification',
         downloadInfo: downloadInfo
       });
     } catch (error) {
+      // If notification also fails, proceed with download immediately (ultimate fallback)
       console.error('Failed to show fallback notification:', error);
-      // Ultimate fallback - just proceed with download
+      // saveDownload: Proceeds with download without user confirmation
       this.saveDownload();
     }
   }
 }
 
+/**
+ * Initialize the overlay system when content script loads.
+ * Creates a single instance of DownloadOverlay to handle all download confirmations.
+ */
 // Initialize the overlay system
 const downloadOverlay = new DownloadOverlay();
