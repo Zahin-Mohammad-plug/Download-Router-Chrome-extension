@@ -8,7 +8,7 @@
   <div class="app-container">
     <header class="app-header">
       <div class="header-content">
-        <div class="app-icon">📁</div>
+        <div class="app-icon icon-folder"></div>
         <div class="app-title">
           <h1>Download Router Settings</h1>
           <p class="app-subtitle">Configure your download routing rules</p>
@@ -32,7 +32,7 @@
         
         <div class="rules-container" id="rules-container">
           <div class="empty-state" id="rules-empty">
-            <div class="empty-icon">📋</div>
+            <div class="empty-icon icon-list"></div>
             <h3>No rules configured</h3>
             <p>Create your first rule to start organizing downloads automatically</p>
           </div>
@@ -40,7 +40,7 @@
         
         <div class="section-actions">
           <button class="btn primary" id="add-rule">
-            <span class="btn-icon">➕</span>
+            <span class="btn-icon icon-add"></span>
             Add Rule
           </button>
         </div>
@@ -55,7 +55,7 @@
         
         <div class="groups-container" id="groups-container">
           <div class="empty-state" id="groups-empty">
-            <div class="empty-icon">📁</div>
+            <div class="empty-icon icon-folder-simple"></div>
             <h3>No groups configured</h3>
             <p>Create groups to organize similar file types together</p>
           </div>
@@ -63,7 +63,7 @@
         
         <div class="section-actions">
           <button class="btn primary" id="add-group">
-            <span class="btn-icon">➕</span>
+            <span class="btn-icon icon-add"></span>
             Add Group
           </button>
           <button class="btn secondary" id="load-defaults">
@@ -144,11 +144,11 @@
         <div class="folder-browser">
           <div class="folder-toolbar">
             <div class="folder-path" id="current-path">
-              <span class="path-icon">📁</span>
+              <span class="path-icon icon-folder-simple"></span>
               <span id="path-text">Downloads</span>
             </div>
             <button class="btn secondary small" id="refresh-folders">
-              <span class="btn-icon">🔄</span>
+              <span class="btn-icon icon-refresh"></span>
               Refresh
             </button>
           </div>
@@ -162,7 +162,7 @@
           
           <div class="folder-actions">
             <button class="btn secondary" id="create-folder">
-              <span class="btn-icon">📁</span>
+              <span class="btn-icon icon-folder-simple"></span>
               Create Folder
             </button>
           </div>
@@ -173,13 +173,13 @@
     <footer class="app-footer">
       <div class="footer-actions">
         <button class="btn success" id="save-options">
-          <span class="btn-icon">💾</span>
+          <span class="btn-icon icon-save"></span>
           Save Changes
         </button>
-        <button class="btn secondary" id="reset-options">
-          <span class="btn-icon">🔄</span>
-          Reset to Defaults
-        </button>
+          <button class="btn secondary" id="reset-options">
+            <span class="btn-icon icon-refresh"></span>
+            Reset to Defaults
+          </button>
       </div>
       <div class="status-message" id="status"></div>
     </footer>
@@ -190,7 +190,7 @@
     <div class="modal" id="folder-picker-modal">
       <div class="modal-header">
         <h3>Choose Folder</h3>
-        <button class="modal-close" id="close-modal">×</button>
+        <button class="modal-close" id="close-modal">X</button>
       </div>
       <div class="modal-body">
         <div class="folder-tree" id="folder-tree"></div>

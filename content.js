@@ -20,6 +20,69 @@
  */
 
 /**
+ * Path Utility Functions
+ * 
+ * These functions handle path normalization for paths entered by users in the overlay.
+ * They mirror the functions in background.js to ensure consistent path formatting.
+ */
+
+/**
+ * Extracts just the filename from a potentially path-containing string.
+ */
+function extractFilename(path) {
+  if (!path) return '';
+  const normalized = path.replace(/\\/g, '/');
+  return normalized.split('/').pop();
+}
+
+/**
+ * Normalizes a folder path by converting backslashes to forward slashes
+ * and removing leading/trailing slashes.
+ */
+function normalizePath(path) {
+  if (!path || path.trim() === '') return '';
+  return path
+    .replace(/\\/g, '/')
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/\/+/g, '/')
+    .trim();
+}
+
+/**
+ * Sanitizes folder name by removing invalid characters.
+ */
+function sanitizeFolderName(folder) {
+  if (!folder) return '';
+  return folder
+    .replace(/[<>:"|?*\\]/g, '')
+    .replace(/\.\./g, '')
+    .replace(/^\.+$/, '')
+    .trim();
+}
+
+/**
+ * Builds a valid relative path for Chrome downloads API.
+ */
+function buildRelativePath(folder, filename) {
+  const cleanFolder = normalizePath(folder);
+  const cleanFilename = extractFilename(filename);
+  
+  if (!cleanFolder || cleanFolder === 'Downloads') {
+    return cleanFilename;
+  }
+  
+  const folderSegments = cleanFolder.split('/')
+    .map(segment => sanitizeFolderName(segment))
+    .filter(segment => segment.length > 0);
+  
+  if (folderSegments.length === 0) {
+    return cleanFilename;
+  }
+  
+  return `${folderSegments.join('/')}/${cleanFilename}`;
+}
+
+/**
  * DownloadOverlay class
  * Manages the download confirmation overlay system using Shadow DOM.
  * Provides a professional UI for confirming and modifying download destinations.
@@ -527,8 +590,8 @@ class DownloadOverlay {
           </div>
           
           <div class="overlay-actions">
-            <button class="action-btn edit-rules-btn">✏️ Edit Rules</button>
-            <button class="action-btn change-location-btn">📁 Change Location</button>
+            <button class="action-btn edit-rules-btn">[E] Edit Rules</button>
+            <button class="action-btn change-location-btn">[ ] Change Location</button>
             
             <div class="countdown-section">
               <div class="countdown-bar">
@@ -547,17 +610,17 @@ class DownloadOverlay {
               <div class="rule-type-selector">
                 <label>
                   <input type="radio" name="ruleType" value="domain" checked>
-                  Route domain → folder
+                  Route domain -> folder
                 </label>
                 <label>
                   <input type="radio" name="ruleType" value="extension">
-                  Route file type → group/folder
+                  Route file type -> group/folder
                 </label>
               </div>
               
               <div class="domain-rule-config">
                 <div class="rule-row">
-                  <span>${this.currentDownloadInfo.domain}</span> → 
+                  <span>${this.currentDownloadInfo.domain}</span> -> 
                   <input type="text" class="folder-input" placeholder="Choose folder">
                   <button class="browse-btn">Browse</button>
                 </div>
@@ -879,8 +942,8 @@ class DownloadOverlay {
             folder: folder
           }
         });
-        // Update resolved path with new folder
-        this.currentDownloadInfo.resolvedPath = `${folder}/${this.currentDownloadInfo.filename}`;
+        // Update resolved path with new folder using path normalization
+        this.currentDownloadInfo.resolvedPath = buildRelativePath(folder, this.currentDownloadInfo.filename);
       }
     } else {
       // Extension rule configuration
@@ -896,7 +959,7 @@ class DownloadOverlay {
               folder: folder
             }
           });
-          this.currentDownloadInfo.resolvedPath = `${folder}/${this.currentDownloadInfo.filename}`;
+          this.currentDownloadInfo.resolvedPath = buildRelativePath(folder, this.currentDownloadInfo.filename);
         }
       } else {
         // Add to existing group
@@ -932,8 +995,16 @@ class DownloadOverlay {
     const root = this.shadowRoot;
     const newLocation = root.querySelector('.location-picker .folder-input').value;
     if (newLocation) {
-      this.currentDownloadInfo.resolvedPath = newLocation;
-      root.querySelector('.overlay-path').textContent = newLocation;
+      // Normalize the path - could be a full path or just folder name
+      const normalizedPath = normalizePath(newLocation);
+      if (normalizedPath.includes('/')) {
+        // User provided a full path
+        this.currentDownloadInfo.resolvedPath = normalizedPath;
+      } else {
+        // User provided just a folder name - build relative path
+        this.currentDownloadInfo.resolvedPath = buildRelativePath(normalizedPath, this.currentDownloadInfo.filename);
+      }
+      root.querySelector('.overlay-path').textContent = this.currentDownloadInfo.resolvedPath;
     }
     this.hideLocationPicker();
   }

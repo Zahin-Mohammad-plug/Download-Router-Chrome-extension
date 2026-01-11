@@ -63,6 +63,115 @@ body {
 .app-icon {
   font-size: 3rem;
   filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+  font-family: monospace;
+  font-weight: bold;
+}
+
+/* Icon System - Unicode-safe alternatives to emojis */
+/* Uses Unicode symbols that are widely supported across all devices and browsers */
+.icon-folder::before {
+  content: "[ ]";
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  display: inline-block;
+}
+
+.icon-add::before {
+  content: "+";
+  font-family: Arial, sans-serif;
+  font-weight: bold;
+  font-size: 1.2em;
+  display: inline-block;
+  line-height: 0.9;
+}
+
+.icon-refresh::before {
+  content: "[R]";
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 0.9em;
+  display: inline-block;
+}
+
+.icon-save::before {
+  content: "[S]";
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 0.9em;
+  display: inline-block;
+}
+
+.icon-list::before {
+  content: "---";
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 1em;
+  letter-spacing: 2px;
+  display: inline-block;
+  line-height: 1;
+}
+
+.icon-file::before {
+  content: "[ ]";
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 0.9em;
+  display: inline-block;
+}
+
+.icon-folder-simple::before {
+  content: "[F]";
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 0.85em;
+  display: inline-block;
+}
+
+.icon-domain::before {
+  content: "*";
+  font-family: Arial, sans-serif;
+  font-weight: bold;
+  font-size: 1em;
+  display: inline-block;
+}
+
+.icon-extension::before {
+  content: "[X]";
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 0.85em;
+  display: inline-block;
+}
+
+.icon-extension::before {
+  content: "□";
+  font-family: Arial, sans-serif;
+  display: inline-block;
+}
+
+.btn-icon {
+  font-size: 1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-icon {
+  font-size: 3em;
+  opacity: 0.5;
+  line-height: 1;
+  display: inline-block;
+}
+
+.path-icon {
+  font-size: 1.2em;
+  display: inline-block;
+}
+
+.folder-icon {
+  font-size: 1.25rem;
+  display: inline-block;
 }
 
 .app-title h1 {
@@ -695,12 +804,17 @@ input:checked + .toggle-slider:before {
 .modal-close {
   background: none;
   border: none;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
+  font-weight: bold;
   cursor: pointer;
   color: var(--text-secondary);
-  padding: 0.25rem;
+  padding: 0.25rem 0.5rem;
   border-radius: var(--radius-sm);
   transition: all 0.2s ease;
+  font-family: Arial, sans-serif;
+  line-height: 1;
+  min-width: 28px;
+  text-align: center;
 }
 
 .modal-close:hover {

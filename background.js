@@ -17,6 +17,133 @@
 let pendingDownloads = new Map();
 
 /**
+ * Path Utility Functions
+ * 
+ * These functions handle path normalization, sanitization, and construction
+ * for Chrome's downloads API, which requires relative paths with forward slashes.
+ */
+
+/**
+ * Extracts just the filename from a potentially path-containing string.
+ * Handles both forward and backslash separators.
+ * 
+ * Inputs:
+ *   - path: String that may contain a full path or just a filename
+ * 
+ * Outputs: String containing just the filename (basename)
+ * 
+ * Examples:
+ *   - "file.stl" → "file.stl"
+ *   - "Downloads/file.stl" → "file.stl"
+ *   - "C:\Users\John\Downloads\file.stl" → "file.stl"
+ *   - "folder/subfolder/file.stl" → "file.stl"
+ */
+function extractFilename(path) {
+  if (!path) return '';
+  // Replace backslashes with forward slashes for consistent handling
+  const normalized = path.replace(/\\/g, '/');
+  // Extract last segment (filename)
+  return normalized.split('/').pop();
+}
+
+/**
+ * Normalizes a folder path by:
+ * - Converting backslashes to forward slashes
+ * - Removing leading/trailing slashes
+ * - Collapsing multiple consecutive slashes
+ * 
+ * Inputs:
+ *   - path: String path to normalize
+ * 
+ * Outputs: String with normalized path (empty string if input is empty/invalid)
+ * 
+ * Examples:
+ *   - "3DPrinting" → "3DPrinting"
+ *   - "3DPrinting/" → "3DPrinting"
+ *   - "/3DPrinting" → "3DPrinting"
+ *   - "3DPrinting\\models" → "3DPrinting/models"
+ *   - "3DPrinting//models" → "3DPrinting/models"
+ */
+function normalizePath(path) {
+  if (!path || path.trim() === '') return '';
+  return path
+    .replace(/\\/g, '/')  // Convert backslashes to forward slashes
+    .replace(/^\/+|\/+$/g, '')  // Remove leading/trailing slashes
+    .replace(/\/+/g, '/')  // Collapse multiple slashes
+    .trim();
+}
+
+/**
+ * Sanitizes folder name by removing invalid characters.
+ * Windows invalid chars: < > : " | ? * \
+ * Also prevents path traversal attempts.
+ * 
+ * Inputs:
+ *   - folder: String folder name to sanitize
+ * 
+ * Outputs: String with sanitized folder name (empty string if input is empty/invalid)
+ * 
+ * Examples:
+ *   - "3DPrinting" → "3DPrinting"
+ *   - "Test<Folder>" → "TestFolder"
+ *   - "Folder..name" → "Foldername"
+ *   - "My Files" → "My Files" (spaces preserved)
+ */
+function sanitizeFolderName(folder) {
+  if (!folder) return '';
+  return folder
+    .replace(/[<>:"|?*\\]/g, '')  // Remove invalid characters
+    .replace(/\.\./g, '')  // Prevent path traversal
+    .replace(/^\.+$/, '')  // Remove directories with only dots
+    .trim();
+}
+
+/**
+ * Builds a valid relative path for Chrome downloads API.
+ * Returns folder/filename or just filename if folder is empty.
+ * 
+ * Chrome's downloads API requires:
+ * - Relative paths (not absolute)
+ * - Forward slashes as separators (even on Windows)
+ * - No path traversal (..) or invalid characters
+ * 
+ * Inputs:
+ *   - folder: String folder path (may be empty, may contain nested folders)
+ *   - filename: String filename (may contain path, will be extracted)
+ * 
+ * Outputs: String relative path for Chrome downloads API
+ * 
+ * Examples:
+ *   - folder: "3DPrinting", filename: "file.stl" → "3DPrinting/file.stl"
+ *   - folder: "3DPrinting/models", filename: "file.stl" → "3DPrinting/models/file.stl"
+ *   - folder: "", filename: "file.stl" → "file.stl"
+ *   - folder: "Downloads", filename: "file.stl" → "file.stl" (Downloads root)
+ *   - folder: "My<Files>", filename: "C:\\path\\file.stl" → "MyFiles/file.stl"
+ */
+function buildRelativePath(folder, filename) {
+  const cleanFolder = normalizePath(folder);
+  const cleanFilename = extractFilename(filename);
+  
+  // If folder is empty or just "Downloads", download to Downloads root
+  if (!cleanFolder || cleanFolder === 'Downloads') {
+    return cleanFilename;
+  }
+  
+  // Sanitize each folder segment in nested paths
+  const folderSegments = cleanFolder.split('/')
+    .map(segment => sanitizeFolderName(segment))
+    .filter(segment => segment.length > 0);  // Remove empty segments after sanitization
+  
+  // If all segments were invalid, download to Downloads root
+  if (folderSegments.length === 0) {
+    return cleanFilename;
+  }
+  
+  // Combine: folder1/folder2/filename.ext
+  return `${folderSegments.join('/')}/${cleanFilename}`;
+}
+
+/**
  * Main download interception listener.
  * Called by Chrome when a download is initiated to determine the filename/path.
  * 
@@ -45,7 +172,8 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
     
     // Extract download metadata
     const url = downloadItem.url;
-    const filename = downloadItem.filename;
+    // Extract just the filename from downloadItem.filename (which may contain a path)
+    const filename = extractFilename(downloadItem.filename);
     // Extract file extension from filename (last part after final dot, lowercase)
     const extension = filename.split('.').pop().toLowerCase();
 
@@ -92,8 +220,11 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
       finalRule = extensionMatches[0];
     }
 
-    // Construct final file path: folder from rule + filename, or just filename if no rule matches
-    const resolvedPath = finalRule ? `${finalRule.folder}/${filename}` : filename;
+    // Construct final file path using utility function to handle path normalization
+    // Pass original downloadItem.filename to extractFilename inside buildRelativePath
+    const resolvedPath = finalRule 
+      ? buildRelativePath(finalRule.folder, downloadItem.filename)  // Pass original for proper extraction
+      : extractFilename(downloadItem.filename);  // Just filename if no rule matches
     
     // Store download information for potential confirmation or later processing
     const downloadInfo = {
@@ -439,8 +570,23 @@ function proceedWithDownload(downloadId, customPath = null) {
   const downloadInfo = pendingDownloads.get(downloadId);
   if (!downloadInfo) return; // Exit if download info not found
   
-  // Use custom path if provided (user changed location), otherwise use resolved path from rules
-  const finalPath = customPath || downloadInfo.resolvedPath;
+  // Normalize and construct final path
+  let finalPath;
+  if (customPath) {
+    // User provided a custom path - could be a folder name or full path
+    // Check if it contains path separators (full path) or is just a folder name
+    const normalizedCustomPath = normalizePath(customPath);
+    if (normalizedCustomPath.includes('/')) {
+      // User provided a full path - normalize it
+      finalPath = normalizedCustomPath;
+    } else {
+      // User provided just a folder name - build relative path
+      finalPath = buildRelativePath(normalizedCustomPath, downloadInfo.filename);
+    }
+  } else {
+    // Use resolved path from rules (already normalized during construction)
+    finalPath = downloadInfo.resolvedPath;
+  }
   
   // Call the original suggest callback to finalize download path
   // originalSuggest: Function passed from Chrome's onDeterminingFilename event

@@ -245,14 +245,14 @@ class OptionsApp {
   }
 
   createRuleHTML(rule, index) {
-    const typeIcon = rule.type === 'domain' ? '🌐' : '📄';
     const typeName = rule.type === 'domain' ? 'Domain Rule' : 'Extension Rule';
+    const iconClass = rule.type === 'domain' ? 'icon-domain' : 'icon-extension';
     
     return `
       <div class="rule-item" data-index="${index}">
         <div class="item-header">
           <div class="item-type">
-            <span>${typeIcon}</span>
+            <span class="${iconClass}"></span>
             ${typeName}
           </div>
           <div class="item-actions">
@@ -268,7 +268,7 @@ class OptionsApp {
           <div class="form-group">
             <label class="form-label">Folder</label>
             <div class="folder-picker-btn" data-index="${index}">
-              <span>📁</span>
+              <span class="icon-folder-simple"></span>
               <span class="folder-path">${rule.folder}</span>
             </div>
           </div>
@@ -346,7 +346,7 @@ class OptionsApp {
       <div class="group-item" data-name="${name}">
         <div class="item-header">
           <div class="item-type">
-            <span>📁</span>
+            <span class="icon-folder-simple"></span>
             File Group
           </div>
           <div class="item-actions">
@@ -366,7 +366,7 @@ class OptionsApp {
           <div class="form-group">
             <label class="form-label">Folder</label>
             <div class="folder-picker-btn" data-name="${name}">
-              <span>📁</span>
+              <span class="icon-folder-simple"></span>
               <span class="folder-path">${group.folder}</span>
             </div>
           </div>
@@ -425,7 +425,7 @@ class OptionsApp {
     if (this.availableFolders.length === 0) {
       folderList.innerHTML = `
         <div class="empty-state">
-          <div class="empty-icon">📁</div>
+          <div class="empty-icon icon-folder-simple"></div>
           <h3>No folders found</h3>
           <p>Create a new folder to get started</p>
         </div>
@@ -442,9 +442,10 @@ class OptionsApp {
   }
 
   createFolderHTML(folder) {
+    const iconClass = folder.type === 'folder' ? 'icon-folder-simple' : 'icon-file';
     return `
       <div class="folder-item" data-path="${folder.path}">
-        <div class="folder-icon">${folder.type === 'folder' ? '📁' : '📄'}</div>
+        <div class="folder-icon ${iconClass}"></div>
         <div class="folder-info">
           <div class="folder-name">${folder.name}</div>
           <div class="folder-size">${folder.size || 'Folder'}</div>

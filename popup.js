@@ -191,7 +191,8 @@ class PopupApp {
 
     if (this.isExtensionEnabled) {
       // Extension is enabled - show pause option
-      toggleIcon.textContent = '⏸️';
+      toggleIcon.className = 'btn-icon icon-pause';
+      toggleIcon.textContent = '';
       toggleText.textContent = 'Pause';
       // classList.remove: Removes CSS class from element
       //   Inputs: Class name string
@@ -203,7 +204,8 @@ class PopupApp {
       statusIndicator.style.background = 'var(--success-color)';
     } else {
       // Extension is disabled - show resume option
-      toggleIcon.textContent = '▶️';
+      toggleIcon.className = 'btn-icon icon-play';
+      toggleIcon.textContent = '';
       toggleText.textContent = 'Resume';
       // classList.add: Adds CSS class to element
       toggleBtn.classList.add('disabled');
@@ -238,7 +240,7 @@ class PopupApp {
       //   Outputs: None (replaces element content)
       activityList.innerHTML = `
         <div class="empty-state">
-          <div class="empty-icon">📋</div>
+          <div class="empty-icon icon-list"></div>
           <p>No recent downloads</p>
         </div>
       `;
@@ -283,10 +285,10 @@ class PopupApp {
     // getTimeAgo: Converts timestamp to human-readable relative time
     const timeAgo = this.getTimeAgo(activity.timestamp);
     // Get appropriate icon for file type
-    // getFileIcon: Returns emoji icon based on file extension
+    // getFileIcon: Returns Unicode-safe icon based on file extension
     const icon = this.getFileIcon(activity.filename);
     // Show routing badge if file was routed by a rule
-    const routedBadge = activity.routed ? '<span class="routed-badge">📁</span>' : '';
+    const routedBadge = activity.routed ? '<span class="routed-badge icon-folder-simple"></span>' : '';
     
     // Generate HTML template string with activity data
     return `
@@ -314,22 +316,22 @@ class PopupApp {
    */
   getFileIcon(extension) {
     const iconMap = {
-      // Images
-      'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'bmp': '🖼️', 'svg': '🖼️',
-      // Videos
-      'mp4': '🎬', 'mov': '🎬', 'avi': '🎬', 'mkv': '🎬', 'wmv': '🎬',
-      // Audio
-      'mp3': '🎵', 'wav': '🎵', 'flac': '🎵', 'm4a': '🎵',
-      // Documents
-      'pdf': '📄', 'doc': '📄', 'docx': '📄', 'txt': '📄', 'rtf': '📄',
-      // 3D Files
-      'stl': '🎲', 'obj': '🎲', '3mf': '🎲', 'step': '🎲',
-      // Archives
-      'zip': '📦', 'rar': '📦', '7z': '📦', 'tar': '📦', 'gz': '📦',
-      // Software
-      'exe': '⚙️', 'msi': '⚙️', 'dmg': '⚙️', 'deb': '⚙️',
-      // Default
-      'default': '📁'
+      // Images - ASCII alternative
+      'jpg': '[IMG]', 'jpeg': '[IMG]', 'png': '[IMG]', 'gif': '[IMG]', 'bmp': '[IMG]', 'svg': '[IMG]',
+      // Videos - ASCII alternative
+      'mp4': '[VID]', 'mov': '[VID]', 'avi': '[VID]', 'mkv': '[VID]', 'wmv': '[VID]',
+      // Audio - ASCII alternative
+      'mp3': '[AUD]', 'wav': '[AUD]', 'flac': '[AUD]', 'm4a': '[AUD]',
+      // Documents - ASCII alternative
+      'pdf': '[DOC]', 'doc': '[DOC]', 'docx': '[DOC]', 'txt': '[DOC]', 'rtf': '[DOC]',
+      // 3D Files - ASCII alternative
+      'stl': '[3D]', 'obj': '[3D]', '3mf': '[3D]', 'step': '[3D]',
+      // Archives - ASCII alternative
+      'zip': '[ZIP]', 'rar': '[ZIP]', '7z': '[ZIP]', 'tar': '[ZIP]', 'gz': '[ZIP]',
+      // Software - ASCII alternative
+      'exe': '[APP]', 'msi': '[APP]', 'dmg': '[APP]', 'deb': '[APP]',
+      // Default - use folder
+      'default': '[F]'
     };
     
     return iconMap[extension.toLowerCase()] || iconMap.default;
@@ -506,24 +508,24 @@ class PopupApp {
     const extension = filename.split('.').pop().toLowerCase();
     const iconMap = {
       // Images
-      'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'bmp': '🖼️', 'svg': '🖼️',
+      'jpg': '[IMG]', 'jpeg': '[IMG]', 'png': '[IMG]', 'gif': '[IMG]', 'bmp': '[IMG]', 'svg': '[IMG]',
       // Videos
-      'mp4': '🎬', 'mov': '🎬', 'avi': '🎬', 'mkv': '🎬', 'wmv': '🎬', 'flv': '🎬',
+      'mp4': '[VID]', 'mov': '[VID]', 'avi': '[VID]', 'mkv': '[VID]', 'wmv': '[VID]', 'flv': '[VID]',
       // Audio
-      'mp3': '🎵', 'wav': '🎵', 'flac': '🎵', 'aac': '🎵',
+      'mp3': '[AUD]', 'wav': '[AUD]', 'flac': '[AUD]', 'aac': '[AUD]',
       // Documents
-      'pdf': '📄', 'doc': '📝', 'docx': '📝', 'txt': '📝', 'rtf': '📝',
+      'pdf': '[DOC]', 'doc': '[DOC]', 'docx': '[DOC]', 'txt': '[DOC]', 'rtf': '[DOC]',
       // Archives
-      'zip': '📦', 'rar': '📦', '7z': '📦', 'tar': '📦', 'gz': '📦',
+      'zip': '[ZIP]', 'rar': '[ZIP]', '7z': '[ZIP]', 'tar': '[ZIP]', 'gz': '[ZIP]',
       // Code
-      'js': '💻', 'html': '💻', 'css': '💻', 'py': '💻', 'cpp': '💻',
+      'js': '[JS]', 'html': '[HTM]', 'css': '[CSS]', 'py': '[PY]', 'cpp': '[CPP]',
       // 3D Files
-      'stl': '🧊', 'obj': '🧊', '3mf': '🧊',
+      'stl': '[3D]', 'obj': '[3D]', '3mf': '[3D]',
       // Software
-      'exe': '⚙️', 'msi': '⚙️', 'dmg': '⚙️', 'deb': '⚙️'
+      'exe': '[APP]', 'msi': '[APP]', 'dmg': '[APP]', 'deb': '[APP]'
     };
     
-    return iconMap[extension] || '📄';
+    return iconMap[extension] || '[DOC]';
   }
 }
 

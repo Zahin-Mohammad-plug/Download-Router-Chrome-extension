@@ -57,6 +57,99 @@ body {
 .app-icon {
   font-size: 32px;
   filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+  font-family: monospace;
+  font-weight: bold;
+}
+
+/* Icon System - Unicode-safe alternatives to emojis */
+/* Uses Unicode symbols that are widely supported across all devices and browsers */
+.icon-folder::before {
+  content: "[ ]";
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  display: inline-block;
+}
+
+.icon-settings::before {
+  content: "[O]";
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 0.9em;
+  display: inline-block;
+}
+
+.icon-pause::before {
+  content: "||";
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  letter-spacing: -3px;
+  display: inline-block;
+  font-size: 0.9em;
+}
+
+.icon-play::before {
+  content: ">|";
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 0.9em;
+  display: inline-block;
+  letter-spacing: -1px;
+}
+
+.icon-list::before {
+  content: "---";
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 1em;
+  letter-spacing: 2px;
+  display: inline-block;
+  line-height: 1;
+}
+
+.icon-file::before {
+  content: "[ ]";
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 0.9em;
+  display: inline-block;
+}
+
+.icon-folder-simple::before {
+  content: "[F]";
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 0.85em;
+  display: inline-block;
+}
+
+.btn-icon {
+  font-size: 16px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-icon {
+  font-size: 2em;
+  opacity: 0.5;
+  line-height: 1;
+  display: inline-block;
+}
+
+.routed-badge {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 0.9em;
+  opacity: 0.7;
+}
+
+.routed-badge.icon-folder-simple::before {
+  content: "[F]";
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 0.85em;
+  display: inline-block;
 }
 
 .app-title h1 {
@@ -180,8 +273,14 @@ body {
 }
 
 .activity-icon {
-  font-size: 16px;
+  font-size: 11px;
   opacity: 0.7;
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  display: inline-block;
+  min-width: 32px;
+  text-align: center;
+  line-height: 1;
 }
 
 .activity-info {
