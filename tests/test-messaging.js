@@ -37,8 +37,10 @@ if (!env.PATH.includes(homebrewPath)) {
 }
 
 // Spawn Electron directly (not npm start) so we can communicate via stdin/stdout
-const electronPath = path.join(__dirname, 'node_modules', '.bin', 'electron');
-const mainJsPath = path.join(__dirname, 'main.js');
+// Fix paths - test-messaging.js is in tests/, companion is in companion/
+const companionDir = path.join(__dirname, '..', 'companion');
+const electronPath = path.join(companionDir, 'node_modules', '.bin', 'electron');
+const mainJsPath = path.join(companionDir, 'main.js');
 
 // Check if Electron exists
 if (!require('fs').existsSync(electronPath)) {
@@ -47,8 +49,12 @@ if (!require('fs').existsSync(electronPath)) {
   process.exit(1);
 }
 
+log(`Electron path: ${electronPath}`, colors.cyan);
+log(`Main JS path: ${mainJsPath}`, colors.cyan);
+log(`Working directory: ${companionDir}`, colors.cyan);
+
 const companion = spawn(electronPath, [mainJsPath], {
-  cwd: __dirname,
+  cwd: companionDir,
   stdio: ['pipe', 'pipe', 'inherit'],
   env: env
 });

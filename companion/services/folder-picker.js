@@ -24,8 +24,12 @@
  *   - dialog.showOpenDialog: Electron API for native folder picker
  *   - process.platform: Node.js platform detection
  */
-async function pickFolder(startPath, dialog) {
+async function pickFolder(startPath, dialog, dialogWindow = null) {
+  console.error('pickFolder called with startPath:', startPath);
+  console.error('Dialog available:', !!dialog);
+  
   if (!dialog) {
+    console.error('ERROR: Dialog API not available');
     return {
       success: false,
       error: 'Dialog API not available',
@@ -34,14 +38,33 @@ async function pickFolder(startPath, dialog) {
   }
 
   try {
+    console.error('Opening folder picker dialog...');
+    
+    // Ensure app is active and window is ready for dialog
+    if (dialogWindow) {
+      // Make window visible briefly to allow dialog (required on macOS)
+      dialogWindow.show();
+    }
+    
     // dialog.showOpenDialog: Opens native folder picker dialog
-    //   Inputs: Options object with properties, callback function (optional)
+    //   Inputs: BrowserWindow (optional), Options object with properties
     //   Outputs: Promise resolving to object with canceled and filePaths properties
-    const result = await dialog.showOpenDialog({
+    const dialogOptions = {
       properties: ['openDirectory'], // Only allow folder selection
       defaultPath: startPath || undefined, // Start at provided path if given
       title: 'Select Download Folder'
-    });
+    };
+    
+    // Pass dialogWindow to showOpenDialog to ensure proper parent window
+    const result = dialogWindow 
+      ? await dialog.showOpenDialog(dialogWindow, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
+    // Hide window again after dialog
+    if (dialogWindow) {
+      dialogWindow.hide();
+    }
+    
+    console.error('Dialog result:', JSON.stringify(result));
 
     // Check if user cancelled dialog
     if (result.canceled) {

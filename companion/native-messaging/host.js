@@ -142,7 +142,7 @@ class NativeMessagingHost {
           this.sendResponse(response);
           return;
         }
-      } catch (error) {
+      } catch (error)
         // Send error response if handler throws
         this.sendResponse({
           success: false,

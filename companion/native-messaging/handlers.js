@@ -31,13 +31,18 @@ const fileMover = require('../services/file-mover');
  */
 async function handleMessage(message, context) {
   const { type } = message;
+  console.error('handleMessage called with type:', type);
+  console.error('Context dialog available:', !!context.dialog);
 
   switch (type) {
     case 'getVersion':
       return handleGetVersion();
     
     case 'pickFolder':
-      return await folderPicker.pickFolder(message.startPath || null, context.dialog);
+      console.error('Handling pickFolder message, startPath:', message.startPath);
+      const result = await folderPicker.pickFolder(message.startPath || null, context.dialog, context.dialogWindow);
+      console.error('pickFolder result:', JSON.stringify(result));
+      return result;
     
     case 'verifyFolder':
       return folderOperations.verifyFolder(message.path);

@@ -13,7 +13,7 @@
  * - Manage post-download file routing
  */
 
-const { app, dialog } = require('electron');
+const { app, dialog, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const nativeMessagingHost = require('./native-messaging/host');
@@ -51,20 +51,51 @@ logToFile(`Log file: ${LOG_FILE}`);
 
 // Electron app runs in background without visible window
 // Native messaging communication happens via stdin/stdout
+// Create a hidden window for dialogs (required on macOS)
+let dialogWindow = null;
+
 app.whenReady().then(() => {
   logToFile('Electron app ready');
+  
+  // Create hidden window for dialogs (required for dialog.showOpenDialog on macOS)
+  dialogWindow = new BrowserWindow({
+    show: false,
+    skipTaskbar: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+  dialogWindow.setVisibleOnAllWorkspaces(false, { visibleOnFullScreen: false });
+  
   // Initialize native messaging host
   nativeMessagingHost.init();
   logToFile('Native messaging host initialized and ready');
   console.log('Native messaging host initialized and ready');
   
   // Register message handlers
-  nativeMessagingHost.onMessage((message) => {
-    return handlers.handleMessage(message, { dialog });
+  nativeMessagingHost.onMessage(async (message) => {
+    logToFile(`Received message type: ${message.type}`);
+    try {
+      // Ensure dialog window exists and app is focused for dialogs
+      if (message.type === 'pickFolder' && dialogWindow) {
+        dialogWindow.focus();
+      }
+      const result = await handlers.handleMessage(message, { dialog, dialogWindow });
+      logToFile(`Message handler result: ${JSON.stringify(result)}`);
+      return result;
+    } catch (error) {
+      logToFile(`Error handling message: ${error.message}\n${error.stack}`);
+      throw error;
+    }
   });
   
   // Handle app termination gracefully
   app.on('before-quit', () => {
+    if (dialogWindow) {
+      dialogWindow.destroy();
+      dialogWindow = null;
+    }
     nativeMessagingHost.cleanup();
   });
   
