@@ -39,7 +39,7 @@ Automatically organize your downloads by routing them to specific folders based 
 1. Download or clone this repository
 2. Open Chrome and navigate to `chrome://extensions/`
 3. Enable "Developer mode" in the top right
-4. Click "Load unpacked" and select the extension folder
+4. Click "Load unpacked" and select the `extension/` folder
 5. The Download Router icon will appear in your extension toolbar
 
 ### Companion App Installation (Recommended)
@@ -140,23 +140,24 @@ The extension includes these predefined groups:
 ### File Structure
 ```
 📁 Download-Router-Chrome-extension/
-├── 📄 manifest.json          # Extension configuration
-├── 📄 background.js           # Service worker & routing logic
-├── 📄 content.js             # Shadow DOM overlay system
-├── 📄 popup.html/js/css      # Extension popup interface
-├── 📄 options.html/js/css    # Settings & configuration
-├── 📄 overlay.css            # Overlay styles
-├── 📁 lib/                   # Shared libraries
-│   └── native-messaging-client.js
-├── 📁 icons/                 # Extension icons
-├── 📁 companion/             # Companion app (Electron)
-├── 📁 tests/                 # Test scripts
-├── 📁 docs/                  # Documentation
+├── 📁 extension/              # Chrome extension (load this folder in Chrome)
+│   ├── 📄 manifest.json       # Extension configuration
+│   ├── 📄 background.js       # Service worker & routing logic
+│   ├── 📄 content.js          # Shadow DOM overlay system
+│   ├── 📄 popup.html/js/css   # Extension popup interface
+│   ├── 📄 options.html/js/css # Settings & configuration
+│   ├── 📄 overlay.css         # Overlay styles
+│   ├── 📁 lib/                # Shared libraries
+│   │   └── native-messaging-client.js
+│   └── 📁 icons/              # Extension icons
+├── 📁 companion/              # Companion app (Electron)
+├── 📁 tests/                  # Test scripts
+├── 📁 docs/                   # Documentation
 │   ├── ARCHITECTURE.md
 │   ├── COMPANION_INSTALL.md
 │   ├── DEPLOYMENT.md
 │   └── TESTING.md
-└── 📄 README.md              # This file
+└── 📄 README.md               # This file
 ```
 
 See [Architecture Documentation](docs/ARCHITECTURE.md) for detailed structure information.
@@ -180,10 +181,12 @@ We welcome contributions! Here's how to get started:
 
 ### Development Setup
 1. Clone the repository
-2. Load the extension in Chrome (Developer mode)
-3. Make changes to the code
+2. Load the `extension/` folder in Chrome (Developer mode → Load unpacked)
+3. Make changes to the code in `extension/`
 4. Reload the extension to test changes
 5. Use browser dev tools for debugging
+
+**Important:** When loading the extension, select the `extension/` directory, not the repository root.
 
 For detailed development and deployment instructions, see:
 - [Deployment Guide](docs/DEPLOYMENT.md) - Setting up development and Web Store builds

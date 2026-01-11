@@ -5,18 +5,18 @@ Use this checklist before submitting the extension to Chrome Web Store.
 ## Pre-Submission Verification
 
 ### Manifest Validation
-- [x] `manifest.json` is valid JSON
+- [x] `extension/manifest.json` is valid JSON
 - [x] `manifest_version: 3` (required)
 - [x] All required fields present (name, version, description)
 - [x] No references to non-existent files (overlay.html removed)
 - [x] All referenced files exist
 
 ### File Structure
-- [x] All icons present (16, 32, 48, 128)
-- [x] All HTML files present (popup.html, options.html)
-- [x] All JavaScript files present (background.js, content.js, popup.js, options.js)
-- [x] All CSS files present (popup.css, options.css, overlay.css)
-- [x] All library files present (lib/native-messaging-client.js)
+- [x] All icons present in `extension/icons/` (16, 32, 48, 128)
+- [x] All HTML files present in `extension/` (popup.html, options.html)
+- [x] All JavaScript files present in `extension/` (background.js, content.js, popup.js, options.js)
+- [x] All CSS files present in `extension/` (popup.css, options.css, overlay.css)
+- [x] All library files present in `extension/lib/` (native-messaging-client.js)
 
 ### Permissions Justification
 - [x] `downloads` - Required for download routing
@@ -65,7 +65,7 @@ Use this checklist before submitting the extension to Chrome Web Store.
 1. Open Chrome and navigate to `chrome://extensions/`
 2. Enable "Developer mode"
 3. Click "Pack extension"
-4. Select extension root directory
+4. Select the `extension/` directory
 5. Leave "Private key" empty (first time only)
 6. Click "Pack Extension"
 7. Test the packed `.crx` file before submission

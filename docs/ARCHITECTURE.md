@@ -1,8 +1,19 @@
 # Download Router - Directory Structure
 
 ## Root Directory
-- Extension files (manifest.json, background.js, content.js, etc.)
-- Documentation (README.md, docs/)
+- Repository root with main README.md
+- Documentation in `docs/` directory
+
+## extension/
+- **manifest.json** - Extension configuration
+- **background.js** - Service worker & routing logic
+- **content.js** - Shadow DOM overlay system
+- **popup.html/js/css** - Extension popup interface
+- **options.html/js/css** - Settings & configuration
+- **overlay.css** - Overlay styles
+- **lib/** - Shared libraries
+  - native-messaging-client.js
+- **icons/** - Extension icons (16, 32, 48, 128)
 
 ## companion/
 - **main.js** - Electron app entry point
@@ -28,9 +39,9 @@
 - Extension and companion app logs
 - README.md - Log documentation
 
-## lib/
-- Shared JavaScript modules
-  - native-messaging-client.js - Chrome extension native messaging client
-
-## icons/
-- Extension icons
+## docs/
+- ARCHITECTURE.md - This file
+- COMPANION_INSTALL.md - Companion app installation guide
+- DEPLOYMENT.md - Deployment procedures
+- TESTING.md - Testing guide
+- WEBSTORE_CHECKLIST.md - Web Store submission checklist

@@ -32,7 +32,7 @@ Key differences:
 
 4. Click "Load unpacked"
 
-5. Select the repository root directory (`Download-Router-Chrome-extension`)
+5. Select the `extension/` directory inside the repository
 
 6. The extension will load and Chrome will assign a temporary extension ID
 
@@ -107,7 +107,7 @@ You can pack the extension locally to test, but the Web Store uses its own packa
 **Local Packing (for testing only):**
 1. Go to `chrome://extensions/`
 2. Click "Pack extension"
-3. Select extension root directory
+3. Select the `extension/` directory
 4. Leave private key empty (for first-time packing)
 5. Click "Pack Extension"
 6. Test the packed extension locally
@@ -115,7 +115,7 @@ You can pack the extension locally to test, but the Web Store uses its own packa
 **Note:** Packed extensions from local packing won't work for Web Store submission. You must upload the source code to Web Store.
 
 #### 3. Manifest Requirements
-Verify `manifest.json` meets Web Store requirements:
+Verify `extension/manifest.json` meets Web Store requirements:
 
 - ✅ `manifest_version: 3` (required)
 - ✅ All permissions justified
@@ -298,7 +298,7 @@ reg query "HKCU\Software\Google\Chrome\NativeMessagingHosts\com.downloadrouter.h
 ## Troubleshooting Deployment Issues
 
 ### Extension Won't Load
-- Check manifest.json syntax
+- Check extension/manifest.json syntax
 - Verify all referenced files exist
 - Check Chrome version (Manifest V3 requires Chrome 88+)
 - Review service worker console for errors

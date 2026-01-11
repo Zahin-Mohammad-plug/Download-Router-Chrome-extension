@@ -129,7 +129,7 @@ bash run-companion.sh
 1. Open `chrome://extensions/`
 2. Enable "Developer mode"
 3. Click "Load unpacked"
-4. Select the extension root directory
+4. Select the `extension/` directory
 
 **Verify no errors:**
 - Check service worker console: Click "Inspect views: service worker"
@@ -198,7 +198,7 @@ bash run-companion.sh
 ### Chrome Web Store Readiness
 
 #### 1. Manifest Validation
-**Verify manifest.json is valid:**
+**Verify extension/manifest.json is valid:**
 - All required fields present
 - Version number is valid
 - All permissions are justified
@@ -215,8 +215,8 @@ bash run-companion.sh
 **Verify all referenced files exist:**
 ```bash
 # Check all files referenced in manifest
-ls -la background.js content.js popup.html popup.js options.html options.js overlay.css
-ls -la icons/icon*.png
+ls -la extension/background.js extension/content.js extension/popup.html extension/popup.js extension/options.html extension/options.js extension/overlay.css
+ls -la extension/icons/icon*.png
 ```
 
 #### 2. Pack Extension
@@ -224,7 +224,7 @@ ls -la icons/icon*.png
 # In Chrome:
 # 1. Go to chrome://extensions/
 # 2. Click "Pack extension"
-# 3. Select extension root directory
+# 3. Select the extension/ directory
 # 4. Pack the extension
 ```
 
@@ -315,7 +315,7 @@ ls -la icons/icon*.png
 
 #### Extension Not Loading
 
-1. Check for syntax errors in manifest.json
+1. Check for syntax errors in extension/manifest.json
 2. Verify all referenced files exist
 3. Check service worker console for errors
 4. Verify Chrome version supports Manifest V3
@@ -367,7 +367,7 @@ ls -la icons/icon*.png
 
 ## File Locations
 
-- **Extension**: `/Users/Shared/Github-repo/` (root)
+- **Extension**: `/Users/Shared/Github-repo/extension/`
 - **Companion App**: `/Users/Shared/Github-repo/companion/`
 - **Logs**: `/Users/Shared/Github-repo/companion/logs/companion.log`
 - **Tests**: `/Users/Shared/Github-repo/tests/`
@@ -399,6 +399,20 @@ node ../tests/test-messaging.js
 See `tests/README.md` for more details on test scripts.
 
 ---
+
+## Log Files
+
+### Companion App Logs
+- `companion/logs/companion.log` - Companion app runtime logs
+
+### Extension Logs
+Check Chrome DevTools console for extension errors:
+- **Service Worker**: `chrome://extensions` → Inspect views: service worker
+- **Options Page**: Right-click extension → Options → DevTools
+- **Content Scripts**: Chrome DevTools on any webpage
+
+### Native Messaging Logs
+Native messaging host initialization and errors are logged to `companion/logs/companion.log`
 
 ## Additional Resources
 
