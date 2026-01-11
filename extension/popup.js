@@ -191,8 +191,9 @@ class PopupApp {
 
     if (this.isExtensionEnabled) {
       // Extension is enabled - show pause option
-      toggleIcon.className = 'btn-icon icon-pause';
-      toggleIcon.textContent = '';
+      if (typeof getIcon !== 'undefined') {
+        toggleIcon.innerHTML = getIcon('pause', 16);
+      }
       toggleText.textContent = 'Pause';
       // classList.remove: Removes CSS class from element
       //   Inputs: Class name string
@@ -204,8 +205,9 @@ class PopupApp {
       statusIndicator.style.background = 'var(--success-color)';
     } else {
       // Extension is disabled - show resume option
-      toggleIcon.className = 'btn-icon icon-play';
-      toggleIcon.textContent = '';
+      if (typeof getIcon !== 'undefined') {
+        toggleIcon.innerHTML = getIcon('play', 16);
+      }
       toggleText.textContent = 'Resume';
       // classList.add: Adds CSS class to element
       toggleBtn.classList.add('disabled');
@@ -238,10 +240,12 @@ class PopupApp {
       // innerHTML: Sets element's HTML content
       //   Inputs: HTML string
       //   Outputs: None (replaces element content)
+      const emptyIconHTML = typeof getIcon !== 'undefined' ? getIcon('list', 48) : '';
       activityList.innerHTML = `
         <div class="empty-state">
-          <div class="empty-icon icon-list"></div>
+          <div class="empty-icon">${emptyIconHTML}</div>
           <p>No recent downloads</p>
+          <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Start downloading files to see them routed here</p>
         </div>
       `;
       return;
@@ -285,10 +289,14 @@ class PopupApp {
     // getTimeAgo: Converts timestamp to human-readable relative time
     const timeAgo = this.getTimeAgo(activity.timestamp);
     // Get appropriate icon for file type
-    // getFileIcon: Returns Unicode-safe icon based on file extension
+    // getFileIcon: Returns Lucide icon markup based on file extension
     const icon = this.getFileIcon(activity.filename);
+    // Format folder path for display
+    const formattedPath = formatPathDisplay(activity.folder);
     // Show routing badge if file was routed by a rule
-    const routedBadge = activity.routed ? '<span class="routed-badge icon-folder-simple"></span>' : '';
+    const routedBadge = activity.routed && typeof getIcon !== 'undefined' 
+      ? `<span class="routed-badge">${getIcon('folder', 14)}</span>` 
+      : '';
     
     // Generate HTML template string with activity data
     return `
@@ -296,46 +304,13 @@ class PopupApp {
         <div class="activity-icon">${icon}</div>
         <div class="activity-info">
           <div class="activity-filename" title="${activity.filename}">${activity.filename} ${routedBadge}</div>
-          <div class="activity-path" title="${activity.folder}">${activity.folder}</div>
+          <div class="activity-path" title="${formattedPath}">Saved to ${formattedPath}</div>
         </div>
         <div class="activity-time">${timeAgo}</div>
       </div>
     `;
   }
 
-  /**
-   * Returns emoji icon for a file extension.
-   * Maps common file extensions to appropriate icons.
-   * 
-   * Inputs:
-   *   - extension: String file extension (with or without dot, e.g. 'pdf' or '.pdf')
-   * 
-   * Outputs: String emoji icon or default icon
-   * 
-   * Note: This is a helper method. The actual implementation uses filename.
-   */
-  getFileIcon(extension) {
-    const iconMap = {
-      // Images - ASCII alternative
-      'jpg': '[IMG]', 'jpeg': '[IMG]', 'png': '[IMG]', 'gif': '[IMG]', 'bmp': '[IMG]', 'svg': '[IMG]',
-      // Videos - ASCII alternative
-      'mp4': '[VID]', 'mov': '[VID]', 'avi': '[VID]', 'mkv': '[VID]', 'wmv': '[VID]',
-      // Audio - ASCII alternative
-      'mp3': '[AUD]', 'wav': '[AUD]', 'flac': '[AUD]', 'm4a': '[AUD]',
-      // Documents - ASCII alternative
-      'pdf': '[DOC]', 'doc': '[DOC]', 'docx': '[DOC]', 'txt': '[DOC]', 'rtf': '[DOC]',
-      // 3D Files - ASCII alternative
-      'stl': '[3D]', 'obj': '[3D]', '3mf': '[3D]', 'step': '[3D]',
-      // Archives - ASCII alternative
-      'zip': '[ZIP]', 'rar': '[ZIP]', '7z': '[ZIP]', 'tar': '[ZIP]', 'gz': '[ZIP]',
-      // Software - ASCII alternative
-      'exe': '[APP]', 'msi': '[APP]', 'dmg': '[APP]', 'deb': '[APP]',
-      // Default - use folder
-      'default': '[F]'
-    };
-    
-    return iconMap[extension.toLowerCase()] || iconMap.default;
-  }
 
   /**
    * Converts timestamp to human-readable relative time string.
@@ -486,13 +461,13 @@ class PopupApp {
   }
 
   /**
-   * Returns emoji icon based on file extension extracted from filename.
+   * Returns Lucide icon markup based on file extension extracted from filename.
    * Maps common file types to appropriate visual icons.
    * 
    * Inputs:
    *   - filename: String filename (may include extension)
    * 
-   * Outputs: String emoji icon character
+   * Outputs: String HTML with Lucide icon markup
    */
   getFileIcon(filename) {
     // Extract file extension from filename
@@ -508,24 +483,28 @@ class PopupApp {
     const extension = filename.split('.').pop().toLowerCase();
     const iconMap = {
       // Images
-      'jpg': '[IMG]', 'jpeg': '[IMG]', 'png': '[IMG]', 'gif': '[IMG]', 'bmp': '[IMG]', 'svg': '[IMG]',
+      'jpg': 'image', 'jpeg': 'image', 'png': 'image', 'gif': 'image', 'bmp': 'image', 'svg': 'image', 'webp': 'image',
       // Videos
-      'mp4': '[VID]', 'mov': '[VID]', 'avi': '[VID]', 'mkv': '[VID]', 'wmv': '[VID]', 'flv': '[VID]',
+      'mp4': 'video', 'mov': 'video', 'avi': 'video', 'mkv': 'video', 'wmv': 'video', 'flv': 'video', 'webm': 'video',
       // Audio
-      'mp3': '[AUD]', 'wav': '[AUD]', 'flac': '[AUD]', 'aac': '[AUD]',
+      'mp3': 'music', 'wav': 'music', 'flac': 'music', 'aac': 'music', 'm4a': 'music',
       // Documents
-      'pdf': '[DOC]', 'doc': '[DOC]', 'docx': '[DOC]', 'txt': '[DOC]', 'rtf': '[DOC]',
+      'pdf': 'file-text', 'doc': 'file-text', 'docx': 'file-text', 'txt': 'file-text', 'rtf': 'file-text', 'odt': 'file-text',
       // Archives
-      'zip': '[ZIP]', 'rar': '[ZIP]', '7z': '[ZIP]', 'tar': '[ZIP]', 'gz': '[ZIP]',
+      'zip': 'archive', 'rar': 'archive', '7z': 'archive', 'tar': 'archive', 'gz': 'archive',
       // Code
-      'js': '[JS]', 'html': '[HTM]', 'css': '[CSS]', 'py': '[PY]', 'cpp': '[CPP]',
+      'js': 'file-code', 'html': 'file-code', 'css': 'file-code', 'py': 'file-code', 'cpp': 'file-code', 'java': 'file-code',
       // 3D Files
-      'stl': '[3D]', 'obj': '[3D]', '3mf': '[3D]',
+      'stl': 'box', 'obj': 'box', '3mf': 'box', 'step': 'box', 'stp': 'box', 'ply': 'box',
       // Software
-      'exe': '[APP]', 'msi': '[APP]', 'dmg': '[APP]', 'deb': '[APP]'
+      'exe': 'package', 'msi': 'package', 'dmg': 'package', 'deb': 'package', 'rpm': 'package', 'pkg': 'package'
     };
     
-    return iconMap[extension] || '[DOC]';
+    const iconName = iconMap[extension] || 'file';
+    if (typeof getIcon !== 'undefined') {
+      return getIcon(iconName, 16);
+    }
+    return '';
   }
 }
 
@@ -553,6 +532,32 @@ style.textContent = `
 document.head.appendChild(style);
 
 /**
+ * Helper function to format path display in breadcrumb format.
+ * Converts relative paths like "3DPrinting/file.stl" to "Downloads > 3DPrinting"
+ * 
+ * Inputs:
+ *   - relativePath: String relative path
+ * 
+ * Outputs: String formatted breadcrumb path
+ */
+function formatPathDisplay(relativePath) {
+  if (!relativePath || relativePath === '') return 'Downloads';
+  const parts = relativePath.split('/');
+  const filename = parts[parts.length - 1];
+  // If it's just a filename (no folder), return Downloads
+  if (parts.length === 1) {
+    // Check if it contains a dot (likely a file extension)
+    if (filename.includes('.')) {
+      return 'Downloads';
+    }
+    return `Downloads > ${parts[0]}`;
+  }
+  // Show: Downloads > Folder > Subfolder (without filename)
+  const folders = parts.slice(0, -1);
+  return 'Downloads > ' + folders.join(' > ');
+}
+
+/**
  * Initialize popup app when DOM content is fully loaded.
  * Creates PopupApp instance to manage popup interface.
  */
@@ -560,6 +565,41 @@ document.head.appendChild(style);
 //   Inputs: Event type ('DOMContentLoaded'), callback function
 //   Outputs: None (sets up listener)
 document.addEventListener('DOMContentLoaded', () => {
-  // Create PopupApp instance to initialize popup interface
-  new PopupApp();
+  // Initialize icons
+  if (typeof getIcon !== 'undefined') {
+    // Set app icon
+    const appIcon = document.getElementById('app-icon');
+    if (appIcon) appIcon.innerHTML = getIcon('folder', 32);
+    
+    // Set settings icon
+    const settingsIcon = document.getElementById('settings-icon');
+    if (settingsIcon) settingsIcon.innerHTML = getIcon('settings', 16);
+    
+    // Set welcome icon
+    const welcomeIcon = document.getElementById('welcome-icon');
+    if (welcomeIcon) welcomeIcon.innerHTML = getIcon('folder', 64);
+    
+    // Set check icons in welcome tips
+    document.querySelectorAll('.check-icon').forEach(icon => {
+      icon.innerHTML = getIcon('check', 18);
+    });
+  }
+  
+  // Check for welcome experience
+  const hasSeenWelcome = localStorage.getItem('downloadRouterHasSeenWelcome');
+  const popupApp = new PopupApp();
+  
+  if (!hasSeenWelcome) {
+    // Show welcome overlay
+    const welcomeOverlay = document.getElementById('welcome-overlay');
+    if (welcomeOverlay) {
+      welcomeOverlay.classList.add('active');
+      
+      // Dismiss welcome overlay
+      document.getElementById('welcome-dismiss').addEventListener('click', () => {
+        welcomeOverlay.classList.remove('active');
+        localStorage.setItem('downloadRouterHasSeenWelcome', 'true');
+      });
+    }
+  }
 });

@@ -27,6 +27,27 @@
  */
 
 /**
+ * Helper function to format path display in breadcrumb format.
+ * Converts relative paths like "3DPrinting/file.stl" to "Downloads > 3DPrinting"
+ */
+function formatPathDisplay(relativePath) {
+  if (!relativePath || relativePath === '') return 'Downloads';
+  const parts = relativePath.split('/');
+  const filename = parts[parts.length - 1];
+  // If it's just a filename (no folder), return Downloads
+  if (parts.length === 1) {
+    // Check if it contains a dot (likely a file extension)
+    if (filename.includes('.')) {
+      return 'Downloads';
+    }
+    return `Downloads > ${parts[0]}`;
+  }
+  // Show: Downloads > Folder > Subfolder (without filename)
+  const folders = parts.slice(0, -1);
+  return 'Downloads > ' + folders.join(' > ');
+}
+
+/**
  * Extracts just the filename from a potentially path-containing string.
  */
 function extractFilename(path) {
@@ -203,12 +224,12 @@ class DownloadOverlay {
   getCSS() {
     return `
       :host {
-        --primary: #2563eb;
-        --primary-hover: #1d4ed8;
-        --success: #059669;
-        --success-hover: #047857;
-        --warning: #d97706;
-        --error: #dc2626;
+        --primary: #6366f1;
+        --primary-hover: #4f46e5;
+        --success: #10b981;
+        --success-hover: #059669;
+        --warning: #f59e0b;
+        --error: #ef4444;
         --background: #ffffff;
         --surface: #f8fafc;
         --border: #e2e8f0;
@@ -235,8 +256,8 @@ class DownloadOverlay {
         font-size: 14px;
         z-index: 2147483647;
         animation: slideIn 0.3s ease-out;
-        min-width: 360px;
-        max-width: 420px;
+        min-width: 380px;
+        max-width: 440px;
       }
 
       @keyframes slideIn {
@@ -271,11 +292,38 @@ class DownloadOverlay {
         margin-bottom: 8px;
       }
 
+      .overlay-filename {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text);
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .overlay-filename svg {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+        color: var(--text);
+      }
+
       .overlay-path {
         font-size: 13px;
         color: var(--text-muted);
         word-break: break-all;
         line-height: 1.4;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .overlay-path svg {
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+        color: var(--text-muted);
       }
 
       .overlay-actions {
@@ -302,29 +350,48 @@ class DownloadOverlay {
         gap: 6px;
       }
 
+      .action-btn svg {
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+        color: var(--text);
+      }
+
       .action-btn:hover {
         background: var(--border);
         transform: translateY(-1px);
+      }
+      
+      .action-btn:hover svg {
+        color: var(--primary);
       }
 
       .countdown-section {
         display: flex;
         align-items: center;
         gap: 12px;
+        flex: 1;
+      }
+
+      .countdown-info {
+        font-size: 11px;
+        color: var(--text-muted);
+        white-space: nowrap;
       }
 
       .countdown-bar {
-        width: 80px;
-        height: 4px;
+        width: 100px;
+        height: 6px;
         background: var(--border);
-        border-radius: 2px;
+        border-radius: 3px;
         overflow: hidden;
+        flex-shrink: 0;
       }
 
       .countdown-fill {
         height: 100%;
         background: linear-gradient(90deg, var(--success), var(--warning));
-        border-radius: 2px;
+        border-radius: 3px;
         transition: width 0.05s linear;
         width: 0%;
       }
@@ -339,12 +406,12 @@ class DownloadOverlay {
         font-size: 13px;
         font-weight: 600;
         transition: all 0.2s ease;
-        box-shadow: 0 2px 4px rgba(5, 150, 105, 0.2);
+        box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
       }
 
       .save-btn:hover {
         transform: translateY(-1px);
-        box-shadow: 0 4px 8px rgba(5, 150, 105, 0.3);
+        box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3);
       }
 
       .rules-editor {
@@ -418,6 +485,19 @@ class DownloadOverlay {
         border-radius: var(--radius-sm);
         font-size: 13px;
         min-width: 120px;
+        background: var(--background);
+        color: var(--text);
+      }
+      
+      .folder-input:focus {
+        outline: none;
+        border-color: var(--primary);
+        background: var(--background);
+        color: var(--text);
+      }
+      
+      .folder-input::placeholder {
+        color: var(--text-muted);
       }
 
       .browse-btn {
@@ -442,6 +522,14 @@ class DownloadOverlay {
         border-radius: var(--radius-sm);
         font-size: 13px;
         background: var(--background);
+        color: var(--text);
+      }
+      
+      .target-select:focus {
+        outline: none;
+        border-color: var(--primary);
+        background: var(--background);
+        color: var(--text);
       }
 
       .priority-hint {
@@ -525,8 +613,45 @@ class DownloadOverlay {
           --text: #f1f5f9;
           --text-muted: #94a3b8;
         }
+        
+        .folder-input,
+        .target-select {
+          background: var(--background) !important;
+          color: var(--text) !important;
+        }
+        
+        .folder-input:focus,
+        .target-select:focus {
+          background: var(--background) !important;
+          color: var(--text) !important;
+        }
+        
+        .folder-input::placeholder {
+          color: var(--text-muted);
+        }
       }
     `;
+  }
+
+  /**
+   * Returns SVG icon markup for common icons used in overlay.
+   * Uses inline SVG for shadow DOM compatibility.
+   */
+  getSVGIcon(iconName) {
+    const icons = {
+      folder: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path></svg>',
+      pencil: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>',
+      image: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect><circle cx="9" cy="9" r="2"></circle><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path></svg>',
+      video: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"></path><rect x="2" y="6" width="14" height="12" rx="2"></rect></svg>',
+      music: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>',
+      'file-text': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path></svg>',
+      archive: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path><path d="M10 12h4"></path></svg>',
+      box: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>',
+      package: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>',
+      file: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path></svg>',
+      check: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'
+    };
+    return icons[iconName] || icons.file;
   }
 
   /**
@@ -581,21 +706,49 @@ class DownloadOverlay {
    *   - this.currentDownloadInfo: Download information set by showDownloadOverlay
    */
   createOverlayContent() {
+    // Get file icon based on extension
+    const fileExt = this.currentDownloadInfo.extension || 'file';
+    const iconMap = {
+      'jpg': 'image', 'jpeg': 'image', 'png': 'image', 'gif': 'image', 'bmp': 'image', 'svg': 'image', 'webp': 'image',
+      'mp4': 'video', 'mov': 'video', 'avi': 'video', 'mkv': 'video', 'wmv': 'video', 'flv': 'video', 'webm': 'video',
+      'mp3': 'music', 'wav': 'music', 'flac': 'music', 'aac': 'music', 'm4a': 'music',
+      'pdf': 'file-text', 'doc': 'file-text', 'docx': 'file-text', 'txt': 'file-text', 'rtf': 'file-text',
+      'zip': 'archive', 'rar': 'archive', '7z': 'archive', 'tar': 'archive', 'gz': 'archive',
+      'stl': 'box', 'obj': 'box', '3mf': 'box', 'step': 'box', 'stp': 'box', 'ply': 'box',
+      'exe': 'package', 'msi': 'package', 'dmg': 'package', 'deb': 'package'
+    };
+    const fileIcon = iconMap[fileExt.toLowerCase()] || 'file';
+    const formattedPath = formatPathDisplay(this.currentDownloadInfo.resolvedPath);
+
     const overlayHTML = `
       <div class="overlay-container">
         <div class="overlay-content">
           <div class="overlay-header">
-            <div class="overlay-title">Download Routing</div>
-            <div class="overlay-path">${this.currentDownloadInfo.resolvedPath}</div>
+            <div class="overlay-title">Saving your download...</div>
+            <div class="overlay-filename">
+              ${this.getSVGIcon(fileIcon)}
+              <span>${this.currentDownloadInfo.filename}</span>
+            </div>
+            <div class="overlay-path">
+              ${this.getSVGIcon('folder')}
+              <span>Saving to: ${formattedPath}</span>
+            </div>
           </div>
           
           <div class="overlay-actions">
-            <button class="action-btn edit-rules-btn">✏️ Edit Rules</button>
-            <button class="action-btn change-location-btn">📁 Change Location</button>
+            <button class="action-btn edit-rules-btn">
+              ${this.getSVGIcon('pencil')}
+              <span>Edit Rules</span>
+            </button>
+            <button class="action-btn change-location-btn">
+              ${this.getSVGIcon('folder')}
+              <span>Change Location</span>
+            </button>
             
             <div class="countdown-section">
+              <div class="countdown-info" id="countdown-text">Auto-saving in 5s...</div>
               <div class="countdown-bar">
-                <div class="countdown-fill"></div>
+                <div class="countdown-fill" id="countdown-fill"></div>
               </div>
               <button class="save-btn">Save Now</button>
             </div>
@@ -1032,8 +1185,9 @@ class DownloadOverlay {
    *   - saveDownload: Method in this class to proceed with download
    */
   startCountdown() {
-    // Get reference to countdown progress bar element
-    const countdownFill = this.shadowRoot.querySelector('.countdown-fill');
+    // Get reference to countdown progress bar and text elements
+    const countdownFill = this.shadowRoot.querySelector('#countdown-fill');
+    const countdownText = this.shadowRoot.querySelector('#countdown-text');
     // Reset countdown time to 5 seconds (5000 milliseconds)
     this.timeLeft = 5000; // Reset to 5 seconds
     // Update interval: update progress bar every 50ms for smooth animation
@@ -1047,11 +1201,25 @@ class DownloadOverlay {
       this.timeLeft -= interval;
       // Calculate percentage complete for progress bar (0-100%)
       const percentage = ((5000 - this.timeLeft) / 5000) * 100;
+      // Calculate seconds remaining
+      const secondsLeft = Math.ceil(this.timeLeft / 1000);
+      
       // Update progress bar width
       // style.width: Sets element's width CSS property
       //   Inputs: Width string with unit (percentage)
       //   Outputs: None (modifies element style)
-      countdownFill.style.width = percentage + '%';
+      if (countdownFill) {
+        countdownFill.style.width = percentage + '%';
+      }
+      
+      // Update countdown text
+      if (countdownText) {
+        if (secondsLeft > 0) {
+          countdownText.textContent = `Auto-saving in ${secondsLeft}s...`;
+        } else {
+          countdownText.textContent = 'Saving now...';
+        }
+      }
       
       // Auto-save when countdown reaches zero
       if (this.timeLeft <= 0) {
@@ -1114,16 +1282,37 @@ class DownloadOverlay {
    *   - cleanup: Method in this class to remove overlay from DOM
    */
   saveDownload() {
-    // chrome.runtime.sendMessage: Sends message to background script
-    //   Inputs: Message object with type and download info
-    //   Outputs: None (fire-and-forget message)
-    chrome.runtime.sendMessage({
-      type: 'proceedWithDownload',
-      downloadInfo: this.currentDownloadInfo
-    });
+    // Show brief success message before closing
+    const overlayHeader = this.shadowRoot.querySelector('.overlay-header');
+    if (overlayHeader) {
+      overlayHeader.innerHTML = `
+        <div class="overlay-title" style="color: var(--success); display: flex; align-items: center; gap: 8px;">
+          ${this.getSVGIcon('check')}
+          <span>Saved successfully!</span>
+        </div>
+      `;
+      // Style the check icon
+      const checkIcon = overlayHeader.querySelector('svg');
+      if (checkIcon) {
+        checkIcon.style.width = '20px';
+        checkIcon.style.height = '20px';
+        checkIcon.style.color = 'var(--success)';
+      }
+    }
     
-    // Remove overlay from page after sending message
-    this.cleanup();
+    // Wait a moment to show success, then proceed
+    setTimeout(() => {
+      // chrome.runtime.sendMessage: Sends message to background script
+      //   Inputs: Message object with type and download info
+      //   Outputs: None (fire-and-forget message)
+      chrome.runtime.sendMessage({
+        type: 'proceedWithDownload',
+        downloadInfo: this.currentDownloadInfo
+      });
+      
+      // Remove overlay from page after sending message
+      this.cleanup();
+    }, 600); // Brief delay to show success message
   }
 
   /**

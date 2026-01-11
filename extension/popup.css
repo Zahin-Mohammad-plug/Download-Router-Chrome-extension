@@ -1,10 +1,10 @@
 :root {
-  --primary-color: #2563eb;
-  --primary-hover: #1d4ed8;
+  --primary-color: #6366f1;
+  --primary-hover: #4f46e5;
   --secondary-color: #64748b;
-  --success-color: #059669;
-  --warning-color: #d97706;
-  --error-color: #dc2626;
+  --success-color: #10b981;
+  --warning-color: #f59e0b;
+  --error-color: #ef4444;
   --background: #ffffff;
   --surface: #f8fafc;
   --surface-hover: #f1f5f9;
@@ -42,7 +42,7 @@ body {
 
 /* Header */
 .app-header {
-  background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: white;
   padding: 20px;
   border-radius: 0 0 var(--radius) var(--radius);
@@ -61,70 +61,20 @@ body {
   font-weight: bold;
 }
 
-/* Icon System - Unicode-safe alternatives to emojis */
-/* Uses Unicode symbols that are widely supported across all devices and browsers */
-.icon-folder::before {
-  content: "[ ]";
-  font-family: 'Courier New', monospace;
-  font-weight: bold;
+/* Icon System - Inline SVG Icons */
+/* Icons are rendered as inline SVG via getIcon() helper function */
+.btn-icon svg,
+.empty-icon svg,
+.activity-icon svg,
+.check-icon svg {
+  width: 1em;
+  height: 1em;
   display: inline-block;
-}
-
-.icon-settings::before {
-  content: "[O]";
-  font-family: 'Courier New', monospace;
-  font-weight: bold;
-  font-size: 0.9em;
-  display: inline-block;
-}
-
-.icon-pause::before {
-  content: "||";
-  font-family: 'Courier New', monospace;
-  font-weight: bold;
-  letter-spacing: -3px;
-  display: inline-block;
-  font-size: 0.9em;
-}
-
-.icon-play::before {
-  content: ">|";
-  font-family: 'Courier New', monospace;
-  font-weight: bold;
-  font-size: 0.9em;
-  display: inline-block;
-  letter-spacing: -1px;
-}
-
-.icon-list::before {
-  content: "---";
-  font-family: 'Courier New', monospace;
-  font-weight: bold;
-  font-size: 1em;
-  letter-spacing: 2px;
-  display: inline-block;
-  line-height: 1;
-}
-
-.icon-file::before {
-  content: "[ ]";
-  font-family: 'Courier New', monospace;
-  font-weight: bold;
-  font-size: 0.9em;
-  display: inline-block;
-}
-
-.icon-folder-simple::before {
-  content: "[F]";
-  font-family: 'Courier New', monospace;
-  font-weight: bold;
-  font-size: 0.85em;
-  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
 }
 
 .btn-icon {
-  font-size: 16px;
-  line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -137,19 +87,31 @@ body {
   display: inline-block;
 }
 
+.app-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-icon svg {
+  width: 32px;
+  height: 32px;
+  display: block;
+}
+
 .routed-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   margin-left: 4px;
   font-size: 0.9em;
   opacity: 0.7;
 }
 
-.routed-badge.icon-folder-simple::before {
-  content: "[F]";
-  font-family: 'Courier New', monospace;
-  font-weight: bold;
-  font-size: 0.85em;
+.routed-badge svg {
+  width: 0.85em;
+  height: 0.85em;
   display: inline-block;
+  vertical-align: middle;
 }
 
 .app-title h1 {
@@ -273,14 +235,19 @@ body {
 }
 
 .activity-icon {
-  font-size: 11px;
+  font-size: 16px;
   opacity: 0.7;
-  font-family: 'Courier New', monospace;
-  font-weight: bold;
-  display: inline-block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-width: 32px;
-  text-align: center;
   line-height: 1;
+}
+
+.activity-icon svg {
+  width: 16px;
+  height: 16px;
+  color: var(--text-secondary);
 }
 
 .activity-info {
@@ -302,6 +269,7 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin-top: 2px;
 }
 
 .activity-time {
@@ -388,11 +356,116 @@ body {
   color: var(--primary-color);
 }
 
+/* Welcome Overlay */
+.welcome-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 10000;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
+.welcome-overlay.active {
+  display: flex;
+}
+
+.welcome-content {
+  background: var(--background);
+  border-radius: var(--radius);
+  padding: 2rem;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+  animation: welcomeFadeIn 0.3s ease;
+}
+
+@keyframes welcomeFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.welcome-icon {
+  margin-bottom: 1rem;
+}
+
+.welcome-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.welcome-icon svg {
+  width: 64px;
+  height: 64px;
+  color: var(--primary-color);
+}
+
+.welcome-content h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+
+.welcome-description {
+  color: var(--text-secondary);
+  margin-bottom: 1.5rem;
+  font-size: 0.95rem;
+}
+
+.welcome-tips {
+  list-style: none;
+  text-align: left;
+  margin: 1.5rem 0;
+  padding: 0;
+}
+
+.welcome-tips li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.welcome-tips li .check-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-right: 0.5rem;
+}
+
+.welcome-tips li .check-icon svg {
+  width: 18px;
+  height: 18px;
+  color: var(--success-color);
+}
+
+.welcome-content .btn {
+  margin-top: 1rem;
+  min-width: 120px;
+}
+
 /* Dark mode support */
 @media (prefers-color-scheme: dark) {
   :root {
-    --primary-color: #3b82f6;
-    --primary-hover: #2563eb;
+    --primary-color: #60a5fa;
+    --primary-hover: #3b82f6;
     --background: #0f172a;
     --surface: #1e293b;
     --surface-hover: #334155;
@@ -400,5 +473,16 @@ body {
     --text-primary: #f1f5f9;
     --text-secondary: #cbd5e1;
     --text-muted: #64748b;
+  }
+  
+  input,
+  select,
+  textarea {
+    background: var(--surface) !important;
+    color: var(--text-primary) !important;
+  }
+  
+  input::placeholder {
+    color: var(--text-muted);
   }
 }

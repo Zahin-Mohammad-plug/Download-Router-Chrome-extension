@@ -53,6 +53,27 @@ let companionAppStatus = {
 };
 
 /**
+ * Helper function to format path display in breadcrumb format.
+ * Converts relative paths like "3DPrinting/file.stl" to "Downloads > 3DPrinting"
+ */
+function formatPathDisplay(relativePath) {
+  if (!relativePath || relativePath === '') return 'Downloads';
+  const parts = relativePath.split('/');
+  const filename = parts[parts.length - 1];
+  // If it's just a filename (no folder), return Downloads
+  if (parts.length === 1) {
+    // Check if it contains a dot (likely a file extension)
+    if (filename.includes('.')) {
+      return 'Downloads';
+    }
+    return `Downloads > ${parts[0]}`;
+  }
+  // Show: Downloads > Folder > Subfolder (without filename)
+  const folders = parts.slice(0, -1);
+  return 'Downloads > ' + folders.join(' > ');
+}
+
+/**
  * Path Utility Functions
  * 
  * These functions handle path normalization, sanitization, and construction
@@ -419,11 +440,12 @@ function showFallbackNotification(downloadInfo) {
   // chrome.notifications.create: Creates a system notification with action buttons
   //   Inputs: notificationId (string), notification options object
   //   Outputs: Creates notification in Chrome's notification system
+  const formattedPath = formatPathDisplay(downloadInfo.resolvedPath);
   chrome.notifications.create(notificationId, {
     type: 'basic',
     iconUrl: 'icons/icon128.png',
     title: 'Download Routing Confirmation',
-    message: `Save ${downloadInfo.filename} to ${downloadInfo.resolvedPath}?`,
+    message: `Save ${downloadInfo.filename} to ${formattedPath}?`,
     buttons: [
       { title: 'Save Now' },
       { title: 'Change Location' }
@@ -580,12 +602,14 @@ chrome.downloads.onChanged.addListener(async (downloadDelta) => {
           
           if (moveSuccess) {
             console.log(`File moved: ${sourcePath} -> ${downloadInfo.absoluteDestination}`);
+            const destParts = downloadInfo.absoluteDestination.split(/[/\\]/).filter(p => p);
+            const destFolder = destParts[destParts.length - 1] || 'Downloads';
             // Update notification
             chrome.notifications.create({
               type: 'basic',
               iconUrl: 'icons/icon128.png',
-              title: 'File Routed',
-              message: `Moved ${downloadInfo.filename} to ${downloadInfo.absoluteDestination.split(/[/\\]/).pop()}`
+              title: 'File Routed Successfully',
+              message: `${downloadInfo.filename} moved to ${destFolder}`
             });
           } else {
             console.error('Failed to move file to absolute destination');
@@ -594,7 +618,7 @@ chrome.downloads.onChanged.addListener(async (downloadDelta) => {
               type: 'basic',
               iconUrl: 'icons/icon128.png',
               title: 'Routing Failed',
-              message: `Could not move ${downloadInfo.filename}. File saved in Downloads.`
+              message: `Could not move ${downloadInfo.filename}. File saved in Downloads folder.`
             });
           }
         }
@@ -659,10 +683,15 @@ function updateDownloadStats(downloadId) {
     // unshift: Array method to add element to beginning of array
     //   Inputs: Element to add
     //   Outputs: New array length
+    // Format folder path for display (store full path for activity display)
+    const folderPath = downloadInfo.resolvedPath.includes('/') 
+      ? downloadInfo.resolvedPath.split('/').slice(0, -1).join('/') // Remove filename
+      : 'Downloads';
+    
     stats.recentActivity.unshift({
       filename: downloadInfo.filename,
-      // Extract folder name from resolved path (first part before slash)
-      folder: downloadInfo.resolvedPath.split('/')[0] || 'Downloads',
+      // Store folder path for formatted display in popup
+      folder: folderPath || 'Downloads',
       // Date.now: Returns current timestamp in milliseconds
       //   Inputs: None
       //   Outputs: Number (milliseconds since epoch)
@@ -754,18 +783,29 @@ function proceedWithDownload(downloadId, customPath = null) {
     conflictAction: 'uniquify' // Automatically rename if file already exists
   });
   
-  // Display confirmation notification
+  // Display confirmation notification with formatted path
   // chrome.notifications.create: Creates system notification
   //   Inputs: Notification options object (creates with auto-generated ID if none provided)
   //   Outputs: Creates notification in Chrome's notification center
   const displayPath = absoluteDestinationPath || finalPath;
-  const folderName = displayPath.split(/[/\\]/).filter(p => p).pop() || 'Downloads';
+  // Check if absolute path (contains drive letter or starts with /)
+  const isAbsolute = /^(\/|[A-Za-z]:\\)/.test(displayPath);
+  let formattedPath;
+  
+  if (isAbsolute) {
+    // For absolute paths, just show the folder name
+    const parts = displayPath.split(/[/\\]/).filter(p => p);
+    formattedPath = parts[parts.length - 1] || 'Downloads';
+  } else {
+    // For relative paths, format as breadcrumb
+    formattedPath = formatPathDisplay(finalPath);
+  }
   
   chrome.notifications.create({
     type: 'basic',
     iconUrl: 'icons/icon128.png',
     title: 'Download Routed',
-    message: `Saved ${downloadInfo.filename} to ${folderName}`
+    message: `${downloadInfo.filename} saved to ${formattedPath}`
   });
   
   // Note: Don't delete from pendingDownloads yet - we need it for post-download move

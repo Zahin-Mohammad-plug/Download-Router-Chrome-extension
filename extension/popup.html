@@ -3,12 +3,13 @@
 <head>
   <title>Download Router</title>
   <link rel="stylesheet" href="popup.css">
+  <script src="lib/icons.js"></script>
 </head>
 <body>
   <div class="app-container">
     <header class="app-header">
       <div class="header-content">
-        <div class="app-icon icon-folder"></div>
+        <div class="app-icon" id="app-icon"></div>
         <div class="app-title">
           <h1>Download Router</h1>
           <p class="app-subtitle">Smart file organization</p>
@@ -45,11 +46,11 @@
 
       <div class="quick-actions">
         <button class="action-btn primary" id="open-options">
-          <span class="btn-icon icon-settings"></span>
+          <span class="btn-icon" id="settings-icon"></span>
           Configure Rules
         </button>
         <button class="action-btn secondary" id="toggle-extension">
-          <span class="btn-icon icon-pause" id="toggle-icon"></span>
+          <span class="btn-icon" id="toggle-icon"></span>
           <span id="toggle-text">Pause</span>
         </button>
       </div>
@@ -61,6 +62,21 @@
         <a href="#" id="feedback-link">Feedback</a>
       </div>
     </footer>
+  </div>
+
+  <!-- Welcome Overlay -->
+  <div class="welcome-overlay" id="welcome-overlay">
+    <div class="welcome-content">
+      <div class="welcome-icon" id="welcome-icon"></div>
+      <h2>Welcome to Download Router</h2>
+      <p class="welcome-description">Download Router organizes your downloads automatically</p>
+      <ul class="welcome-tips">
+        <li><span class="check-icon"></span> Create rules to route files by domain or file type</li>
+        <li><span class="check-icon"></span> Files are saved to organized folders automatically</li>
+        <li><span class="check-icon"></span> You can always change the destination before saving</li>
+      </ul>
+      <button class="btn primary" id="welcome-dismiss">Get Started</button>
+    </div>
   </div>
 
   <script src="popup.js"></script>

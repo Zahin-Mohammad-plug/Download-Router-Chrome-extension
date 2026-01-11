@@ -3,12 +3,13 @@
 <head>
   <title>Download Router - Settings</title>
   <link rel="stylesheet" href="options.css">
+  <script src="lib/icons.js"></script>
 </head>
 <body>
   <div class="app-container">
     <header class="app-header">
       <div class="header-content">
-        <div class="app-icon icon-folder"></div>
+        <div class="app-icon" id="options-app-icon"></div>
         <div class="app-title">
           <h1>Download Router Settings</h1>
           <p class="app-subtitle">Configure your download routing rules</p>
@@ -32,7 +33,7 @@
         
         <div class="rules-container" id="rules-container">
           <div class="empty-state" id="rules-empty">
-            <div class="empty-icon icon-list"></div>
+            <div class="empty-icon" id="rules-empty-icon"></div>
             <h3>No rules configured</h3>
             <p>Create your first rule to start organizing downloads automatically</p>
           </div>
@@ -40,7 +41,7 @@
         
         <div class="section-actions">
           <button class="btn primary" id="add-rule">
-            <span class="btn-icon icon-add"></span>
+            <span class="btn-icon" id="add-rule-icon"></span>
             Add Rule
           </button>
         </div>
@@ -55,7 +56,7 @@
         
         <div class="groups-container" id="groups-container">
           <div class="empty-state" id="groups-empty">
-            <div class="empty-icon icon-folder-simple"></div>
+            <div class="empty-icon" id="groups-empty-icon"></div>
             <h3>No groups configured</h3>
             <p>Create groups to organize similar file types together</p>
           </div>
@@ -63,11 +64,11 @@
         
         <div class="section-actions">
           <button class="btn primary" id="add-group">
-            <span class="btn-icon icon-add"></span>
+            <span class="btn-icon" id="add-group-icon"></span>
             Add Group
           </button>
           <button class="btn secondary" id="load-defaults">
-            <span class="btn-icon">🔄</span>
+            <span class="btn-icon" id="load-defaults-icon"></span>
             Load Default Groups
           </button>
         </div>
@@ -144,11 +145,11 @@
         <div class="folder-browser">
           <div class="folder-toolbar">
             <div class="folder-path" id="current-path">
-              <span class="path-icon icon-folder-simple"></span>
+              <span class="path-icon" id="path-icon"></span>
               <span id="path-text">Downloads</span>
             </div>
             <button class="btn secondary small" id="refresh-folders">
-              <span class="btn-icon icon-refresh"></span>
+              <span class="btn-icon" id="refresh-folders-icon"></span>
               Refresh
             </button>
           </div>
@@ -162,7 +163,7 @@
           
           <div class="folder-actions">
             <button class="btn secondary" id="create-folder">
-              <span class="btn-icon icon-folder-simple"></span>
+              <span class="btn-icon" id="create-folder-icon"></span>
               Create Folder
             </button>
           </div>
@@ -173,11 +174,11 @@
     <footer class="app-footer">
       <div class="footer-actions">
         <button class="btn success" id="save-options">
-          <span class="btn-icon icon-save"></span>
+          <span class="btn-icon" id="save-options-icon"></span>
           Save Changes
         </button>
           <button class="btn secondary" id="reset-options">
-            <span class="btn-icon icon-refresh"></span>
+            <span class="btn-icon" id="reset-options-icon"></span>
             Reset to Defaults
           </button>
       </div>
@@ -203,5 +204,28 @@
   </div>
 
   <script src="options.js"></script>
+  <script>
+    // Initialize icons after DOM loads
+    if (typeof getIcon !== 'undefined') {
+      const iconMap = {
+        'options-app-icon': ['folder', 48],
+        'rules-empty-icon': ['list', 48],
+        'groups-empty-icon': ['folder', 48],
+        'add-rule-icon': ['plus', 16],
+        'add-group-icon': ['plus', 16],
+        'load-defaults-icon': ['refresh-cw', 16],
+        'path-icon': ['folder', 20],
+        'refresh-folders-icon': ['refresh-cw', 16],
+        'create-folder-icon': ['folder-plus', 16],
+        'save-options-icon': ['save', 16],
+        'reset-options-icon': ['refresh-cw', 16]
+      };
+      
+      Object.entries(iconMap).forEach(([id, [icon, size]]) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = getIcon(icon, size);
+      });
+    }
+  </script>
 </body>
 </html>

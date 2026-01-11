@@ -118,16 +118,24 @@ class OptionsApp {
           statusElement.style.background = '#e8f5e9';
           statusElement.style.color = '#2e7d32';
           statusElement.style.border = '1px solid #4caf50';
+          const checkIcon = typeof getIcon !== 'undefined' ? getIcon('check-circle', 18) : '✓';
           statusElement.innerHTML = `
-            <strong>✓ Companion App Installed</strong><br>
+            <strong style="display: inline-flex; align-items: center; gap: 6px;">
+              ${checkIcon}
+              <span>Companion App Installed</span>
+            </strong><br>
             Version ${status.version || 'unknown'} on ${status.platform || 'unknown'}
           `;
         } else {
           statusElement.style.background = '#fff3e0';
           statusElement.style.color = '#e65100';
           statusElement.style.border = '1px solid #ff9800';
+          const alertIcon = typeof getIcon !== 'undefined' ? getIcon('alert-triangle', 18) : '⚠';
           statusElement.innerHTML = `
-            <strong>⚠ Companion App Not Installed</strong><br>
+            <strong style="display: inline-flex; align-items: center; gap: 6px;">
+              ${alertIcon}
+              <span>Companion App Not Installed</span>
+            </strong><br>
             Install the companion app for native folder picker and absolute path support.<br>
             <a href="#" id="companion-install-link" style="color: #e65100; text-decoration: underline;">Download & Install</a>
           `;
@@ -313,13 +321,14 @@ class OptionsApp {
 
   createRuleHTML(rule, index) {
     const typeName = rule.type === 'domain' ? 'Domain Rule' : 'Extension Rule';
-    const iconClass = rule.type === 'domain' ? 'icon-domain' : 'icon-extension';
+    const iconName = rule.type === 'domain' ? 'globe' : 'file-type';
+    const iconHTML = typeof getIcon !== 'undefined' ? getIcon(iconName, 16) : '';
     
     return `
       <div class="rule-item" data-index="${index}">
         <div class="item-header">
           <div class="item-type">
-            <span class="${iconClass}"></span>
+            <span>${iconHTML}</span>
             ${typeName}
           </div>
           <div class="item-actions">
@@ -335,7 +344,7 @@ class OptionsApp {
           <div class="form-group">
             <label class="form-label">Folder</label>
             <div class="folder-picker-btn" data-index="${index}">
-              <span class="icon-folder-simple"></span>
+              <span>${typeof getIcon !== 'undefined' ? getIcon('folder', 16) : ''}</span>
               <span class="folder-path">${rule.folder}</span>
             </div>
           </div>
@@ -413,7 +422,7 @@ class OptionsApp {
       <div class="group-item" data-name="${name}">
         <div class="item-header">
           <div class="item-type">
-            <span class="icon-folder-simple"></span>
+            <span>${typeof getIcon !== 'undefined' ? getIcon('folder', 16) : ''}</span>
             File Group
           </div>
           <div class="item-actions">
@@ -433,7 +442,7 @@ class OptionsApp {
           <div class="form-group">
             <label class="form-label">Folder</label>
             <div class="folder-picker-btn" data-name="${name}">
-              <span class="icon-folder-simple"></span>
+              <span>${typeof getIcon !== 'undefined' ? getIcon('folder', 16) : ''}</span>
               <span class="folder-path">${group.folder}</span>
             </div>
           </div>
@@ -509,10 +518,11 @@ class OptionsApp {
   }
 
   createFolderHTML(folder) {
-    const iconClass = folder.type === 'folder' ? 'icon-folder-simple' : 'icon-file';
+    const iconName = folder.type === 'folder' ? 'folder' : 'file';
+    const iconHTML = typeof getIcon !== 'undefined' ? getIcon(iconName, 20) : '';
     return `
       <div class="folder-item" data-path="${folder.path}">
-        <div class="folder-icon ${iconClass}"></div>
+        <div class="folder-icon">${iconHTML}</div>
         <div class="folder-info">
           <div class="folder-name">${folder.name}</div>
           <div class="folder-size">${folder.size || 'Folder'}</div>
@@ -560,8 +570,9 @@ class OptionsApp {
         const folderList = document.getElementById('folder-list');
         if (folderList) {
           const statusIndicator = document.createElement('div');
-          statusIndicator.style.cssText = 'padding: 8px; background: #e3f2fd; color: #1565c0; font-size: 12px; border-radius: 4px; margin-bottom: 8px;';
-          statusIndicator.textContent = '✓ Companion app detected - Native folder picker available';
+          statusIndicator.style.cssText = 'padding: 8px; background: #e3f2fd; color: #1565c0; font-size: 12px; border-radius: 4px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;';
+          const checkIcon = typeof getIcon !== 'undefined' ? getIcon('check-circle', 16) : '✓';
+          statusIndicator.innerHTML = `${checkIcon}<span>Companion app detected - Native folder picker available</span>`;
           folderList.parentElement.insertBefore(statusIndicator, folderList);
         }
       } else {
