@@ -3,11 +3,19 @@
 # Wrapper script to run Electron companion app in development mode
 # This is used by the native messaging host manifest when running from source
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-LOG_FILE="$SCRIPT_DIR/logs/companion.log"
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")" && pwd )"
 
-mkdir -p "$(dirname "$LOG_FILE")"
-echo "=== Companion Script Started ===" >> "$LOG_FILE"
+# Use logs/debug directory for logs
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")" && pwd )"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOG_DIR="$REPO_ROOT/logs/debug"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/companion-$(date +%Y%m%d-%H%M%S).log"
+# Also keep a latest symlink
+LATEST_LOG="$LOG_DIR/companion-latest.log"
+
+echo "=== Companion Script Started ===" > "$LOG_FILE"
+echo "Log file: $LOG_FILE" >> "$LOG_FILE"
 echo "Timestamp: $(date)" >> "$LOG_FILE"
 echo "User: $(whoami)" >> "$LOG_FILE"
 echo "Initial PATH: $PATH" >> "$LOG_FILE"
@@ -15,7 +23,6 @@ echo "PWD: $(pwd)" >> "$LOG_FILE"
 echo "Script location: $0" >> "$LOG_FILE"
 echo "" >> "$LOG_FILE"
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 echo "Script directory: $SCRIPT_DIR" >> "$LOG_FILE"
 
 # Add common Node.js paths to PATH
@@ -51,6 +58,9 @@ echo "Main JS: $MAIN_JS" >> "$LOG_FILE"
 
 echo "Launching Electron..." >> "$LOG_FILE"
 echo "" >> "$LOG_FILE"
+
+# Create latest symlink
+ln -sfn "$LOG_FILE" "$LATEST_LOG" 2>/dev/null || true
 
 # Run electron via node, redirect stderr to log
 exec "$NODE_BIN" "$ELECTRON_CLI" "$MAIN_JS" "$@" 2>> "$LOG_FILE"

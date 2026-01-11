@@ -14,14 +14,48 @@
  */
 
 const { app, dialog } = require('electron');
+const fs = require('fs');
+const path = require('path');
 const nativeMessagingHost = require('./native-messaging/host');
 const handlers = require('./native-messaging/handlers');
+
+// Set up logging to logs/debug directory
+const REPO_ROOT = path.join(__dirname, '..');
+const LOG_DIR = path.join(REPO_ROOT, 'logs', 'debug');
+const LOG_FILE = path.join(LOG_DIR, `companion-main-${Date.now()}.log`);
+const LATEST_LOG = path.join(LOG_DIR, 'companion-main-latest.log');
+
+// Ensure log directory exists
+if (!fs.existsSync(LOG_DIR)) {
+  fs.mkdirSync(LOG_DIR, { recursive: true });
+}
+
+// Simple logging function
+function logToFile(message) {
+  const timestamp = new Date().toISOString();
+  const logMessage = `[${timestamp}] ${message}\n`;
+  try {
+    fs.appendFileSync(LOG_FILE, logMessage);
+    fs.appendFileSync(LATEST_LOG, logMessage);
+  } catch (error) {
+    console.error('Failed to write to log file:', error);
+  }
+}
+
+logToFile(`=== Companion App Started ===`);
+logToFile(`PID: ${process.pid}`);
+logToFile(`Node version: ${process.version}`);
+logToFile(`Electron version: ${process.versions.electron || 'unknown'}`);
+logToFile(`Platform: ${process.platform}`);
+logToFile(`Log file: ${LOG_FILE}`);
 
 // Electron app runs in background without visible window
 // Native messaging communication happens via stdin/stdout
 app.whenReady().then(() => {
+  logToFile('Electron app ready');
   // Initialize native messaging host
   nativeMessagingHost.init();
+  logToFile('Native messaging host initialized and ready');
   console.log('Native messaging host initialized and ready');
   
   // Register message handlers
@@ -58,7 +92,9 @@ app.on('window-all-closed', (e) => {
 
 // Handle uncaught errors gracefully
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught exception:', error);
+  const errorMsg = `Uncaught exception: ${error.message}\n${error.stack}`;
+  console.error(errorMsg);
+  logToFile(`ERROR: ${errorMsg}`);
   // Send error response if possible
   if (nativeMessagingHost && nativeMessagingHost.isInitialized) {
     nativeMessagingHost.sendResponse({
@@ -70,5 +106,7 @@ process.on('uncaughtException', (error) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled rejection:', reason);
+  const errorMsg = `Unhandled rejection: ${reason}`;
+  console.error(errorMsg);
+  logToFile(`ERROR: ${errorMsg}`);
 });

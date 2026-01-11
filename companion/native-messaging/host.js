@@ -30,6 +30,9 @@ class NativeMessagingHost {
       return;
     }
 
+    // Log initialization attempt
+    console.error('Initializing native messaging host...');
+    
     // Set stdin to binary mode for native messaging protocol
     // stdin: Standard input stream from Chrome
     // stdout: Standard output stream to Chrome
@@ -42,7 +45,8 @@ class NativeMessagingHost {
     process.stdin.on('data', (chunk) => {
       // Ensure chunk is a Buffer
       const chunkBuffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      console.error(`Received ${chunkBuffer.length} bytes`);
+      const msg = `Received ${chunkBuffer.length} bytes from stdin`;
+      console.error(msg);
       this.buffer = Buffer.concat([this.buffer, chunkBuffer]);
       this.processBuffer();
     });

@@ -43,11 +43,22 @@ This guide provides comprehensive testing procedures for the Download Router Chr
 
 ### Step 5: Check Logs
 ```bash
-# Companion app logs
-cat companion/logs/companion.log
+# All logs are in logs/debug directory
 
-# Check for errors
-tail -f companion/logs/companion.log
+# View latest companion log
+cat logs/debug/companion-latest.log
+
+# View all logs
+ls -lth logs/debug/
+
+# Watch companion log in real-time
+tail -f logs/debug/companion-latest.log
+
+# View environment check log
+cat logs/debug/environment-check.log
+
+# View test flow log
+cat logs/debug/test-complete-flow-latest.log
 ```
 
 ---
@@ -369,7 +380,7 @@ ls -la extension/icons/icon*.png
 
 - **Extension**: `/Users/Shared/Github-repo/extension/`
 - **Companion App**: `/Users/Shared/Github-repo/companion/`
-- **Logs**: `/Users/Shared/Github-repo/companion/logs/companion.log`
+- **Logs**: `/Users/Shared/Github-repo/logs/debug/`
 - **Tests**: `/Users/Shared/Github-repo/tests/`
 - **Manifest**: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.downloadrouter.host.json`
 - **Documentation**: `/Users/Shared/Github-repo/docs/`

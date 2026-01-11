@@ -18,3 +18,7 @@ companion/build/
 
 # Test outputs
 *.test.log
+
+# Debug logs
+logs/debug/*.log
+logs/debug/*-latest.log
