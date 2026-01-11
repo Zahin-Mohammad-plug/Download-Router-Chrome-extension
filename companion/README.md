@@ -36,7 +36,7 @@ npm run build:all
 
 ## Installation
 
-See `../COMPANION_INSTALL.md` for installation instructions.
+See `../docs/COMPANION_INSTALL.md` for installation instructions.
 
 ## Architecture
 

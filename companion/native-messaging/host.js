@@ -11,13 +11,11 @@
  * - Connection persists until stdin closes
  */
 
-const readline = require('readline');
-
 class NativeMessagingHost {
   constructor() {
-    this.rl = null;
     this.messageHandlers = [];
     this.isInitialized = false;
+    this.buffer = Buffer.alloc(0);
   }
 
   /**
@@ -32,18 +30,21 @@ class NativeMessagingHost {
       return;
     }
 
-    // Set up readline interface for reading from stdin
+    // Set stdin to binary mode for native messaging protocol
     // stdin: Standard input stream from Chrome
     // stdout: Standard output stream to Chrome
-    this.rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-      terminal: false
-    });
-
-    // Handle incoming messages from stdin
-    process.stdin.on('readable', () => {
-      this.readMessage();
+    process.stdin.setEncoding(null); // Binary mode - returns Buffers
+    
+    // Resume stdin to start receiving data (it's paused by default)
+    process.stdin.resume();
+    
+    // Handle incoming messages from stdin using data event for better reliability
+    process.stdin.on('data', (chunk) => {
+      // Ensure chunk is a Buffer
+      const chunkBuffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      console.error(`Received ${chunkBuffer.length} bytes`);
+      this.buffer = Buffer.concat([this.buffer, chunkBuffer]);
+      this.processBuffer();
     });
 
     // Handle stdin close (Chrome disconnected)
@@ -52,60 +53,70 @@ class NativeMessagingHost {
       process.exit(0);
     });
 
+    // Handle errors
+    process.stdin.on('error', (error) => {
+      console.error('Stdin error:', error);
+    });
+
+    // Log initialization (to stderr so it doesn't interfere with protocol)
+    console.error('Native messaging host initialized and ready');
+
     this.isInitialized = true;
   }
 
   /**
-   * Reads a message from stdin following Native Messaging protocol.
-   * Reads 32-bit length prefix, then JSON message body.
+   * Processes accumulated buffer to extract and handle messages.
+   * Follows Native Messaging protocol: 32-bit length prefix + JSON body.
    * 
-   * Inputs: None (reads from process.stdin)
+   * Inputs: None (uses this.buffer)
    * Outputs: None (calls message handlers)
    */
-  readMessage() {
-    // Read 4 bytes for message length (32-bit unsigned integer)
-    const lengthBuffer = process.stdin.read(4);
-    if (!lengthBuffer) {
-      return; // Not enough data yet
-    }
+  processBuffer() {
+    // Try to parse messages from buffer
+    while (this.buffer.length >= 4) {
+      // Read 4 bytes for message length (32-bit unsigned integer)
+      const messageLength = this.buffer.readUInt32LE(0);
 
-    // Convert buffer to 32-bit unsigned integer (native byte order)
-    // Buffer.readUInt32LE: Reads unsigned 32-bit integer in little-endian
-    //   Inputs: Offset (0)
-    //   Outputs: Number (message length in bytes)
-    const messageLength = lengthBuffer.readUInt32LE(0);
+      if (messageLength === 0 || messageLength > 1024 * 1024) {
+        // Invalid message (0 length or too large)
+        this.buffer = Buffer.alloc(0);
+        return;
+      }
 
-    if (messageLength === 0) {
-      return; // Invalid message
-    }
+      // Check if we have the full message
+      if (this.buffer.length < 4 + messageLength) {
+        // Not enough data yet, wait for more
+        return;
+      }
 
-    // Read message body (JSON string)
-    const messageBuffer = process.stdin.read(messageLength);
-    if (!messageBuffer || messageBuffer.length !== messageLength) {
-      // Put length buffer back for next attempt
-      process.stdin.unshift(lengthBuffer);
-      return;
-    }
+      // Extract message body (JSON string)
+      const messageBuffer = this.buffer.slice(4, 4 + messageLength);
+      // Remove processed message from buffer
+      this.buffer = this.buffer.slice(4 + messageLength);
 
-    try {
-      // Parse JSON message
-      // toString: Converts buffer to UTF-8 string
-      //   Inputs: Encoding ('utf8')
-      //   Outputs: String
-      // JSON.parse: Parses JSON string to object
-      //   Inputs: JSON string
-      //   Outputs: Parsed object
-      const message = JSON.parse(messageBuffer.toString('utf8'));
+      try {
+        // Parse JSON message
+        // toString: Converts buffer to UTF-8 string
+        //   Inputs: Encoding ('utf8')
+        //   Outputs: String
+        // JSON.parse: Parses JSON string to object
+        //   Inputs: JSON string
+        //   Outputs: Parsed object
+        const messageJson = messageBuffer.toString('utf8');
+        console.error(`Parsing message: ${messageJson.substring(0, 100)}`);
+        const message = JSON.parse(messageJson);
 
-      // Process message through handlers
-      this.processMessage(message);
-    } catch (error) {
-      // Send error response if message parsing fails
-      this.sendResponse({
-        success: false,
-        error: 'Invalid JSON message',
-        code: 'PARSE_ERROR'
-      });
+        // Process message through handlers
+        this.processMessage(message);
+      } catch (error) {
+        // Send error response if message parsing fails
+        console.error('Parse error:', error.message);
+        this.sendResponse({
+          success: false,
+          error: 'Invalid JSON message: ' + error.message,
+          code: 'PARSE_ERROR'
+        });
+      }
     }
   }
 
@@ -188,6 +199,10 @@ class NativeMessagingHost {
       //   Outputs: Boolean (true if all data written)
       process.stdout.write(lengthBuffer);
       process.stdout.write(responseBuffer);
+      // Force flush to ensure data is sent immediately
+      if (process.stdout.flush) {
+        process.stdout.flush();
+      }
     } catch (error) {
       // If response sending fails, write error to stderr (not sent to Chrome)
       console.error('Failed to send response:', error);
@@ -209,19 +224,13 @@ class NativeMessagingHost {
 
   /**
    * Cleans up native messaging host resources.
-   * Closes readline interface and resets state.
+   * Resets state and clears buffer.
    * 
    * Inputs: None
    * Outputs: None (cleans up resources)
    */
   cleanup() {
-    if (this.rl) {
-      // close: Closes readline interface
-      //   Inputs: None
-      //   Outputs: None (closes streams)
-      this.rl.close();
-      this.rl = null;
-    }
+    this.buffer = Buffer.alloc(0);
     this.isInitialized = false;
   }
 }

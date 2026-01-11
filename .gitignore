@@ -1,0 +1,20 @@
+# Logs
+logs/
+*.log
+/tmp/*.log
+
+# Node modules
+node_modules/
+companion/node_modules/
+
+# OS files
+.DS_Store
+*.swp
+*.swo
+
+# Build outputs
+companion/dist/
+companion/build/
+
+# Test outputs
+*.test.log

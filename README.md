@@ -54,7 +54,7 @@ For native folder picker and absolute path support, install the companion app:
 1. Download the EXE installer from [Releases](https://github.com/Zahin-Mohammad-plug/Download-Router-Chrome-extension/releases)
 2. Run the installer (automatically registers with Chrome)
 
-See [COMPANION_INSTALL.md](COMPANION_INSTALL.md) for detailed installation instructions.
+See [Companion Installation Guide](docs/COMPANION_INSTALL.md) for detailed installation instructions.
 
 **Note:** The extension works without the companion app, but with limited features (relative paths only within Downloads directory). The companion app enables:
 - Native OS folder picker dialogs
@@ -145,9 +145,21 @@ The extension includes these predefined groups:
 ├── 📄 content.js             # Shadow DOM overlay system
 ├── 📄 popup.html/js/css      # Extension popup interface
 ├── 📄 options.html/js/css    # Settings & configuration
+├── 📄 overlay.css            # Overlay styles
+├── 📁 lib/                   # Shared libraries
+│   └── native-messaging-client.js
 ├── 📁 icons/                 # Extension icons
-└── 📄 README.md              # Documentation
+├── 📁 companion/             # Companion app (Electron)
+├── 📁 tests/                 # Test scripts
+├── 📁 docs/                  # Documentation
+│   ├── ARCHITECTURE.md
+│   ├── COMPANION_INSTALL.md
+│   ├── DEPLOYMENT.md
+│   └── TESTING.md
+└── 📄 README.md              # This file
 ```
+
+See [Architecture Documentation](docs/ARCHITECTURE.md) for detailed structure information.
 
 ### Permissions Required
 - `downloads`: Monitor and modify download behavior
@@ -172,6 +184,11 @@ We welcome contributions! Here's how to get started:
 3. Make changes to the code
 4. Reload the extension to test changes
 5. Use browser dev tools for debugging
+
+For detailed development and deployment instructions, see:
+- [Deployment Guide](docs/DEPLOYMENT.md) - Setting up development and Web Store builds
+- [Testing Guide](docs/TESTING.md) - Comprehensive testing procedures
+- [Architecture Documentation](docs/ARCHITECTURE.md) - Project structure and architecture
 
 ### Code Standards
 - Use modern JavaScript (ES6+)
@@ -201,6 +218,8 @@ We welcome contributions! Here's how to get started:
 
 ### Debug Mode
 Enable Chrome developer tools and check the console for error messages. The extension logs detailed information about rule matching and download processing.
+
+For more detailed troubleshooting, see the [Testing Guide](docs/TESTING.md).
 
 ## 📝 License
 

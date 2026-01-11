@@ -15,15 +15,24 @@
  */
 
 // Load native messaging client via importScripts (Manifest V3 supports this in service workers)
-let nativeMessagingClient;
+// IMPORTANT: Do NOT declare a variable here - access directly via self.nativeMessagingClient
+// to avoid redeclaration errors when service worker reloads and importScripts runs multiple times
 try {
   importScripts('lib/native-messaging-client.js');
   // Native messaging client should be available on self after importScripts
-  nativeMessagingClient = self.nativeMessagingClient;
+  // If for some reason it wasn't set, create a fallback stub on self
+  if (!self.nativeMessagingClient) {
+    self.nativeMessagingClient = {
+      checkCompanionApp: () => Promise.resolve({ installed: false }),
+      pickFolder: () => Promise.reject(new Error('Native messaging not available')),
+      verifyFolder: () => Promise.resolve(false),
+      moveFile: () => Promise.resolve(false)
+    };
+  }
 } catch (e) {
   console.error('Failed to load native messaging client:', e);
-  // Define minimal stub if loading fails
-  nativeMessagingClient = {
+  // Define minimal stub on self if loading fails
+  self.nativeMessagingClient = {
     checkCompanionApp: () => Promise.resolve({ installed: false }),
     pickFolder: () => Promise.reject(new Error('Native messaging not available')),
     verifyFolder: () => Promise.resolve(false),
@@ -350,13 +359,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     pickFolderNative(message.startPath).then(path => {
       sendResponse({ success: true, path: path });
     }).catch(error => {
-      sendResponse({ success: false, error: error.message });
+      console.error('pickFolderNative error:', error);
+      sendResponse({ 
+        success: false, 
+        error: error.message || 'Failed to pick folder' 
+      });
     });
     return true; // Required for async sendResponse
   } else if (message.type === 'checkCompanionApp') {
     // checkCompanionApp: Check if companion app is installed
     checkCompanionAppStatus().then(status => {
       sendResponse(status);
+    }).catch(error => {
+      sendResponse({
+        installed: false,
+        version: null,
+        platform: null,
+        lastChecked: Date.now(),
+        checkInProgress: false,
+        error: error.message
+      });
     });
     return true; // Required for async sendResponse
   } else if (message.type === 'verifyFolderNative') {
@@ -934,7 +956,7 @@ async function checkCompanionAppStatus() {
   }
 
   // Check if native messaging client is available
-  if (!nativeMessagingClient || !nativeMessagingClient.checkCompanionApp) {
+  if (!self.nativeMessagingClient || !self.nativeMessagingClient.checkCompanionApp) {
     return {
       installed: false,
       version: null,
@@ -948,8 +970,8 @@ async function checkCompanionAppStatus() {
   companionAppStatus.checkInProgress = true;
 
   try {
-    // nativeMessagingClient.checkCompanionApp: Checks if companion app is installed
-    const status = await nativeMessagingClient.checkCompanionApp();
+    // self.nativeMessagingClient.checkCompanionApp: Checks if companion app is installed
+    const status = await self.nativeMessagingClient.checkCompanionApp();
     
     companionAppStatus = {
       installed: status.installed || false,
@@ -988,12 +1010,12 @@ async function checkCompanionAppStatus() {
  *   - nativeMessagingClient: Native messaging client
  */
 async function pickFolderNative(startPath = null) {
-  if (!nativeMessagingClient || !nativeMessagingClient.pickFolder) {
+  if (!self.nativeMessagingClient || !self.nativeMessagingClient.pickFolder) {
     throw new Error('Native messaging client not available');
   }
   
   try {
-    const path = await nativeMessagingClient.pickFolder(startPath);
+    const path = await self.nativeMessagingClient.pickFolder(startPath);
     return path;
   } catch (error) {
     throw new Error(`Failed to pick folder: ${error.message}`);
@@ -1012,12 +1034,12 @@ async function pickFolderNative(startPath = null) {
  *   - nativeMessagingClient: Native messaging client
  */
 async function verifyFolderNative(folderPath) {
-  if (!nativeMessagingClient || !nativeMessagingClient.verifyFolder) {
+  if (!self.nativeMessagingClient || !self.nativeMessagingClient.verifyFolder) {
     return false;
   }
   
   try {
-    return await nativeMessagingClient.verifyFolder(folderPath);
+    return await self.nativeMessagingClient.verifyFolder(folderPath);
   } catch (error) {
     return false;
   }
@@ -1036,13 +1058,13 @@ async function verifyFolderNative(folderPath) {
  *   - nativeMessagingClient: Native messaging client
  */
 async function moveFileNative(sourcePath, destinationPath) {
-  if (!nativeMessagingClient || !nativeMessagingClient.moveFile) {
+  if (!self.nativeMessagingClient || !self.nativeMessagingClient.moveFile) {
     console.error('Native messaging client not available for file move');
     return false;
   }
   
   try {
-    return await nativeMessagingClient.moveFile(sourcePath, destinationPath);
+    return await self.nativeMessagingClient.moveFile(sourcePath, destinationPath);
   } catch (error) {
     console.error('Failed to move file:', error);
     return false;

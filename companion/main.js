@@ -22,6 +22,7 @@ const handlers = require('./native-messaging/handlers');
 app.whenReady().then(() => {
   // Initialize native messaging host
   nativeMessagingHost.init();
+  console.log('Native messaging host initialized and ready');
   
   // Register message handlers
   nativeMessagingHost.onMessage((message) => {

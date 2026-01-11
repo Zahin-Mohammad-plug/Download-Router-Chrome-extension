@@ -7,7 +7,8 @@
     "start": "electron .",
     "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win",
-    "build:all": "electron-builder --mac --win"
+    "build:all": "electron-builder --mac --win",
+    "test:messaging": "node test-messaging.js"
   },
   "author": "Download Router",
   "license": "MIT",

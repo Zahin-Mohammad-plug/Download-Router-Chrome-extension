@@ -91,7 +91,16 @@ class OptionsApp {
    */
   async checkCompanionAppStatus() {
     try {
-      const status = await chrome.runtime.sendMessage({ type: 'checkCompanionApp' });
+      const status = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ type: 'checkCompanionApp' }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('Error checking companion app status:', chrome.runtime.lastError.message);
+            resolve({ installed: false, error: chrome.runtime.lastError.message });
+          } else {
+            resolve(response || { installed: false });
+          }
+        });
+      });
       
       // Update UI with companion app status
       // Add status indicator to settings tab or header
@@ -562,7 +571,7 @@ class OptionsApp {
     } catch (error) {
       // Fallback to default list on error
       console.log('Companion app not available, using default folder list');
-      this.availableFolders = this.getCommonFolders();
+    this.availableFolders = this.getCommonFolders();
     }
     
     this.renderFolders();
@@ -620,14 +629,33 @@ class OptionsApp {
     
     try {
       // Check if companion app is available
-      const companionStatus = await chrome.runtime.sendMessage({ type: 'checkCompanionApp' });
+      // Wrap in Promise to handle service worker wake-up
+      const companionStatus = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ type: 'checkCompanionApp' }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('Error checking companion app:', chrome.runtime.lastError.message);
+            resolve({ installed: false, error: chrome.runtime.lastError.message });
+          } else {
+            resolve(response || { installed: false });
+          }
+        });
+      });
       
       if (companionStatus && companionStatus.installed) {
         // Use native folder picker
         try {
-          const response = await chrome.runtime.sendMessage({
-            type: 'pickFolderNative',
-            startPath: this.currentPath || null
+          const response = await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({
+              type: 'pickFolderNative',
+              startPath: this.currentPath || null
+            }, (response) => {
+              if (chrome.runtime.lastError) {
+                console.error('Error calling native folder picker:', chrome.runtime.lastError.message);
+                resolve({ success: false, error: chrome.runtime.lastError.message });
+              } else {
+                resolve(response || { success: false, error: 'No response' });
+              }
+            });
           });
           
           if (response.success && response.path) {

@@ -1001,7 +1001,7 @@ class DownloadOverlay {
       
       if (isAbsolutePath) {
         // Absolute path from native picker - store as-is (will need post-download move)
-        this.currentDownloadInfo.resolvedPath = newLocation;
+      this.currentDownloadInfo.resolvedPath = newLocation;
         this.currentDownloadInfo.useAbsolutePath = true; // Flag for post-download move
       } else {
         // Relative path - normalize and build relative path
