@@ -56,14 +56,20 @@ class NativeMessagingClient {
         //   Outputs: Port object for sending/receiving messages
         const port = chrome.runtime.connectNative(this.hostName);
         
+        // Track if we've already handled the response
+        let responseHandled = false;
+        
         // Store port with request ID for tracking
         this.activePorts.set(requestId, { port, resolve, reject });
         
         // Set up timeout
         const timeoutId = setTimeout(() => {
-          port.disconnect();
-          this.activePorts.delete(requestId);
-          reject(new Error('Request timeout'));
+          if (!responseHandled) {
+            responseHandled = true;
+            port.disconnect();
+            this.activePorts.delete(requestId);
+            reject(new Error('Request timeout'));
+          }
         }, timeout);
         
         // Handle response messages
@@ -71,6 +77,12 @@ class NativeMessagingClient {
         //   Inputs: Callback function (message object)
         //   Outputs: None (sets up listener)
         port.onMessage.addListener((response) => {
+          // Mark response as handled to prevent disconnect handler from firing
+          if (responseHandled) {
+            return; // Already handled
+          }
+          responseHandled = true;
+          
           clearTimeout(timeoutId);
           port.disconnect();
           this.activePorts.delete(requestId);
@@ -87,17 +99,31 @@ class NativeMessagingClient {
         //   Inputs: Callback function
         //   Outputs: None (sets up listener)
         port.onDisconnect.addListener(() => {
+          // Ignore disconnect if we already handled the response successfully
+          // Manual disconnect after successful response is expected and should not trigger errors
+          if (responseHandled) {
+            return;
+          }
+          
+          responseHandled = true;
           clearTimeout(timeoutId);
           this.activePorts.delete(requestId);
           
-          // Check for lastError safely
+          // Check for lastError safely - but note that lastError might be stale
+          // Chrome's lastError is only valid immediately after an API call
           const lastError = chrome.runtime.lastError;
           if (lastError) {
             // chrome.runtime.lastError: Contains error information from last Chrome API call
             const errorMsg = lastError.message || 'Native host disconnected';
             console.error('Native messaging disconnected:', errorMsg);
+            console.error('LastError details:', JSON.stringify({
+              message: lastError.message,
+              toString: lastError.toString()
+            }));
             reject(new Error(errorMsg));
           } else {
+            console.error('Native messaging disconnected (no lastError)');
+            console.error('Message that failed:', JSON.stringify(message));
             reject(new Error('Native host disconnected'));
           }
         });
@@ -239,7 +265,9 @@ class NativeMessagingClient {
    */
   async checkCompanionApp() {
     try {
-      const response = await this.sendMessage({ type: 'getVersion' }, 2000);
+      // Increase timeout to account for process startup delay
+      // Native messaging hosts need time to initialize (Electron startup ~300-400ms)
+      const response = await this.sendMessage({ type: 'getVersion' }, 5000);
       
       if (response.success && response.type === 'version') {
         return {

@@ -16,6 +16,7 @@ class NativeMessagingHost {
     this.messageHandlers = [];
     this.isInitialized = false;
     this.buffer = Buffer.alloc(0);
+    this.reconnectTimeout = null;
   }
 
   /**
@@ -30,31 +31,58 @@ class NativeMessagingHost {
       return;
     }
 
-    // Log initialization attempt
-    console.error('Initializing native messaging host...');
+    // Log initialization attempt (minimal logging - avoid slowing down)
+    // console.error('Initializing native messaging host...');
     
     // Set stdin to binary mode for native messaging protocol
     // stdin: Standard input stream from Chrome
     // stdout: Standard output stream to Chrome
     process.stdin.setEncoding(null); // Binary mode - returns Buffers
     
-    // Resume stdin to start receiving data (it's paused by default)
-    process.stdin.resume();
+    // Set stdout to blocking mode if possible (Node.js internal API)
+    // This ensures writes complete synchronously when possible
+    if (process.stdout._handle && typeof process.stdout._handle.setBlocking === 'function') {
+      try {
+        process.stdout._handle.setBlocking(true);
+      } catch (e) {
+        // Ignore errors
+      }
+    }
     
-    // Handle incoming messages from stdin using data event for better reliability
+    // CRITICAL: Register data handler BEFORE resuming stdin
+    // If we resume first, we might miss the first message chunk
+    // Handle incoming messages from stdin - CRITICAL: Process immediately, no delays
     process.stdin.on('data', (chunk) => {
       // Ensure chunk is a Buffer
       const chunkBuffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      const msg = `Received ${chunkBuffer.length} bytes from stdin`;
-      console.error(msg);
+      // Process immediately - don't defer, don't log (all adds latency)
       this.buffer = Buffer.concat([this.buffer, chunkBuffer]);
       this.processBuffer();
     });
+    
+    // Cancel any pending exit timeout - we're getting activity
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    
+    // Resume stdin LAST - after all handlers are registered
+    // This ensures we're ready to process messages immediately when data arrives
+    process.stdin.resume();
 
     // Handle stdin close (Chrome disconnected)
+    // CRITICAL: Don't exit immediately - keep process alive for next connection
+    // Chrome may reconnect quickly, and process startup is slow
     process.stdin.on('end', () => {
       this.cleanup();
-      process.exit(0);
+      // Don't exit immediately - give Chrome a chance to reconnect
+      // Only exit if no activity for 5 seconds
+      if (this.reconnectTimeout) {
+        clearTimeout(this.reconnectTimeout);
+      }
+      this.reconnectTimeout = setTimeout(() => {
+        process.exit(0);
+      }, 5000);
     });
 
     // Handle errors
@@ -107,14 +135,25 @@ class NativeMessagingHost {
         //   Inputs: JSON string
         //   Outputs: Parsed object
         const messageJson = messageBuffer.toString('utf8');
-        console.error(`Parsing message: ${messageJson.substring(0, 100)}`);
+        // Don't log parsing - slows down response
+        // console.error(`Parsing message: ${messageJson.substring(0, 100)}`);
         const message = JSON.parse(messageJson);
 
-        // Process message through handlers
-        this.processMessage(message);
+        // Process message through handlers IMMEDIATELY (synchronously if possible)
+        // Chrome has a very short timeout (~150ms), we must respond as fast as possible
+        this.processMessage(message).catch((err) => {
+          console.error('Unhandled error in processMessage:', err.message);
+          console.error('Stack:', err.stack);
+          this.sendResponse({
+            success: false,
+            error: 'Processing error: ' + err.message,
+            code: 'PROCESS_ERROR'
+          });
+        });
       } catch (error) {
         // Send error response if message parsing fails
         console.error('Parse error:', error.message);
+        console.error('Stack:', error.stack);
         this.sendResponse({
           success: false,
           error: 'Invalid JSON message: ' + error.message,
@@ -134,16 +173,21 @@ class NativeMessagingHost {
    * Outputs: None (sends response via sendResponse)
    */
   async processMessage(message) {
+    // CRITICAL: For fast responses, process handlers immediately
+    // For simple messages like getVersion, try to handle synchronously
     for (const handler of this.messageHandlers) {
       try {
-        // Handler returns response object or Promise resolving to response
-        const response = await handler(message);
+        // Execute handler - if it's a Promise, await it, otherwise use result directly
+        const handlerResult = handler(message);
+        const response = handlerResult instanceof Promise ? await handlerResult : handlerResult;
         if (response) {
           this.sendResponse(response);
           return;
         }
-      } catch (error)
+      } catch (error) {
         // Send error response if handler throws
+        console.error('Handler error:', error.message);
+        console.error('Handler error stack:', error.stack);
         this.sendResponse({
           success: false,
           error: error.message || 'Unknown error',
@@ -197,19 +241,64 @@ class NativeMessagingHost {
       //   Outputs: Number (bytes written)
       lengthBuffer.writeUInt32LE(responseBuffer.length, 0);
       
-      // Write length prefix and message body to stdout
-      // process.stdout.write: Writes buffer to stdout
-      //   Inputs: Buffer or string
-      //   Outputs: Boolean (true if all data written)
-      process.stdout.write(lengthBuffer);
-      process.stdout.write(responseBuffer);
-      // Force flush to ensure data is sent immediately
-      if (process.stdout.flush) {
-        process.stdout.flush();
+      // Combine length and body into single buffer for atomic write
+      // This avoids buffer issues with separate writes
+      const fullResponseBuffer = Buffer.concat([lengthBuffer, responseBuffer]);
+      
+      // CRITICAL FIX: Use fs.writeSync directly to stdout file descriptor for synchronous write
+      // This bypasses Node.js stream buffering which causes write() to return false
+      // Native messaging requires immediate, synchronous output
+      let written = false;
+      try {
+        // Try direct file descriptor write first (synchronous, bypasses buffering)
+        if (process.stdout.fd !== undefined && process.stdout.fd !== null) {
+          const fs = require('fs');
+          const bytesWritten = fs.writeSync(process.stdout.fd, fullResponseBuffer, 0, fullResponseBuffer.length);
+          written = (bytesWritten === fullResponseBuffer.length);
+        } else {
+          // Fallback to stream write if FD not available
+          written = process.stdout.write(fullResponseBuffer);
+        }
+      } catch (writeError) {
+        // Check if error is EPIPE (broken pipe) - Chrome already disconnected
+        // Don't throw in this case, just log silently
+        if (writeError.code === 'EPIPE') {
+          // Chrome disconnected before we could respond - expected if timeout
+          // Don't log to avoid noise
+        } else {
+          console.error('stdout write error:', writeError);
+          throw writeError;
+        }
       }
+      
+      // If using stream write and it returned false, handle drain
+      if (!written && process.stdout.fd === undefined) {
+        process.stdout.once('drain', () => {
+          // Drain complete
+        });
+      }
+      
+      // Force sync/flush if available
+      if (process.stdout.flush) {
+        try {
+          process.stdout.flush();
+        } catch (flushError) {
+          // Ignore flush errors
+        }
+      }
+      
+      // Force flush to ensure data is sent immediately
+      // For native messaging, we MUST flush stdout after writing
+      // Use setImmediate to ensure writes complete before flush
+      setImmediate(() => {
+        if (process.stdout.flush) {
+          process.stdout.flush();
+        }
+      });
     } catch (error) {
       // If response sending fails, write error to stderr (not sent to Chrome)
       console.error('Failed to send response:', error);
+      console.error('Error stack:', error.stack);
     }
   }
 

@@ -13,11 +13,10 @@
  * - Manage post-download file routing
  */
 
-const { app, dialog, BrowserWindow } = require('electron');
+// CRITICAL: Load only essential modules first - defer Electron until after native messaging setup
 const fs = require('fs');
 const path = require('path');
 const nativeMessagingHost = require('./native-messaging/host');
-const handlers = require('./native-messaging/handlers');
 
 // Set up logging to logs/debug directory
 const REPO_ROOT = path.join(__dirname, '..');
@@ -38,87 +37,119 @@ function logToFile(message) {
     fs.appendFileSync(LOG_FILE, logMessage);
     fs.appendFileSync(LATEST_LOG, logMessage);
   } catch (error) {
-    console.error('Failed to write to log file:', error);
+    // Can't log if logging fails
   }
 }
 
 logToFile(`=== Companion App Started ===`);
 logToFile(`PID: ${process.pid}`);
 logToFile(`Node version: ${process.version}`);
-logToFile(`Electron version: ${process.versions.electron || 'unknown'}`);
 logToFile(`Platform: ${process.platform}`);
 logToFile(`Log file: ${LOG_FILE}`);
+
+// Defer Electron initialization - load it only when needed (for dialogs)
+let electronLoaded = false;
+let app = null;
+let dialog = null;
+let BrowserWindow = null;
+let handlers = null;
+
+function loadElectronIfNeeded() {
+  if (!electronLoaded) {
+    const electron = require('electron');
+    app = electron.app;
+    dialog = electron.dialog;
+    BrowserWindow = electron.BrowserWindow;
+    handlers = require('./native-messaging/handlers');
+    electronLoaded = true;
+    logToFile('Electron modules loaded (lazy)');
+  }
+}
 
 // Electron app runs in background without visible window
 // Native messaging communication happens via stdin/stdout
 // Create a hidden window for dialogs (required on macOS)
 let dialogWindow = null;
 
-app.whenReady().then(() => {
-  logToFile('Electron app ready');
-  
-  // Create hidden window for dialogs (required for dialog.showOpenDialog on macOS)
-  dialogWindow = new BrowserWindow({
-    show: false,
-    skipTaskbar: true,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true
-    }
-  });
-  dialogWindow.setVisibleOnAllWorkspaces(false, { visibleOnFullScreen: false });
-  
-  // Initialize native messaging host
-  nativeMessagingHost.init();
-  logToFile('Native messaging host initialized and ready');
-  console.log('Native messaging host initialized and ready');
-  
-  // Register message handlers
-  nativeMessagingHost.onMessage(async (message) => {
-    logToFile(`Received message type: ${message.type}`);
+// DO NOT load handlers at module load - lazy load only when needed
+// This ensures getVersion responds instantly without any module loading overhead
+
+// CRITICAL: Register message handler BEFORE init() - otherwise messages can arrive
+// before the handler is registered, causing "no handler" errors or delays
+nativeMessagingHost.onMessage(async (message) => {
     try {
-      // Ensure dialog window exists and app is focused for dialogs
-      if (message.type === 'pickFolder' && dialogWindow) {
-        dialogWindow.focus();
+      // ULTRA-FAST path for getVersion - handle completely synchronously without any overhead
+      if (message.type === 'getVersion') {
+        // Direct response - no handlers, no Electron, no async
+        const version = require('./package.json').version;
+        const result = {
+          success: true,
+          type: 'version',
+          version: version,
+          platform: process.platform
+        };
+        return result;
       }
-      const result = await handlers.handleMessage(message, { dialog, dialogWindow });
-      logToFile(`Message handler result: ${JSON.stringify(result)}`);
+      
+      // For messages that need native dialogs (pickFolder)
+      // Use native OS commands instead of Electron for instant response
+      if (message.type === 'pickFolder') {
+        // Use native OS folder picker (no Electron needed)
+        const nativeFolderPicker = require('./services/folder-picker-native');
+        const result = await nativeFolderPicker.pickFolder(message.startPath || null);
+        return result;
+      }
+      
+      // For other messages, lazy-load handlers only when needed
+      if (!handlers) {
+        handlers = require('./native-messaging/handlers');
+      }
+      const result = await handlers.handleMessage(message, {});
       return result;
     } catch (error) {
-      logToFile(`Error handling message: ${error.message}\n${error.stack}`);
       throw error;
     }
   });
-  
-  // Handle app termination gracefully
-  app.on('before-quit', () => {
-    if (dialogWindow) {
-      dialogWindow.destroy();
-      dialogWindow = null;
+
+// CRITICAL: Initialize native messaging host AFTER handler is registered
+// Native messaging requires immediate stdin/stdout handling - Chrome will disconnect
+// if the host doesn't respond quickly enough. Electron initialization is slow and blocks.
+nativeMessagingHost.init();
+logToFile('Native messaging host initialized (handler registered first)');
+
+// Initialize Electron only when needed (lazy loading)
+// Load it asynchronously so it doesn't block native messaging
+setImmediate(() => {
+  loadElectronIfNeeded();
+  if (app) {
+    // Prevent app from showing dock icon on macOS (runs in background)
+    if (process.platform === 'darwin' && app.dock) {
+      app.dock.hide();
     }
-    nativeMessagingHost.cleanup();
-  });
-  
-  // Handle process signals for graceful shutdown
-  process.on('SIGINT', () => {
-    nativeMessagingHost.cleanup();
-    app.quit();
-  });
-  
-  process.on('SIGTERM', () => {
-    nativeMessagingHost.cleanup();
-    app.quit();
-  });
-});
-
-// Prevent app from showing dock icon on macOS (runs in background)
-if (process.platform === 'darwin') {
-  app.dock?.hide();
-}
-
-// Prevent app from quitting when all windows are closed (no windows needed)
-app.on('window-all-closed', (e) => {
-  e.preventDefault();
+    
+    // Prevent app from quitting when all windows are closed (no windows needed)
+    app.on('window-all-closed', (e) => {
+      e.preventDefault();
+    });
+    
+    app.whenReady().then(() => {
+      logToFile('Electron app ready (lazy loaded)');
+    });
+    
+    app.on('before-quit', () => {
+      nativeMessagingHost.cleanup();
+    });
+    
+    process.on('SIGINT', () => {
+      nativeMessagingHost.cleanup();
+      if (app) app.quit();
+    });
+    
+    process.on('SIGTERM', () => {
+      nativeMessagingHost.cleanup();
+      if (app) app.quit();
+    });
+  }
 });
 
 // Handle uncaught errors gracefully
@@ -128,16 +159,25 @@ process.on('uncaughtException', (error) => {
   logToFile(`ERROR: ${errorMsg}`);
   // Send error response if possible
   if (nativeMessagingHost && nativeMessagingHost.isInitialized) {
-    nativeMessagingHost.sendResponse({
-      success: false,
-      error: error.message,
-      code: 'UNCAUGHT_ERROR'
-    });
+    try {
+      nativeMessagingHost.sendResponse({
+        success: false,
+        error: error.message,
+        code: 'UNCAUGHT_ERROR'
+      });
+    } catch (e) {
+      console.error('Failed to send error response:', e);
+    }
   }
+  // Don't exit - keep process alive for native messaging
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   const errorMsg = `Unhandled rejection: ${reason}`;
   console.error(errorMsg);
   logToFile(`ERROR: ${errorMsg}`);
+  if (reason && typeof reason === 'object' && reason.stack) {
+    console.error('Rejection stack:', reason.stack);
+    logToFile(`ERROR: Stack: ${reason.stack}`);
+  }
 });
