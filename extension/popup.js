@@ -34,6 +34,8 @@ class PopupApp {
   constructor() {
     // Extension enabled/disabled state (default: enabled)
     this.isExtensionEnabled = true;
+    // Current tab URL for matching rules
+    this.currentTabUrl = null;
     this.init();
   }
 
@@ -51,6 +53,8 @@ class PopupApp {
    *   - loadRecentActivity: Method in this class to populate activity list
    */
   async init() {
+    // Get current tab URL for matching rules
+    await this.getCurrentTabUrl();
     // Load extension data and statistics
     await this.loadData();
     // Attach event handlers to UI elements
@@ -59,6 +63,34 @@ class PopupApp {
     this.updateDisplay();
     // Populate recent activity list
     this.loadRecentActivity();
+  }
+
+  /**
+   * Gets the current active tab's URL to match rules against.
+   */
+  async getCurrentTabUrl() {
+    try {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tabs && tabs[0] && tabs[0].url) {
+        this.currentTabUrl = tabs[0].url;
+      }
+    } catch (error) {
+      console.error('Failed to get current tab URL:', error);
+      this.currentTabUrl = null;
+    }
+  }
+
+  /**
+   * Extracts domain from URL
+   */
+  extractDomain(url) {
+    if (!url) return null;
+    try {
+      const urlObj = new URL(url);
+      return urlObj.hostname.replace(/^www\./, '');
+    } catch (e) {
+      return null;
+    }
   }
 
   /**
@@ -118,23 +150,13 @@ class PopupApp {
    *   - toggleExtension: Method in this class to toggle extension state
    */
   setupEventListeners() {
-    // Open options page button
-    // document.getElementById: Finds element by ID
-    //   Inputs: ID string
-    //   Outputs: Element or null
-    // addEventListener: Attaches event handler
-    //   Inputs: Event type ('click'), callback function
-    //   Outputs: None (sets up listener)
-    document.getElementById('open-options').addEventListener('click', () => {
-      // chrome.runtime.openOptionsPage: Opens extension options page
-      //   Inputs: None (optional callback)
-      //   Outputs: Opens options.html in new tab
+    // Open options page button (header)
+    document.getElementById('open-options-header').addEventListener('click', () => {
       chrome.runtime.openOptionsPage();
     });
 
-    // Toggle extension enable/disable button
-    document.getElementById('toggle-extension').addEventListener('click', () => {
-      // toggleExtension: Toggles extension state and updates UI
+    // Toggle extension enable/disable button (header)
+    document.getElementById('toggle-extension-header').addEventListener('click', () => {
       this.toggleExtension();
     });
 
@@ -210,60 +232,120 @@ class PopupApp {
     document.getElementById('groups-count').textContent = Object.keys(this.groups).length;
     document.getElementById('downloads-count').textContent = this.stats.totalDownloads;
 
-    // Show first 3 rules in preview
-    const rulesList = document.getElementById('rules-list');
-    if (rulesList) {
-      const enabledRules = this.rules.filter(r => r.enabled !== false);
-      if (enabledRules.length === 0) {
-        rulesList.innerHTML = '<p class="empty-text">No rules configured</p>';
-      } else {
-        rulesList.innerHTML = enabledRules.slice(0, 3).map(rule => {
-          const priority = rule.priority !== undefined ? parseFloat(rule.priority).toFixed(1) : '2.0';
-          return `
-            <div class="rule-preview">
-              <span class="rule-badge ${rule.type}">${rule.type.toUpperCase()}</span>
-              <span class="rule-value" title="${rule.value}">${rule.value.length > 20 ? rule.value.substring(0, 20) + '...' : rule.value}</span>
-              <span class="rule-arrow">→</span>
-              <span class="rule-folder" title="${rule.folder}">${rule.folder.length > 15 ? rule.folder.substring(0, 15) + '...' : rule.folder}</span>
-              <span class="priority-indicator">P${priority}</span>
-            </div>
-          `;
-        }).join('');
-        if (enabledRules.length > 3) {
-          rulesList.innerHTML += `<p class="more-rules">+${enabledRules.length - 3} more</p>`;
-        }
-      }
-    }
+    // Show active rules matching current site
+    this.renderActiveRules();
+    
+    // Show all rules
+    this.renderAllRules();
 
-    // Update extension toggle button appearance based on state
-    const toggleBtn = document.getElementById('toggle-extension');
-    const toggleIcon = document.getElementById('toggle-icon');
-    const toggleText = document.getElementById('toggle-text');
-    const statusIndicator = document.getElementById('status-indicator');
+    // Update extension toggle button appearance based on state (header)
+    const toggleBtnHeader = document.getElementById('toggle-extension-header');
+    const toggleIconHeader = document.getElementById('toggle-icon-header');
 
     if (this.isExtensionEnabled) {
       // Extension is enabled - show pause option
       if (typeof getIcon !== 'undefined') {
-        toggleIcon.innerHTML = getIcon('pause', 16);
+        toggleIconHeader.innerHTML = getIcon('pause', 18);
       }
-      toggleText.textContent = 'Pause';
-      // classList.remove: Removes CSS class from element
-      //   Inputs: Class name string
-      //   Outputs: None (modifies element)
-      toggleBtn.classList.remove('disabled');
-      // style.background: Sets element's background-color CSS property
-      //   Inputs: Color value string
-      //   Outputs: None (modifies element style)
-      statusIndicator.style.background = 'var(--success-color)';
+      toggleBtnHeader.classList.remove('disabled');
+      toggleBtnHeader.title = 'Pause';
     } else {
       // Extension is disabled - show resume option
       if (typeof getIcon !== 'undefined') {
-        toggleIcon.innerHTML = getIcon('play', 16);
+        toggleIconHeader.innerHTML = getIcon('play', 18);
       }
-      toggleText.textContent = 'Resume';
-      // classList.add: Adds CSS class to element
-      toggleBtn.classList.add('disabled');
-      statusIndicator.style.background = 'var(--error-color)';
+      toggleBtnHeader.classList.add('disabled');
+      toggleBtnHeader.title = 'Resume';
+    }
+  }
+
+  /**
+   * Renders active rules that match the current site
+   */
+  renderActiveRules() {
+    const activeRulesList = document.getElementById('active-rules-list');
+    if (!activeRulesList) return;
+
+    const currentDomain = this.extractDomain(this.currentTabUrl);
+    if (!currentDomain) {
+      activeRulesList.innerHTML = '<p class="empty-text">Unable to detect current site</p>';
+      return;
+    }
+
+    // Find matching domain rules
+    const enabledRules = this.rules.filter(r => r.enabled !== false);
+    const matchingRules = enabledRules.filter(rule => {
+      if (rule.type === 'domain') {
+        const ruleDomain = rule.value.replace(/^www\./, '');
+        return currentDomain === ruleDomain || currentDomain.endsWith('.' + ruleDomain);
+      }
+      return false;
+    });
+
+    if (matchingRules.length === 0) {
+      activeRulesList.innerHTML = '<p class="empty-text">No matching rules for this site</p>';
+      return;
+    }
+
+    // Sort by priority (lower = higher priority)
+    matchingRules.sort((a, b) => {
+      const priorityA = a.priority !== undefined ? parseFloat(a.priority) : 2.0;
+      const priorityB = b.priority !== undefined ? parseFloat(b.priority) : 2.0;
+      return priorityA - priorityB;
+    });
+
+    const iconHTML = typeof getIcon !== 'undefined' ? getIcon('globe', 16) : '';
+    activeRulesList.innerHTML = matchingRules.map(rule => {
+      return `
+        <div class="rule-preview">
+          <span class="rule-icon">${iconHTML}</span>
+          <span class="rule-value" title="${rule.value}">${rule.value.length > 30 ? rule.value.substring(0, 30) + '...' : rule.value}</span>
+          <span class="rule-arrow">→</span>
+          <span class="rule-folder" title="${rule.folder}">${rule.folder.length > 20 ? rule.folder.substring(0, 20) + '...' : rule.folder}</span>
+        </div>
+      `;
+    }).join('');
+  }
+
+  /**
+   * Renders all rules
+   */
+  renderAllRules() {
+    const allRulesList = document.getElementById('all-rules-list');
+    if (!allRulesList) return;
+
+    const enabledRules = this.rules.filter(r => r.enabled !== false);
+    if (enabledRules.length === 0) {
+      allRulesList.innerHTML = '<p class="empty-text">No rules configured</p>';
+      return;
+    }
+
+    // Sort by priority then by type
+    enabledRules.sort((a, b) => {
+      const priorityA = a.priority !== undefined ? parseFloat(a.priority) : 2.0;
+      const priorityB = b.priority !== undefined ? parseFloat(b.priority) : 2.0;
+      if (priorityA !== priorityB) return priorityA - priorityB;
+      // If same priority, domain rules first
+      if (a.type === 'domain' && b.type !== 'domain') return -1;
+      if (a.type !== 'domain' && b.type === 'domain') return 1;
+      return 0;
+    });
+
+    allRulesList.innerHTML = enabledRules.slice(0, 5).map(rule => {
+      const iconName = rule.type === 'domain' ? 'globe' : 'file-type';
+      const iconHTML = typeof getIcon !== 'undefined' ? getIcon(iconName, 16) : '';
+      return `
+        <div class="rule-preview">
+          <span class="rule-icon">${iconHTML}</span>
+          <span class="rule-value" title="${rule.value}">${rule.value.length > 25 ? rule.value.substring(0, 25) + '...' : rule.value}</span>
+          <span class="rule-arrow">→</span>
+          <span class="rule-folder" title="${rule.folder}">${rule.folder.length > 18 ? rule.folder.substring(0, 18) + '...' : rule.folder}</span>
+        </div>
+      `;
+    }).join('');
+    
+    if (enabledRules.length > 5) {
+      allRulesList.innerHTML += `<p class="more-rules">+${enabledRules.length - 5} more</p>`;
     }
   }
 
@@ -623,9 +705,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const appIcon = document.getElementById('app-icon');
     if (appIcon) appIcon.innerHTML = getIcon('folder', 32);
     
-    // Set settings icon
-    const settingsIcon = document.getElementById('settings-icon');
-    if (settingsIcon) settingsIcon.innerHTML = getIcon('settings', 16);
+    // Set settings icon (header)
+    const settingsIconHeader = document.getElementById('settings-icon-header');
+    if (settingsIconHeader) settingsIconHeader.innerHTML = getIcon('settings', 18);
+    
+    // Set toggle icon (header) - will be updated by updateDisplay()
+    const toggleIconHeader = document.getElementById('toggle-icon-header');
+    if (toggleIconHeader) toggleIconHeader.innerHTML = getIcon('pause', 18);
     
     // Set welcome icon
     const welcomeIcon = document.getElementById('welcome-icon');

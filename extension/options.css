@@ -1193,3 +1193,153 @@ input:checked + .toggle-slider:before {
 .setting-input .form-input {
   flex: 1;
 }
+
+/* Rule/Group summary display */
+.rule-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 14px;
+}
+
+.rule-match {
+  font-weight: 500;
+  color: var(--text-primary);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rule-arrow {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.rule-folder {
+  color: var(--primary-color);
+  font-weight: 500;
+}
+
+/* Priority badge (small version for list) */
+.priority-badge-small {
+  font-size: 10px;
+  background: #fef3c7;
+  color: #92400e;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+  margin-left: 8px;
+}
+
+/* Status indicators */
+.status-disabled {
+  opacity: 0.6;
+}
+
+.status-disabled .item-type {
+  color: var(--text-muted);
+}
+
+/* Edit form in modal */
+.edit-form {
+  padding: 0;
+}
+
+.edit-form .form-group {
+  margin-bottom: 16px;
+}
+
+.edit-form .form-group:last-child {
+  margin-bottom: 0;
+}
+
+/* Folder input group */
+.folder-input-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.folder-input-group .form-input {
+  flex: 1;
+}
+
+/* Modal improvements */
+.modal-body.edit-form {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+/* Quick edit styles */
+.quick-edit-content {
+  padding: 12px 0;
+}
+
+.quick-edit-group {
+  margin-bottom: 12px;
+}
+
+.quick-edit-group:last-child {
+  margin-bottom: 0;
+}
+
+.quick-edit {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.item-type .quick-edit {
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 0;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.item-type .quick-edit:hover {
+  background: var(--surface);
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.item-type .quick-edit:focus {
+  background: var(--surface);
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.quick-edit-input {
+  font-size: 13px;
+}
+
+.quick-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+  font-size: 12px;
+}
+
+.quick-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.item-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.item-icon svg {
+  display: block;
+}

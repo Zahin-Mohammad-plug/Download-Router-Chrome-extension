@@ -8,6 +8,7 @@
     "storage",
     "notifications",
     "activeTab",
+    "tabs",
     "nativeMessaging"
   ],
   "host_permissions": [

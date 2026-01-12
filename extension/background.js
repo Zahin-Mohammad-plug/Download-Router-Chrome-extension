@@ -534,7 +534,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     proceedWithDownload(message.downloadInfo.id, message.downloadInfo.resolvedPath);
   } else if (message.type === 'addRule') {
     // addRule: Adds or updates a routing rule in storage
-    addRule(message.rule);
+    addRule(message.rule).then(() => {
+      sendResponse({ success: true });
+    }).catch((error) => {
+      console.error('addRule error:', error);
+      sendResponse({ success: false, error: error.message });
+    });
+    return true; // Required for async sendResponse
   } else if (message.type === 'addToGroup') {
     // addToGroup: Adds an extension to an existing file type group
     addToGroup(message.extension, message.group);
@@ -1002,37 +1008,50 @@ function proceedWithDownload(downloadId, customPath = null) {
  *   - chrome.storage.sync API: For storing rules persistently across devices
  */
 function addRule(rule) {
-  // Retrieve existing rules from sync storage
-  // chrome.storage.sync.get: Retrieves data from sync storage (synced across Chrome instances)
-  //   Inputs: Array of keys ['rules']
-  //   Outputs: Calls callback with data object
-  chrome.storage.sync.get(['rules'], (data) => {
-    const rules = data.rules || [];
-    
-    // Check if rule with same type and value already exists
-    // findIndex: Array method to find index of first matching element
-    //   Inputs: Predicate function
-    //   Outputs: Index number or -1 if not found
-    const existingRuleIndex = rules.findIndex(r => 
-      r.type === rule.type && r.value === rule.value
-    );
-    
-    if (existingRuleIndex >= 0) {
-      // Update existing rule at found index
-      rules[existingRuleIndex] = rule;
-    } else {
-      // Add new rule to end of array
-      // push: Array method to add element to end
-      //   Inputs: Element to add
-      //   Outputs: New array length
-      rules.push(rule);
-    }
-    
-    // Save updated rules back to sync storage
-    // chrome.storage.sync.set: Stores data in sync storage
-    //   Inputs: Object with key-value pairs
-    //   Outputs: None (stores asynchronously)
-    chrome.storage.sync.set({ rules });
+  return new Promise((resolve, reject) => {
+    // Retrieve existing rules from sync storage
+    // chrome.storage.sync.get: Retrieves data from sync storage (synced across Chrome instances)
+    //   Inputs: Array of keys ['rules']
+    //   Outputs: Calls callback with data object
+    chrome.storage.sync.get(['rules'], (data) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      
+      const rules = data.rules || [];
+      
+      // Check if rule with same type and value already exists
+      // findIndex: Array method to find index of first matching element
+      //   Inputs: Predicate function
+      //   Outputs: Index number or -1 if not found
+      const existingRuleIndex = rules.findIndex(r => 
+        r.type === rule.type && r.value === rule.value
+      );
+      
+      if (existingRuleIndex >= 0) {
+        // Update existing rule at found index
+        rules[existingRuleIndex] = rule;
+      } else {
+        // Add new rule to end of array
+        // push: Array method to add element to end
+        //   Inputs: Element to add
+        //   Outputs: New array length
+        rules.push(rule);
+      }
+      
+      // Save updated rules back to sync storage
+      // chrome.storage.sync.set: Stores data in sync storage
+      //   Inputs: Object with key-value pairs
+      //   Outputs: None (stores asynchronously)
+      chrome.storage.sync.set({ rules }, () => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else {
+          resolve();
+        }
+      });
+    });
   });
 }
 

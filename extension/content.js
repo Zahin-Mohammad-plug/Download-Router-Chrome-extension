@@ -145,6 +145,8 @@ class DownloadOverlay {
     this.rulesEditorVisible = false;
     // Flag indicating if location picker panel is currently visible
     this.locationPickerVisible = false;
+    // Flag indicating if countdown is paused
+    this.countdownPaused = false;
     // Remaining time in milliseconds for countdown (default 5 seconds)
     this.timeLeft = 5000; // 5 seconds
     this.init();
@@ -390,6 +392,51 @@ class DownloadOverlay {
         justify-content: center;
       }
 
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        border-radius: var(--radius-sm);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all var(--transition-base);
+        border: none;
+        letter-spacing: -0.01em;
+      }
+
+      .btn svg {
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+      }
+
+      .btn.primary {
+        background: linear-gradient(135deg, var(--success), var(--success-hover));
+        color: white;
+        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+      }
+
+      .btn.primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+      }
+
+      .btn.secondary {
+        background: var(--surface-elevated);
+        color: var(--text);
+        border: 1px solid var(--border-subtle);
+        box-shadow: var(--shadow-soft);
+      }
+
+      .btn.secondary:hover {
+        background: var(--surface-elevated);
+        border-color: var(--border);
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-sm);
+      }
+
       .btn.text {
         background: transparent;
         border: none;
@@ -594,6 +641,59 @@ class DownloadOverlay {
         border-radius: 3px;
         overflow: hidden;
         flex-shrink: 0;
+      }
+
+      .rule-type-buttons {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+
+      .rule-type-btn {
+        flex: 1;
+        padding: 10px 16px;
+        border: 2px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        background: var(--surface);
+        color: var(--text-primary);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all var(--transition-base);
+        text-align: center;
+      }
+
+      .rule-type-btn:hover {
+        border-color: var(--border);
+        background: var(--surface-elevated);
+      }
+
+      .rule-type-btn.active {
+        border-color: var(--primary-color);
+        background: var(--primary-color);
+        color: white;
+      }
+
+      .rule-editor-form {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .clickable-folder-input {
+        cursor: pointer;
+        background: var(--surface-elevated);
+      }
+
+      .clickable-folder-input:hover {
+        border-color: var(--primary-color);
+        background: var(--surface);
+      }
+
+      .clickable-folder-input:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
       }
 
       .countdown-fill {
@@ -1122,71 +1222,6 @@ class DownloadOverlay {
             </div>
           </div>
 
-          <div class="rules-editor">
-            <div class="rules-header">
-              <div class="rules-title">Edit Routing Rules</div>
-              <div class="rules-info">Domain: ${this.currentDownloadInfo.domain} • Type: .${this.currentDownloadInfo.extension}</div>
-            </div>
-            <div class="rules-content">
-              <div class="rule-type-selector">
-                <label>
-                  <input type="radio" name="ruleType" value="domain" checked>
-                  Route domain → folder
-                </label>
-                <label>
-                  <input type="radio" name="ruleType" value="extension">
-                  Route file type → group/folder
-                </label>
-              </div>
-              
-              <div class="domain-rule-config">
-                <div class="rule-row">
-                  <span>${this.currentDownloadInfo.domain}</span> → 
-                  <input type="text" class="folder-input" placeholder="Choose folder">
-                  <button class="browse-btn">Browse</button>
-                </div>
-              </div>
-              
-              <div class="extension-rule-config hidden">
-                <div class="rule-row">
-                  Map .${this.currentDownloadInfo.extension} to:
-                  <select class="target-select">
-                    <option value="folder">A Folder</option>
-                    <option value="group">A Group</option>
-                  </select>
-                </div>
-                <div class="folder-target">
-                  <div class="rule-row">
-                    <input type="text" class="folder-input" placeholder="Choose folder">
-                    <button class="browse-btn">Browse</button>
-                  </div>
-                </div>
-                <div class="group-target hidden">
-                  <div class="rule-row">
-                    <select class="target-select">
-                      <option value="">Select a group...</option>
-                      <option value="videos">Videos (mp4, mov, mkv, avi)</option>
-                      <option value="images">Images (jpg, jpeg, png, gif, bmp)</option>
-                      <option value="documents">Documents (pdf, doc, docx, txt)</option>
-                      <option value="3d-files">3D Files (stl, obj, 3mf, step)</option>
-                      <option value="archives">Archives (zip, rar, 7z, tar)</option>
-                      <option value="software">Software (exe, msi, dmg, deb)</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-              
-              <div class="priority-hint">
-                Priority: Domain rules > Group/Filetype rules > Default folder
-              </div>
-              
-              <div class="rules-actions">
-                <button class="cancel-btn">Cancel</button>
-                <button class="apply-btn">Apply Rule</button>
-              </div>
-            </div>
-          </div>
-
           <!-- Inline Save As editor (hidden by default) -->
           <div class="saveas-editor hidden">
             <div class="rules-header">
@@ -1216,33 +1251,32 @@ class DownloadOverlay {
           <div class="rule-editor-inline hidden">
             <div class="rules-header">
               <div class="rules-title">Edit Routing Rule</div>
-              <div class="rules-info">Domain: ${this.currentDownloadInfo.domain} • Type: .${this.currentDownloadInfo.extension}</div>
             </div>
             <div class="rules-content">
-              <div class="rule-type-selector">
-                <label>
-                  <input type="radio" name="ruleTypeInline" value="domain" checked>
-                  Route domain → folder
-                </label>
-                <label>
-                  <input type="radio" name="ruleTypeInline" value="extension">
-                  Route file type → folder
-                </label>
+              <div class="rule-type-buttons">
+                <button class="rule-type-btn active" data-type="filetype">
+                  Add ${this.currentDownloadInfo.extension || 'file type'}
+                </button>
+                <button class="rule-type-btn" data-type="domain">
+                  Add ${this.getBaseDomain(this.currentDownloadInfo.domain) || 'domain'}
+                </button>
               </div>
               
-              <div class="domain-rule-config-inline">
-                <div class="rule-row">
-                  <span>${this.currentDownloadInfo.domain}</span> → 
-                  <input type="text" class="folder-input inline-folder-input" placeholder="Choose folder">
-                  <button class="browse-btn inline-browse-btn">Browse</button>
+              <div class="rule-editor-form">
+                <div class="form-group">
+                  <label class="form-label">${this.currentDownloadInfo.ruleEditorType === 'domain' ? 'Domain' : 'Extension'}</label>
+                  <input type="text" 
+                         class="folder-input rule-value-input" 
+                         id="rule-value-input"
+                         placeholder="${this.currentDownloadInfo.ruleEditorType === 'domain' ? 'e.g., github.com' : 'e.g., .svg,.png,.jpg'}">
                 </div>
-              </div>
-              
-              <div class="extension-rule-config-inline hidden">
-                <div class="rule-row">
-                  <span>.${this.currentDownloadInfo.extension}</span> → 
-                  <input type="text" class="folder-input inline-folder-input" placeholder="Choose folder">
-                  <button class="browse-btn inline-browse-btn">Browse</button>
+                <div class="form-group">
+                  <label class="form-label">Destination Folder</label>
+                  <input type="text" 
+                         class="folder-input rule-folder-input clickable-folder-input" 
+                         id="rule-folder-input"
+                         placeholder="Click to select folder"
+                         readonly>
                 </div>
               </div>
               
@@ -1343,13 +1377,14 @@ class DownloadOverlay {
         const editor = root.querySelector('.rule-editor-inline');
         const saveasEditor = root.querySelector('.saveas-editor');
         const groupSelector = root.querySelector('.group-selector-inline');
-        
+
         if (editor) {
           editor.classList.toggle('hidden');
           if (!editor.classList.contains('hidden')) {
             if (saveasEditor) saveasEditor.classList.add('hidden');
             if (groupSelector) groupSelector.classList.add('hidden');
             this.pauseCountdown();
+            this.initializeRuleEditor();
           } else {
             this.resumeCountdown();
           }
@@ -1455,22 +1490,7 @@ class DownloadOverlay {
       });
     }
 
-    // Inline rule editor type selector
-    root.querySelectorAll('input[name="ruleTypeInline"]').forEach(radio => {
-      radio.addEventListener('change', (e) => {
-        const domainConfig = root.querySelector('.domain-rule-config-inline');
-        const extensionConfig = root.querySelector('.extension-rule-config-inline');
-        if (domainConfig && extensionConfig) {
-          if (e.target.value === 'domain') {
-            domainConfig.classList.remove('hidden');
-            extensionConfig.classList.add('hidden');
-          } else {
-            domainConfig.classList.add('hidden');
-            extensionConfig.classList.remove('hidden');
-          }
-        }
-      });
-    });
+    // Rule editor is initialized via initializeRuleEditor() when opened
 
     // Inline rule editor browse buttons
     root.querySelectorAll('.rule-editor-inline .inline-browse-btn').forEach(btn => {
@@ -1520,115 +1540,13 @@ class DownloadOverlay {
    *   - hideRulesEditor: Method in this class to close rules editor
    */
   setupRulesEditorEvents() {
-    const root = this.shadowRoot;
-    
-    // Attach change handlers to rule type radio buttons (domain vs extension)
-    // querySelectorAll: Finds all matching elements
-    //   Inputs: CSS selector string ('input[name="ruleType"]')
-    //   Outputs: NodeList of elements
-    // forEach: Iterates over NodeList
-    //   Inputs: Callback function
-    //   Outputs: None (executes callback for each element)
-    root.querySelectorAll('input[name="ruleType"]').forEach(radio => {
-      radio.addEventListener('change', (e) => {
-        // Get references to configuration panels
-        const domainConfig = root.querySelector('.domain-rule-config');
-        const extensionConfig = root.querySelector('.extension-rule-config');
-        
-        // Toggle visibility based on selected rule type
-        // classList.remove/add: Modifies element's class list
-        //   Inputs: Class name string
-        //   Outputs: None (modifies element)
-        if (e.target.value === 'domain') {
-          domainConfig.classList.remove('hidden');
-          extensionConfig.classList.add('hidden');
-        } else {
-          domainConfig.classList.add('hidden');
-          extensionConfig.classList.remove('hidden');
-        }
-      });
-    });
-    
-    // Target type selector
-    const targetSelect = root.querySelector('.extension-rule-config .target-select');
-    if (targetSelect) {
-      targetSelect.addEventListener('change', (e) => {
-        const folderTarget = root.querySelector('.folder-target');
-        const groupTarget = root.querySelector('.group-target');
-        
-        if (e.target.value === 'folder') {
-          folderTarget.classList.remove('hidden');
-          groupTarget.classList.add('hidden');
-        } else {
-          folderTarget.classList.add('hidden');
-          groupTarget.classList.remove('hidden');
-        }
-      });
-    }
-    
-    // Browse buttons - open native folder picker
-    root.querySelectorAll('.rules-editor .browse-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        // Find the associated input field (sibling or parent's sibling)
-        const ruleRow = btn.closest('.rule-row');
-        const input = ruleRow ? ruleRow.querySelector('.folder-input') : null;
-        if (input) {
-          this.openNativeFolderPicker((selectedPath) => {
-            if (selectedPath) {
-              input.value = selectedPath;
-            }
-          });
-        }
-      });
-    });
-    
-    // Apply button
-    root.querySelector('.rules-editor .apply-btn').addEventListener('click', () => {
-      this.applyRuleChanges();
-    });
-    
-    // Cancel button
-    root.querySelector('.rules-editor .cancel-btn').addEventListener('click', () => {
-      this.hideRulesEditor();
-    });
+    // Legacy method - inline editors are now used instead
+    // Keep empty for backward compatibility
   }
 
-  /**
-   * Attaches event listeners specific to the location picker panel.
-   * Handles apply and cancel actions for location changes.
-   * 
-   * Inputs: None (uses elements in this.shadowRoot)
-   * 
-   * Outputs: None (attaches event listeners)
-   * 
-   * External Dependencies:
-   *   - this.shadowRoot: Shadow root containing location picker elements
-   *   - applyLocationChange: Method in this class to save location change
-   *   - hideLocationPicker: Method in this class to close location picker
-   */
   setupLocationPickerEvents() {
-    const root = this.shadowRoot;
-    
-    // Browse button - opens native folder picker
-    root.querySelector('.location-picker .browse-btn').addEventListener('click', () => {
-      this.openNativeFolderPicker((selectedPath) => {
-        if (selectedPath) {
-          // Update the folder path input field with selected path
-          const input = root.querySelector('.location-picker .folder-path-input');
-          input.value = selectedPath;
-        }
-      });
-    });
-    
-    // Apply button
-    root.querySelector('.location-picker .apply-btn').addEventListener('click', () => {
-      this.applyLocationChange();
-    });
-    
-    // Cancel button
-    root.querySelector('.location-picker .cancel-btn').addEventListener('click', () => {
-      this.hideLocationPicker();
-    });
+    // Legacy method - inline Save As editor is now used instead
+    // Keep empty for backward compatibility
   }
 
   /**
@@ -1641,44 +1559,33 @@ class DownloadOverlay {
    *   - pauseCountdown: Method in this class to stop countdown timer
    */
   showRulesEditor() {
-    // Pause countdown while user interacts with editor
+    // Legacy method - inline editor is now used
+    // Shows the inline rule editor instead
     this.pauseCountdown();
-    const rulesEditor = this.shadowRoot.querySelector('.rules-editor');
-    rulesEditor.classList.add('visible');
+    const editor = this.shadowRoot.querySelector('.rule-editor-inline');
+    if (editor) {
+      editor.classList.remove('hidden');
+    }
     this.rulesEditorVisible = true;
   }
 
-  /**
-   * Hides the rules editor panel and resumes countdown.
-   * 
-   * Inputs: None (uses elements in this.shadowRoot)
-   * Outputs: None (updates UI and state)
-   * 
-   * External Dependencies:
-   *   - resumeCountdown: Method in this class to restart countdown timer
-   */
   hideRulesEditor() {
-    const rulesEditor = this.shadowRoot.querySelector('.rules-editor');
-    rulesEditor.classList.remove('visible');
+    // Legacy method - inline editor is now used
+    const editor = this.shadowRoot.querySelector('.rule-editor-inline');
+    if (editor) {
+      editor.classList.add('hidden');
+    }
     this.rulesEditorVisible = false;
-    // Resume countdown when editor is closed
     this.resumeCountdown();
   }
 
-  /**
-   * Displays the location picker panel and pauses countdown.
-   * 
-   * Inputs: None (uses elements in this.shadowRoot)
-   * Outputs: None (updates UI and state)
-   * 
-   * External Dependencies:
-   *   - pauseCountdown: Method in this class to stop countdown timer
-   */
   showLocationPicker() {
-    // Pause countdown while user interacts with location picker
+    // Legacy method - inline Save As editor is now used
     this.pauseCountdown();
-    const locationPicker = this.shadowRoot.querySelector('.location-picker');
-    locationPicker.classList.add('visible');
+    const editor = this.shadowRoot.querySelector('.saveas-editor');
+    if (editor) {
+      editor.classList.remove('hidden');
+    }
     this.locationPickerVisible = true;
   }
 
@@ -1785,39 +1692,170 @@ class DownloadOverlay {
   }
 
   /**
-   * Applies inline rule changes from overlay.
+   * Updates the rule info badge display in the overlay header.
    */
-  applyInlineRuleChanges() {
+  updateRuleInfoDisplay() {
     const root = this.shadowRoot;
-    const ruleType = root.querySelector('input[name="ruleTypeInline"]:checked')?.value;
+    const ruleInfo = root.querySelector('.rule-info');
+    if (!ruleInfo || !this.currentDownloadInfo.finalRule) return;
+
+    const rule = this.currentDownloadInfo.finalRule;
+    const source = rule.source || 'rule';
+    const priority = rule.priority !== undefined ? parseFloat(rule.priority).toFixed(1) : '2.0';
+    const sourceLabel = source === 'domain' ? 'DOMAIN' : 
+                       source === 'extension' ? 'EXTENSION' : 
+                       source === 'filetype' ? 'FILE TYPE' : 'RULE';
     
-    if (!ruleType) return;
+    ruleInfo.innerHTML = `
+      <span class="rule-badge ${source}">${sourceLabel}</span>
+      <span class="priority-badge">Priority ${priority}</span>
+      ${rule.value ? `<span class="rule-value">${rule.value}</span>` : ''}
+    `;
+  }
+
+  /**
+   * Extracts base domain from full domain string.
+   */
+  getBaseDomain(domain) {
+    if (!domain) return '';
+    // Remove protocol, www, trailing slash
+    return domain.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '').split('/')[0];
+  }
+
+  /**
+   * Initializes the rule editor with pre-filled values.
+   */
+  initializeRuleEditor() {
+    const root = this.shadowRoot;
     
-    let folder = '';
-    if (ruleType === 'domain') {
-      const input = root.querySelector('.domain-rule-config-inline .inline-folder-input');
-      folder = input ? input.value.trim() : '';
-    } else {
-      const input = root.querySelector('.extension-rule-config-inline .inline-folder-input');
-      folder = input ? input.value.trim() : '';
+    // Get expected folder destination
+    const expectedFolder = this.currentDownloadInfo.finalRule?.folder || 
+                          this.currentDownloadInfo.absoluteDestination || 
+                          (this.currentDownloadInfo.resolvedPath ? 
+                            this.currentDownloadInfo.resolvedPath.split('/').slice(0, -1).join('/') : 
+                            'Downloads');
+    
+    // Default to filetype rule
+    this.currentDownloadInfo.ruleEditorType = 'filetype';
+    
+    // Set up rule type buttons
+    const typeButtons = root.querySelectorAll('.rule-type-btn');
+    typeButtons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        typeButtons.forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        this.currentDownloadInfo.ruleEditorType = e.target.dataset.type;
+        this.updateRuleEditorInputs();
+      });
+    });
+    
+    // Prefill inputs
+    const valueInput = root.querySelector('#rule-value-input');
+    const folderInput = root.querySelector('#rule-folder-input');
+    
+    if (folderInput) {
+      // Extract folder from path (remove filename)
+      folderInput.value = expectedFolder;
     }
     
-    if (folder) {
-      const isAbsPath = /^(\/|[A-Za-z]:[\\\/])/.test(folder);
-      
-      // Send rule to background
-      chrome.runtime.sendMessage({
-        type: 'addRule',
-        rule: {
-          type: ruleType,
-          value: ruleType === 'domain' ? this.currentDownloadInfo.domain : this.currentDownloadInfo.extension,
-          folder: folder,
-          priority: 2.0,
-          enabled: true
-        }
+    // Make folder input clickable
+    if (folderInput) {
+      folderInput.addEventListener('click', () => {
+        this.openNativeFolderPicker((selectedPath) => {
+          if (selectedPath) {
+            folderInput.value = selectedPath;
+          }
+        });
       });
-      
-      // Update current download info
+    }
+    
+    // Update inputs based on selected type
+    this.updateRuleEditorInputs();
+  }
+
+  /**
+   * Updates rule editor inputs based on selected type.
+   */
+  updateRuleEditorInputs() {
+    const root = this.shadowRoot;
+    const valueInput = root.querySelector('#rule-value-input');
+    const label = valueInput?.closest('.form-group').querySelector('.form-label');
+    
+    if (!valueInput) return;
+    
+    const type = this.currentDownloadInfo.ruleEditorType || 'filetype';
+    
+    if (label) {
+      label.textContent = type === 'domain' ? 'Domain' : 'Extension';
+    }
+    
+    if (type === 'domain') {
+      valueInput.value = this.getBaseDomain(this.currentDownloadInfo.domain || '');
+      valueInput.placeholder = 'e.g., github.com';
+    } else {
+      valueInput.value = this.currentDownloadInfo.extension || '';
+      valueInput.placeholder = 'e.g., .svg,.png,.jpg';
+    }
+  }
+
+  /**
+   * Applies inline rule changes from overlay.
+   */
+  async applyInlineRuleChanges() {
+    const root = this.shadowRoot;
+    const ruleType = this.currentDownloadInfo.ruleEditorType || 'filetype';
+    
+    const valueInput = root.querySelector('#rule-value-input');
+    const folderInput = root.querySelector('#rule-folder-input');
+    
+    if (!valueInput || !folderInput) return;
+    
+    let folder = folderInput.value.trim();
+    let ruleValue = valueInput.value.trim();
+    
+    if (!ruleValue) {
+      alert(`Please enter a ${ruleType === 'domain' ? 'domain' : 'file extension'}`);
+      return;
+    }
+    
+    if (!folder) {
+      alert('Please select a folder');
+      return;
+    }
+
+    const isAbsPath = /^(\/|[A-Za-z]:[\\\/])/.test(folder);
+    
+    // Normalize domain value for domain rules
+    if (ruleType === 'domain' && ruleValue) {
+      // Normalize domain (remove protocol, www, trailing slash)
+      ruleValue = this.getBaseDomain(ruleValue);
+    } else if (ruleType === 'filetype') {
+      // Clean up extension list
+      ruleValue = ruleValue.replace(/^\./, '').replace(/,/g, ',').split(',').map(ext => ext.trim().replace(/^\./, '')).filter(ext => ext).join(',');
+    }
+    
+    // Send rule to background and wait for it to be saved
+    try {
+      await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({
+          type: 'addRule',
+          rule: {
+            type: ruleType,
+            value: ruleValue,
+            folder: folder,
+            priority: 2.0,
+            enabled: true
+          }
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(response);
+          }
+        });
+      });
+
+      // Update current download info to use the new rule's path
       if (isAbsPath) {
         this.currentDownloadInfo.resolvedPath = this.currentDownloadInfo.filename;
         this.currentDownloadInfo.absoluteDestination = folder;
@@ -1830,7 +1868,24 @@ class DownloadOverlay {
         this.currentDownloadInfo.needsMove = false;
       }
       
+      // Update current download info with new rule
+      this.currentDownloadInfo.finalRule = {
+        type: ruleType,
+        value: ruleValue,
+        folder: folder,
+        source: ruleType === 'domain' ? 'domain' : 'extension',
+        priority: 2.0
+      };
+      this.currentDownloadInfo.matchedRule = this.currentDownloadInfo.finalRule;
+      
+      // Update rule info display
       this.updatePathDisplay();
+      this.updateRuleInfoDisplay();
+      
+    } catch (error) {
+      console.error('Failed to create rule:', error);
+      alert('Failed to create rule: ' + error.message);
+      return;
     }
     
     // Hide editor
@@ -2086,6 +2141,12 @@ class DownloadOverlay {
    *   - saveDownload: Method in this class to proceed with download
    */
   startCountdown() {
+    // Clear any existing timer first
+    if (this.countdownTimer) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+    
     // Get reference to countdown progress bar and text elements
     const root = this.shadowRoot;
     const countdownFill = root.querySelector('#countdown-fill');
@@ -2093,6 +2154,7 @@ class DownloadOverlay {
     const countdownSeconds = root.querySelector('#countdown-seconds');
     // Reset countdown time to 5 seconds (5000 milliseconds)
     this.timeLeft = 5000; // Reset to 5 seconds
+    this.countdownPaused = false;
     // Update interval: update progress bar every 50ms for smooth animation
     const interval = 50; // Update every 50ms
     
@@ -2100,6 +2162,13 @@ class DownloadOverlay {
     //   Inputs: Callback function, interval in milliseconds
     //   Outputs: Interval ID (stored for cleanup)
     this.countdownTimer = setInterval(() => {
+      // Safety check - should never happen since we clear timer when paused
+      if (this.countdownPaused) {
+        clearInterval(this.countdownTimer);
+        this.countdownTimer = null;
+        return;
+      }
+      
       // Decrement remaining time
       this.timeLeft -= interval;
       // Calculate percentage complete for progress bar (0-100%)
@@ -2129,12 +2198,13 @@ class DownloadOverlay {
         }
       }
       
-      // Auto-save when countdown reaches zero
-      if (this.timeLeft <= 0) {
+      // Auto-save when countdown reaches zero (only if not paused)
+      if (this.timeLeft <= 0 && !this.countdownPaused) {
         // clearInterval: Browser built-in function to stop interval
         //   Inputs: Interval ID
         //   Outputs: None (stops interval)
         clearInterval(this.countdownTimer);
+        this.countdownTimer = null;
         // saveDownload: Proceeds with download immediately
         this.saveDownload();
       }
@@ -2152,9 +2222,18 @@ class DownloadOverlay {
    *   - clearInterval: Browser built-in function to stop interval
    */
   pauseCountdown() {
+    this.countdownPaused = true;
     if (this.countdownTimer) {
-      // clearInterval: Stops the countdown interval
+      // clearInterval: Stops the countdown interval completely
       clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+    // Update UI to show paused state
+    const root = this.shadowRoot;
+    const countdownText = root.querySelector('.countdown-info');
+    if (countdownText) {
+      const secondsLeft = Math.ceil(this.timeLeft / 1000);
+      countdownText.innerHTML = `Paused - <span id="countdown-seconds">${secondsLeft}</span>s remaining`;
     }
   }
 
@@ -2171,6 +2250,7 @@ class DownloadOverlay {
   resumeCountdown() {
     // Only resume if no editor panels are currently visible
     if (!this.rulesEditorVisible && !this.locationPickerVisible) {
+      this.countdownPaused = false;
       // startCountdown: Restarts countdown from beginning
       this.startCountdown();
     }

@@ -357,6 +357,9 @@ class OptionsApp {
     const emptyState = document.getElementById('rules-empty');
     
     if (this.rules.length === 0) {
+      // Clear container and show empty state
+      container.innerHTML = '';
+      container.appendChild(emptyState);
       emptyState.style.display = 'block';
       return;
     }
@@ -372,65 +375,44 @@ class OptionsApp {
   }
 
   createRuleHTML(rule, index) {
-    const typeName = rule.type === 'domain' ? 'Domain Rule' : 'Extension Rule';
     const iconName = rule.type === 'domain' ? 'globe' : 'file-type';
-    const iconHTML = typeof getIcon !== 'undefined' ? getIcon(iconName, 16) : '';
-    const priority = rule.priority !== undefined ? parseFloat(rule.priority).toFixed(1) : '2.0';
+    const iconHTML = typeof window.getIcon !== 'undefined' ? window.getIcon(iconName, 16) : (typeof getIcon !== 'undefined' ? getIcon(iconName, 16) : '');
     const enabled = rule.enabled !== false;
+    const statusClass = enabled ? 'status-enabled' : 'status-disabled';
     
     return `
-      <div class="rule-item" data-index="${index}">
+      <div class="rule-item ${statusClass}" data-index="${index}">
         <div class="item-header">
           <div class="item-type">
-            <span>${iconHTML}</span>
-            ${typeName}
+            <span class="item-icon">${iconHTML}</span>
+            <select class="quick-edit rule-type-quick" data-index="${index}">
+              <option value="domain" ${rule.type === 'domain' ? 'selected' : ''}>Domain Rule</option>
+              <option value="extension" ${rule.type === 'extension' ? 'selected' : ''}>Extension Rule</option>
+            </select>
           </div>
           <div class="item-actions">
             <button class="btn secondary small edit-rule" data-index="${index}">Edit</button>
             <button class="btn danger small delete-rule" data-index="${index}">Delete</button>
           </div>
         </div>
-        <div class="item-content">
-          <div class="form-group">
+        <div class="item-content quick-edit-content">
+          <div class="form-group quick-edit-group">
             <label class="form-label">${rule.type === 'domain' ? 'Domain' : 'Extensions'}</label>
-            <input type="text" class="form-input rule-value" value="${rule.value}" data-index="${index}">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Folder</label>
-            <div class="folder-picker-btn" data-index="${index}">
-              <span>${typeof getIcon !== 'undefined' ? getIcon('folder', 16) : ''}</span>
-              <span class="folder-path">${rule.folder}</span>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Type</label>
-            <select class="form-select rule-type" data-index="${index}">
-              <option value="domain" ${rule.type === 'domain' ? 'selected' : ''}>Domain</option>
-              <option value="extension" ${rule.type === 'extension' ? 'selected' : ''}>Extension</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">
-              Priority
-              <span class="help-text">Lower number = higher priority. Use decimals for fine control (e.g., 1.5, 2.7)</span>
-            </label>
-            <input type="number" 
-                   class="form-input rule-priority" 
+            <input type="text" class="form-input quick-edit-input rule-value-quick" 
+                   value="${rule.value || ''}" 
                    data-index="${index}"
-                   value="${priority}"
-                   min="0.1"
-                   max="10"
-                   step="0.1"
-                   placeholder="2.0">
-            <div class="priority-hint">
-              Default: 2.0 | Common: 1.0 (highest), 2.0 (medium), 3.0 (file types)
-            </div>
+                   placeholder="${rule.type === 'domain' ? 'e.g., github.com' : 'e.g., stl,obj,3mf'}">
           </div>
-          <div class="form-group">
-            <label class="toggle-label">
-              <input type="checkbox" class="rule-enabled" data-index="${index}" ${enabled ? 'checked' : ''}>
-              <span>Enabled</span>
-            </label>
+          <div class="form-group quick-edit-group">
+            <label class="form-label">Destination Folder</label>
+            <div class="folder-input-group">
+              <input type="text" class="form-input quick-edit-input rule-folder-quick" 
+                     value="${rule.folder || 'Downloads'}" 
+                     data-index="${index}">
+              <button class="btn secondary small browse-folder-quick" data-index="${index}">
+                ${typeof window.getIcon !== 'undefined' ? window.getIcon('folder', 14) : (typeof getIcon !== 'undefined' ? getIcon('folder', 14) : '📁')}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -441,58 +423,99 @@ class OptionsApp {
     // Delete rule buttons
     document.querySelectorAll('.delete-rule').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        // Use currentTarget instead of target to handle nested elements (like icons)
-        const index = parseInt(e.currentTarget.dataset.index || e.target.closest('.delete-rule')?.dataset.index || e.target.dataset.index);
+        e.preventDefault();
+        e.stopPropagation();
+        const index = parseInt(e.currentTarget.dataset.index);
         if (!isNaN(index)) {
           this.deleteRule(index);
         }
       });
     });
     
-    // Edit rule inputs
-    document.querySelectorAll('.rule-value').forEach(input => {
-      input.addEventListener('change', (e) => {
-        const index = parseInt(e.target.dataset.index);
-        this.rules[index].value = e.target.value;
+    // Edit rule buttons - open modal for advanced options
+    document.querySelectorAll('.edit-rule').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const index = parseInt(e.currentTarget.dataset.index);
+        if (!isNaN(index)) {
+          this.openEditRuleModal(index);
+        }
       });
     });
-    
-    document.querySelectorAll('.rule-type').forEach(select => {
+
+    // Quick edit: Rule type
+    document.querySelectorAll('.rule-type-quick').forEach(select => {
       select.addEventListener('change', (e) => {
         const index = parseInt(e.target.dataset.index);
-        this.rules[index].type = e.target.value;
+        if (!isNaN(index) && this.rules[index]) {
+          this.rules[index].type = e.target.value;
+          // Update placeholder and label
+          const valueInput = e.target.closest('.rule-item').querySelector('.rule-value-quick');
+          const label = valueInput?.closest('.form-group').querySelector('.form-label');
+          if (label) {
+            label.textContent = e.target.value === 'domain' ? 'Domain' : 'Extensions';
+          }
+          if (valueInput) {
+            valueInput.placeholder = e.target.value === 'domain' ? 'e.g., github.com' : 'e.g., stl,obj,3mf';
+          }
+          this.saveRules();
+        }
       });
     });
-    
-    // Priority inputs
-    document.querySelectorAll('.rule-priority').forEach(input => {
-      input.addEventListener('change', (e) => {
+
+    // Quick edit: Rule value (domain/extensions)
+    document.querySelectorAll('.rule-value-quick').forEach(input => {
+      input.addEventListener('blur', (e) => {
         const index = parseInt(e.target.dataset.index);
-        // Parse as float and round to 1 decimal place
-        const priority = Math.round(parseFloat(e.target.value) * 10) / 10;
-        // Clamp between 0.1 and 10
-        this.rules[index].priority = Math.max(0.1, Math.min(10, priority));
-        // Update input to show rounded value
-        e.target.value = this.rules[index].priority.toFixed(1);
+        if (!isNaN(index) && this.rules[index]) {
+          this.rules[index].value = e.target.value.trim();
+          this.saveRules();
+        }
+      });
+      input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          e.target.blur();
+        }
       });
     });
-    
-    // Enabled checkboxes
-    document.querySelectorAll('.rule-enabled').forEach(checkbox => {
-      checkbox.addEventListener('change', (e) => {
+
+    // Quick edit: Rule folder
+    document.querySelectorAll('.rule-folder-quick').forEach(input => {
+      input.addEventListener('blur', (e) => {
         const index = parseInt(e.target.dataset.index);
-        this.rules[index].enabled = e.target.checked;
+        if (!isNaN(index) && this.rules[index]) {
+          this.rules[index].folder = e.target.value.trim() || 'Downloads';
+          this.saveRules();
+        }
+      });
+      input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          e.target.blur();
+        }
       });
     });
-    
-    // Folder picker buttons
-    document.querySelectorAll('.folder-picker-btn').forEach(btn => {
+
+    // Quick browse folder for rules
+    document.querySelectorAll('.browse-folder-quick').forEach(btn => {
       btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         const index = parseInt(e.currentTarget.dataset.index);
-        this.openFolderPicker((folder) => {
-          this.rules[index].folder = folder;
-          this.renderRules();
-        });
+        if (!isNaN(index)) {
+          const rule = this.rules[index];
+          if (rule) {
+            this.openFolderPicker((folder) => {
+              if (folder) {
+                rule.folder = folder;
+                const input = e.currentTarget.closest('.folder-input-group').querySelector('.rule-folder-quick');
+                if (input) input.value = folder;
+                this.saveRules();
+                this.renderRules(); // Refresh to ensure consistency
+              }
+            });
+          }
+        }
       });
     });
   }
@@ -504,6 +527,9 @@ class OptionsApp {
     const groupEntries = Object.entries(this.groups);
     
     if (groupEntries.length === 0) {
+      // Clear container and show empty state
+      container.innerHTML = '';
+      container.appendChild(emptyState);
       emptyState.style.display = 'block';
       return;
     }
@@ -519,66 +545,48 @@ class OptionsApp {
   }
 
   createGroupHTML(name, group, index) {
-    const priority = group.priority !== undefined ? parseFloat(group.priority).toFixed(1) : '3.0';
-    const overrideDomainRules = group.overrideDomainRules || false;
     const enabled = group.enabled !== false;
+    const statusClass = enabled ? 'status-enabled' : 'status-disabled';
+    const folderIcon = typeof window.getIcon !== 'undefined' ? window.getIcon('folder', 16) : (typeof getIcon !== 'undefined' ? getIcon('folder', 16) : '');
+    const browseIcon = typeof window.getIcon !== 'undefined' ? window.getIcon('folder', 14) : (typeof getIcon !== 'undefined' ? getIcon('folder', 14) : '📁');
     
     return `
-      <div class="group-item" data-name="${name}">
+      <div class="group-item ${statusClass}" data-name="${name}">
         <div class="item-header">
           <div class="item-type">
-            <span>${typeof getIcon !== 'undefined' ? getIcon('folder', 16) : ''}</span>
-            File Type
+            <span class="item-icon">${folderIcon}</span>
+            <input type="text" class="quick-edit group-name-quick" 
+                   value="${name}" 
+                   data-name="${name}"
+                   placeholder="File type name">
           </div>
           <div class="item-actions">
+            <label class="toggle-label quick-toggle">
+              <input type="checkbox" class="group-enabled-quick" data-name="${name}" ${enabled ? 'checked' : ''}>
+              <span>Enabled</span>
+            </label>
             <button class="btn secondary small edit-group" data-name="${name}">Edit</button>
             <button class="btn danger small delete-group" data-name="${name}">Delete</button>
           </div>
         </div>
-        <div class="item-content">
-          <div class="form-group">
-            <label class="form-label">File Type Name</label>
-            <input type="text" class="form-input group-name" value="${name}" data-name="${name}">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Extensions</label>
-            <input type="text" class="form-input group-extensions" value="${group.extensions}" data-name="${name}">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Folder</label>
-            <div class="folder-picker-btn" data-name="${name}">
-              <span>${typeof getIcon !== 'undefined' ? getIcon('folder', 16) : ''}</span>
-              <span class="folder-path">${group.folder}</span>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">
-              Priority
-              <span class="help-text">Lower number = higher priority. Use decimals for fine control (e.g., 2.5, 3.2)</span>
-            </label>
-            <input type="number" 
-                   class="form-input group-priority" 
+        <div class="item-content quick-edit-content">
+          <div class="form-group quick-edit-group">
+            <label class="form-label">Extensions (comma-separated)</label>
+            <input type="text" class="form-input quick-edit-input group-extensions-quick" 
+                   value="${group.extensions || ''}" 
                    data-name="${name}"
-                   value="${priority}"
-                   min="0.1"
-                   max="10"
-                   step="0.1"
-                   placeholder="3.0">
-            <div class="priority-hint">
-              Default: 3.0 | File types typically use 2.5-4.0 range
+                   placeholder="e.g., stl,obj,3mf,step">
+          </div>
+          <div class="form-group quick-edit-group">
+            <label class="form-label">Destination Folder</label>
+            <div class="folder-input-group">
+              <input type="text" class="form-input quick-edit-input group-folder-quick" 
+                     value="${group.folder || 'Downloads'}" 
+                     data-name="${name}">
+              <button class="btn secondary small browse-folder-quick-group" data-name="${name}">
+                ${browseIcon}
+              </button>
             </div>
-          </div>
-          <div class="form-group">
-            <label class="toggle-label">
-              <input type="checkbox" class="override-domain" data-name="${name}" ${overrideDomainRules ? 'checked' : ''}>
-              <span>Override Domain Rules (forces file type match even if domain rule exists)</span>
-            </label>
-          </div>
-          <div class="form-group">
-            <label class="toggle-label">
-              <input type="checkbox" class="group-enabled" data-name="${name}" ${enabled ? 'checked' : ''}>
-              <span>Enabled</span>
-            </label>
           </div>
         </div>
       </div>
@@ -589,68 +597,119 @@ class OptionsApp {
     // Delete group buttons
     document.querySelectorAll('.delete-group').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        const name = e.target.dataset.name;
-        this.deleteGroup(name);
-      });
-    });
-    
-    // Edit group inputs
-    document.querySelectorAll('.group-name').forEach(input => {
-      input.addEventListener('change', (e) => {
-        const oldName = e.target.dataset.name;
-        const newName = e.target.value;
-        if (oldName !== newName && newName) {
-          this.groups[newName] = this.groups[oldName];
-          delete this.groups[oldName];
-          this.renderGroups();
+        e.preventDefault();
+        e.stopPropagation();
+        const name = e.currentTarget.dataset.name;
+        if (name) {
+          this.deleteGroup(name);
         }
       });
     });
     
-    document.querySelectorAll('.group-extensions').forEach(input => {
-      input.addEventListener('change', (e) => {
-        const name = e.target.dataset.name;
-        this.groups[name].extensions = e.target.value;
-      });
-    });
-    
-    // Priority inputs
-    document.querySelectorAll('.group-priority').forEach(input => {
-      input.addEventListener('change', (e) => {
-        const name = e.target.dataset.name;
-        // Parse as float and round to 1 decimal place
-        const priority = Math.round(parseFloat(e.target.value) * 10) / 10;
-        // Clamp between 0.1 and 10
-        this.groups[name].priority = Math.max(0.1, Math.min(10, priority));
-        // Update input to show rounded value
-        e.target.value = this.groups[name].priority.toFixed(1);
-      });
-    });
-    
-    // Override domain rules checkbox
-    document.querySelectorAll('.override-domain').forEach(checkbox => {
-      checkbox.addEventListener('change', (e) => {
-        const name = e.target.dataset.name;
-        this.groups[name].overrideDomainRules = e.target.checked;
-      });
-    });
-    
-    // Enabled checkboxes
-    document.querySelectorAll('.group-enabled').forEach(checkbox => {
-      checkbox.addEventListener('change', (e) => {
-        const name = e.target.dataset.name;
-        this.groups[name].enabled = e.target.checked;
-      });
-    });
-    
-    // Folder picker buttons
-    document.querySelectorAll('.folder-picker-btn').forEach(btn => {
+    // Edit group buttons - open modal for advanced options
+    document.querySelectorAll('.edit-group').forEach(btn => {
       btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         const name = e.currentTarget.dataset.name;
-        this.openFolderPicker((folder) => {
-          this.groups[name].folder = folder;
-          this.renderGroups();
-        });
+        if (name) {
+          this.openEditGroupModal(name);
+        }
+      });
+    });
+
+    // Quick edit: Group name
+    document.querySelectorAll('.group-name-quick').forEach(input => {
+      input.addEventListener('blur', (e) => {
+        const oldName = e.target.dataset.name;
+        const newName = e.target.value.trim();
+        if (oldName && newName && oldName !== newName && !this.groups[newName]) {
+          this.groups[newName] = this.groups[oldName];
+          delete this.groups[oldName];
+          this.saveRules();
+          this.renderGroups(); // Refresh to update data-name attributes
+        } else if (!newName) {
+          e.target.value = oldName; // Revert if empty
+        }
+      });
+      input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          e.target.blur();
+        }
+      });
+    });
+
+    // Quick edit: Group extensions
+    document.querySelectorAll('.group-extensions-quick').forEach(input => {
+      input.addEventListener('blur', (e) => {
+        const name = e.target.dataset.name;
+        if (name && this.groups[name]) {
+          this.groups[name].extensions = e.target.value.trim();
+          this.saveRules();
+        }
+      });
+      input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          e.target.blur();
+        }
+      });
+    });
+
+    // Quick edit: Group folder
+    document.querySelectorAll('.group-folder-quick').forEach(input => {
+      input.addEventListener('blur', (e) => {
+        const name = e.target.dataset.name;
+        if (name && this.groups[name]) {
+          this.groups[name].folder = e.target.value.trim() || 'Downloads';
+          this.saveRules();
+        }
+      });
+      input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          e.target.blur();
+        }
+      });
+    });
+
+    // Quick edit: Group enabled toggle
+    document.querySelectorAll('.group-enabled-quick').forEach(checkbox => {
+      checkbox.addEventListener('change', (e) => {
+        const name = e.target.dataset.name;
+        if (name && this.groups[name]) {
+          this.groups[name].enabled = e.target.checked;
+          this.saveRules();
+          // Update status class
+          const item = e.target.closest('.group-item');
+          if (item) {
+            if (e.target.checked) {
+              item.classList.remove('status-disabled');
+              item.classList.add('status-enabled');
+            } else {
+              item.classList.remove('status-enabled');
+              item.classList.add('status-disabled');
+            }
+          }
+        }
+      });
+    });
+
+    // Quick browse folder for groups
+    document.querySelectorAll('.browse-folder-quick-group').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const name = e.currentTarget.dataset.name;
+        if (name && this.groups[name]) {
+          this.openFolderPicker((folder) => {
+            if (folder) {
+              this.groups[name].folder = folder;
+              const input = e.currentTarget.closest('.folder-input-group').querySelector('.group-folder-quick');
+              if (input) input.value = folder;
+              this.saveRules();
+              this.renderGroups(); // Refresh to ensure consistency
+            }
+          });
+        }
       });
     });
   }
@@ -695,6 +754,13 @@ class OptionsApp {
    *   - chrome.runtime.sendMessage: Chrome API for communicating with background script
    */
   async openFolderPicker(callback) {
+    // Prevent multiple simultaneous folder picker opens
+    if (this.folderPickerOpen) {
+      console.log('Folder picker already open, ignoring');
+      return;
+    }
+    
+    this.folderPickerOpen = true;
     this.folderSelectCallback = callback;
     
     try {
@@ -724,6 +790,7 @@ class OptionsApp {
             if (response.path) {
               // User selected a folder via native picker
               console.log('Folder selected:', response.path);
+              this.folderPickerOpen = false;
               if (callback) {
                 callback(response.path);
               }
@@ -731,6 +798,7 @@ class OptionsApp {
             } else {
               // User cancelled (path is null)
               console.log('User cancelled folder selection');
+              this.folderPickerOpen = false;
               if (callback) callback(null);
               return;
             }
@@ -738,27 +806,41 @@ class OptionsApp {
             if (response.error.includes('cancelled') || response.error.includes('CANCELLED')) {
               // User cancelled - don't show modal
               console.log('User cancelled folder selection (error)');
+              this.folderPickerOpen = false;
               if (callback) callback(null);
               return;
             } else {
               // Error (but not cancellation) - fall through to modal
               console.error('Native folder picker error:', response.error);
+              this.folderPickerOpen = false;
+              if (callback) callback(null);
+              return;
             }
           } else {
-            // No response or unexpected format - fall through to modal
+            // No response or unexpected format - show error
             console.error('Unexpected native folder picker response:', response);
+            this.folderPickerOpen = false;
+            if (callback) callback(null);
+            return;
           }
         } catch (error) {
-          // Native picker failed - fall through to modal fallback
-          console.error('Native picker failed, using modal fallback:', error.message);
+          // Native picker failed
+          console.error('Native picker failed:', error.message);
+          this.folderPickerOpen = false;
+          if (callback) callback(null);
+          return;
         }
       } else {
-        // Companion app not installed - use modal fallback
-        console.log('Companion app not available, using modal fallback');
+        // Companion app not installed - show error
+        console.log('Companion app not available for folder picking');
+        this.folderPickerOpen = false;
+        if (callback) callback(null);
+        return;
       }
     } catch (error) {
       // Companion app check failed - show error
       console.log('Companion app check failed:', error);
+      this.folderPickerOpen = false;
       if (callback) callback(null);
     }
   }
@@ -769,6 +851,231 @@ class OptionsApp {
       modal.classList.remove('active');
     }
     this.folderSelectCallback = null;
+    this.editingRuleIndex = null;
+    this.editingGroupName = null;
+  }
+
+  /**
+   * Opens edit modal for a rule
+   */
+  openEditRuleModal(index) {
+    const rule = this.rules[index];
+    if (!rule) return;
+    
+    this.editingRuleIndex = index;
+    
+    const modal = document.getElementById('modal-overlay');
+    const modalBody = document.getElementById('folder-picker-modal');
+    
+    if (!modal || !modalBody) return;
+    
+    // Update modal content for rule editing
+    modalBody.innerHTML = `
+      <div class="modal-header">
+        <h3>Edit Rule</h3>
+        <button class="modal-close" id="close-modal">
+          ${typeof window.getIcon !== 'undefined' ? window.getIcon('x', 16) : (typeof getIcon !== 'undefined' ? getIcon('x', 16) : '×')}
+        </button>
+      </div>
+      <div class="modal-body edit-form">
+        <div class="form-group">
+          <label class="form-label">Rule Type</label>
+          <select class="form-select" id="edit-rule-type">
+            <option value="domain" ${rule.type === 'domain' ? 'selected' : ''}>Domain</option>
+            <option value="extension" ${rule.type === 'extension' ? 'selected' : ''}>Extension</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">${rule.type === 'domain' ? 'Domain' : 'Extensions'}</label>
+          <input type="text" class="form-input" id="edit-rule-value" value="${rule.value || ''}" placeholder="${rule.type === 'domain' ? 'e.g., github.com' : 'e.g., stl,obj,3mf'}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Destination Folder</label>
+          <div class="folder-input-group">
+            <input type="text" class="form-input" id="edit-rule-folder" value="${rule.folder || 'Downloads'}" placeholder="Downloads">
+            <button class="btn secondary" id="edit-browse-folder">Browse</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">
+            Priority
+            <span class="help-text">1 = highest priority. Use decimals for fine control (e.g., 1.5, 2.7)</span>
+          </label>
+          <input type="number" class="form-input" id="edit-rule-priority" 
+                 value="${rule.priority !== undefined ? parseFloat(rule.priority).toFixed(1) : '2.0'}"
+                 min="0.1" max="10" step="0.1" placeholder="2.0">
+          <div class="priority-hint">Default: 2.0 | Common: 1.0 (highest), 2.0 (medium), 3.0 (file types)</div>
+        </div>
+        <div class="form-group">
+          <label class="toggle-label">
+            <input type="checkbox" id="edit-rule-enabled" ${rule.enabled !== false ? 'checked' : ''}>
+            <span>Enabled</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn secondary" id="modal-cancel">Cancel</button>
+        <button class="btn primary" id="modal-save">Save Changes</button>
+      </div>
+    `;
+    
+    // Attach event listeners
+    document.getElementById('close-modal').addEventListener('click', () => this.closeModal());
+    document.getElementById('modal-cancel').addEventListener('click', () => this.closeModal());
+    document.getElementById('edit-browse-folder').addEventListener('click', () => {
+      this.openFolderPicker((folder) => {
+        if (folder) {
+          document.getElementById('edit-rule-folder').value = folder;
+        }
+      });
+    });
+    document.getElementById('modal-save').addEventListener('click', () => this.saveEditedRule());
+    
+    modal.classList.add('active');
+  }
+
+  /**
+   * Saves the currently edited rule
+   */
+  saveEditedRule() {
+    if (this.editingRuleIndex === null) return;
+    
+    const type = document.getElementById('edit-rule-type').value;
+    const value = document.getElementById('edit-rule-value').value.trim();
+    const folder = document.getElementById('edit-rule-folder').value.trim() || 'Downloads';
+    const priorityInput = document.getElementById('edit-rule-priority').value;
+    const priority = Math.max(0.1, Math.min(10, Math.round(parseFloat(priorityInput) * 10) / 10)) || 2.0;
+    const enabled = document.getElementById('edit-rule-enabled').checked;
+    
+    this.rules[this.editingRuleIndex] = {
+      type,
+      value,
+      folder,
+      priority,
+      enabled
+    };
+    
+    this.saveRules();
+    this.renderRules();
+    this.closeModal();
+    this.showStatus('Rule updated', 'success');
+  }
+
+  /**
+   * Opens edit modal for a file type group
+   */
+  openEditGroupModal(name) {
+    const group = this.groups[name];
+    if (!group) return;
+    
+    this.editingGroupName = name;
+    
+    const modal = document.getElementById('modal-overlay');
+    const modalBody = document.getElementById('folder-picker-modal');
+    
+    if (!modal || !modalBody) return;
+    
+    // Update modal content for group editing
+    modalBody.innerHTML = `
+      <div class="modal-header">
+        <h3>Edit File Type</h3>
+        <button class="modal-close" id="close-modal">
+          ${typeof window.getIcon !== 'undefined' ? window.getIcon('x', 16) : (typeof getIcon !== 'undefined' ? getIcon('x', 16) : '×')}
+        </button>
+      </div>
+      <div class="modal-body edit-form">
+        <div class="form-group">
+          <label class="form-label">File Type Name</label>
+          <input type="text" class="form-input" id="edit-group-name" value="${name}" placeholder="e.g., 3d-files">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Extensions (comma-separated)</label>
+          <input type="text" class="form-input" id="edit-group-extensions" value="${group.extensions || ''}" placeholder="e.g., stl,obj,3mf">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Destination Folder</label>
+          <div class="folder-input-group">
+            <input type="text" class="form-input" id="edit-group-folder" value="${group.folder || 'Downloads'}" placeholder="Downloads">
+            <button class="btn secondary" id="edit-browse-folder">Browse</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">
+            Priority
+            <span class="help-text">1 = highest priority. Use decimals for fine control (e.g., 2.5, 3.2)</span>
+          </label>
+          <input type="number" class="form-input" id="edit-group-priority" 
+                 value="${group.priority !== undefined ? parseFloat(group.priority).toFixed(1) : '3.0'}"
+                 min="0.1" max="10" step="0.1" placeholder="3.0">
+          <div class="priority-hint">Default: 3.0 | File types typically use 2.5-4.0 range</div>
+        </div>
+        <div class="form-group">
+          <label class="toggle-label">
+            <input type="checkbox" id="edit-group-override" ${group.overrideDomainRules ? 'checked' : ''}>
+            <span>Override Domain Rules</span>
+          </label>
+          <div class="help-text">Forces file type match even if a domain rule exists</div>
+        </div>
+        <div class="form-group">
+          <label class="toggle-label">
+            <input type="checkbox" id="edit-group-enabled" ${group.enabled !== false ? 'checked' : ''}>
+            <span>Enabled</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn secondary" id="modal-cancel">Cancel</button>
+        <button class="btn primary" id="modal-save">Save Changes</button>
+      </div>
+    `;
+    
+    // Attach event listeners
+    document.getElementById('close-modal').addEventListener('click', () => this.closeModal());
+    document.getElementById('modal-cancel').addEventListener('click', () => this.closeModal());
+    document.getElementById('edit-browse-folder').addEventListener('click', () => {
+      this.openFolderPicker((folder) => {
+        if (folder) {
+          document.getElementById('edit-group-folder').value = folder;
+        }
+      });
+    });
+    document.getElementById('modal-save').addEventListener('click', () => this.saveEditedGroup());
+    
+    modal.classList.add('active');
+  }
+
+  /**
+   * Saves the currently edited group
+   */
+  saveEditedGroup() {
+    if (!this.editingGroupName) return;
+    
+    const newName = document.getElementById('edit-group-name').value.trim();
+    const extensions = document.getElementById('edit-group-extensions').value.trim();
+    const folder = document.getElementById('edit-group-folder').value.trim() || 'Downloads';
+    const priorityInput = document.getElementById('edit-group-priority').value;
+    const priority = Math.max(0.1, Math.min(10, Math.round(parseFloat(priorityInput) * 10) / 10)) || 3.0;
+    const overrideDomainRules = document.getElementById('edit-group-override').checked;
+    const enabled = document.getElementById('edit-group-enabled').checked;
+    
+    // Handle rename
+    if (newName && newName !== this.editingGroupName) {
+      delete this.groups[this.editingGroupName];
+    }
+    
+    const saveName = newName || this.editingGroupName;
+    this.groups[saveName] = {
+      extensions,
+      folder,
+      priority,
+      overrideDomainRules,
+      enabled
+    };
+    
+    this.saveRules();
+    this.renderGroups();
+    this.closeModal();
+    this.showStatus('File type updated', 'success');
   }
 
   addRule() {
@@ -780,6 +1087,8 @@ class OptionsApp {
       enabled: true
     });
     this.renderRules();
+    // Open edit modal for the new rule
+    this.openEditRuleModal(this.rules.length - 1);
   }
 
   async deleteRule(index) {
@@ -801,6 +1110,8 @@ class OptionsApp {
         enabled: true
       };
       this.renderGroups();
+      // Open edit modal for the new group
+      this.openEditGroupModal(name);
     }
   }
 

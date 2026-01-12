@@ -14,36 +14,18 @@
           <h1>Download Router</h1>
           <p class="app-subtitle">Smart file organization</p>
         </div>
-        <div class="status-indicator" id="status-indicator"></div>
+        <div class="header-actions">
+          <button class="header-action-btn" id="toggle-extension-header" title="Pause">
+            <span id="toggle-icon-header"></span>
+          </button>
+          <button class="header-action-btn" id="open-options-header" title="Configure Rules">
+            <span id="settings-icon-header"></span>
+          </button>
+        </div>
       </div>
     </header>
 
     <main class="app-main">
-      <div class="quick-stats" id="quick-stats">
-        <div class="stat-item">
-          <span class="stat-number" id="rules-count">0</span>
-          <span class="stat-label">Rules</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-number" id="groups-count">0</span>
-          <span class="stat-label">File Types</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-number" id="downloads-count">0</span>
-          <span class="stat-label">Routed</span>
-        </div>
-      </div>
-
-      <div class="rules-preview" id="rules-preview">
-        <div class="section-header">
-          <h3>Active Rules</h3>
-          <button id="add-rule-quick" class="btn-text" title="Add Rule">+ Add</button>
-        </div>
-        <div id="rules-list">
-          <p class="empty-text">No rules configured</p>
-        </div>
-      </div>
-
       <div class="recent-activity" id="recent-activity">
         <div class="section-header">
           <h3>Recent Downloads</h3>
@@ -59,19 +41,41 @@
         </div>
       </div>
 
-      <div class="quick-actions">
-        <button class="action-btn primary" id="open-options">
-          <span class="btn-icon" id="settings-icon"></span>
-          Configure Rules
-        </button>
-        <button class="action-btn secondary" id="toggle-extension">
-          <span class="btn-icon" id="toggle-icon"></span>
-          <span id="toggle-text">Pause</span>
-        </button>
+      <div class="rules-preview" id="rules-preview">
+        <div class="section-header">
+          <h3>Active Rules</h3>
+        </div>
+        <div id="active-rules-list">
+          <p class="empty-text">No matching rules for this site</p>
+        </div>
+      </div>
+
+      <div class="rules-preview" id="all-rules-preview">
+        <div class="section-header">
+          <h3>All Rules</h3>
+          <button id="add-rule-quick" class="btn-text" title="Add Rule">+ Add</button>
+        </div>
+        <div id="all-rules-list">
+          <p class="empty-text">No rules configured</p>
+        </div>
       </div>
     </main>
 
     <footer class="app-footer">
+      <div class="quick-stats" id="quick-stats">
+        <div class="stat-item">
+          <span class="stat-number" id="rules-count">0</span>
+          <span class="stat-label">Rules</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-number" id="groups-count">0</span>
+          <span class="stat-label">File Types</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-number" id="downloads-count">0</span>
+          <span class="stat-label">Routed</span>
+        </div>
+      </div>
       <div class="footer-links">
         <a href="#" id="help-link">Help</a>
         <a href="#" id="feedback-link">Feedback</a>
