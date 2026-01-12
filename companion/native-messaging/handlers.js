@@ -1,16 +1,25 @@
 /**
  * handlers.js
  * 
+ * Platform: Cross-platform (macOS, Windows, Linux)
  * Purpose: Message handlers for native messaging protocol.
  * Role: Routes incoming messages to appropriate service functions based on message type.
  * 
+ * Platform Support:
+ * - Message routing is platform-agnostic
+ * - Services called from handlers are cross-platform (folder-operations, file-mover)
+ * - Error handling and response formatting work identically on all platforms
+ * 
  * Key Responsibilities:
- * - Route messages to folder picker, folder operations, file mover services
+ * - Route messages to folder operations, file mover services
  * - Handle version checks and capability queries
  * - Provide error handling and response formatting
+ * 
+ * Note: pickFolder and showSaveAsDialog are handled directly in main.js
+ * using native OS commands (folder-picker-native.js, file-save-dialog.js)
+ * for faster response times without Electron overhead.
  */
 
-const folderPicker = require('../services/folder-picker');
 const folderOperations = require('../services/folder-operations');
 const fileMover = require('../services/file-mover');
 const fileSaveDialog = require('../services/file-save-dialog');
@@ -26,9 +35,9 @@ const fileSaveDialog = require('../services/file-save-dialog');
  * Outputs: Promise resolving to response object or null (if not handled)
  * 
  * External Dependencies:
- *   - folderPicker: Service for native folder picker dialogs
  *   - folderOperations: Service for folder verification, creation, listing
  *   - fileMover: Service for post-download file moving
+ *   - fileSaveDialog: Service for native Save As dialogs (used in main.js, kept here for other handlers)
  */
 async function handleMessage(message, context) {
   const { type } = message;
@@ -39,11 +48,11 @@ async function handleMessage(message, context) {
     case 'getVersion':
       return handleGetVersion();
     
+    // Note: pickFolder is handled directly in main.js using folder-picker-native.js
+    // This case is never reached but kept for reference
     case 'pickFolder':
-      console.error('Handling pickFolder message, startPath:', message.startPath);
-      const result = await folderPicker.pickFolder(message.startPath || null, context.dialog, context.dialogWindow);
-      console.error('pickFolder result:', JSON.stringify(result));
-      return result;
+      // This should never execute - main.js handles pickFolder before reaching handlers
+      return null;
     
     case 'verifyFolder':
       return folderOperations.verifyFolder(message.path);

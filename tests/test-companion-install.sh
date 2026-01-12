@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test Companion App Installation (Phase 4.1.1.1)
+# Test Companion App Installation
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$REPO_ROOT/logs/debug"

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test Native Messaging Connection (Phase 4.1.1.2)
+# Test Native Messaging Connection
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$REPO_ROOT/logs/debug"

@@ -1,7 +1,15 @@
 #!/bin/bash
 
-# Wrapper script to run Electron companion app in development mode
-# This is used by the native messaging host manifest when running from source
+# Companion App Wrapper Script
+# Platform: Cross-platform (macOS, Windows, Linux)
+# Purpose: Wrapper script to run Electron companion app in development mode
+# 
+# This script is used by the native messaging host manifest when running from source.
+# Works on all platforms where Node.js and Electron are available.
+# The script detects the platform and uses appropriate paths for:
+# - Node.js executable location
+# - Electron installation paths
+# - Log file directory creation
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")" && pwd )"
 

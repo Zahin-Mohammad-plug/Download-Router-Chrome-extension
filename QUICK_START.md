@@ -25,6 +25,8 @@
 
 ## Install Companion App
 
+**Note:** Companion app is cross-platform - same codebase works on macOS, Windows, and Linux.
+
 1. Save your extension ID:
    ```bash
    cd companion
@@ -33,7 +35,11 @@
 
 2. Install companion app:
    ```bash
+   # macOS
    bash install/install-macos.sh
+   
+   # Windows (PowerShell)
+   .\install\install-windows.ps1
    ```
 
 3. **Restart Chrome completely** (quit and relaunch)
@@ -97,7 +103,11 @@ If something doesn't work:
 
 4. **Verify companion app:**
    ```bash
+   # macOS
    cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.downloadrouter.host.json
+   
+   # Windows (PowerShell)
+   reg query "HKCU\Software\Google\Chrome\NativeMessagingHosts\com.downloadrouter.host"
    ```
 
 ## Next Steps

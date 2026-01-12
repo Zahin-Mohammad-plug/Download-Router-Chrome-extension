@@ -1,9 +1,15 @@
 /**
  * folder-picker-native.js
  * 
+ * Platform: Cross-platform (macOS, Windows, Linux)
  * Purpose: Native OS folder picker using OS-level commands (no Electron).
- * Role: Opens native folder selection dialogs using macOS osascript/Windows PowerShell
+ * Role: Opens native folder selection dialogs using platform-specific commands
  *       and returns the selected absolute folder path.
+ * 
+ * Platform Support:
+ * - macOS: Uses osascript (AppleScript) for native Finder dialog
+ * - Windows: Uses PowerShell with System.Windows.Forms.FolderBrowserDialog
+ * - Linux: Uses zenity (GNOME) or kdialog (KDE) for native dialogs
  * 
  * This approach eliminates Electron startup overhead, allowing instant responses.
  */

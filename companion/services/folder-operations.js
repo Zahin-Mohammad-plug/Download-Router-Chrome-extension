@@ -1,8 +1,14 @@
 /**
  * folder-operations.js
  * 
+ * Platform: Cross-platform (macOS, Windows, Linux)
  * Purpose: File system folder operations service.
  * Role: Provides OS-level folder operations: verification, creation, and listing.
+ * 
+ * Platform Support:
+ * - Uses Node.js fs module which is cross-platform
+ * - Path handling works identically on all platforms
+ * - Permissions and file system operations are handled by Node.js
  * 
  * Key Responsibilities:
  * - Verify if folders exist

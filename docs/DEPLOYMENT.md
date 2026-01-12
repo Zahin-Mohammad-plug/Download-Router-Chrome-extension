@@ -122,7 +122,7 @@ Verify `extension/manifest.json` meets Web Store requirements:
 - ✅ All referenced files exist
 - ✅ Icons provided (16, 32, 48, 128)
 - ✅ Valid version number
-- ✅ No overlay.html reference (fixed in Phase 1)
+- ✅ All referenced files exist
 
 **Permissions Justification:**
 - `downloads` - Core functionality
@@ -326,6 +326,5 @@ reg query "HKCU\Software\Google\Chrome\NativeMessagingHosts\com.downloadrouter.h
 
 - [Testing Guide](TESTING.md)
 - [Companion Installation](COMPANION_INSTALL.md)
-- [Architecture Documentation](ARCHITECTURE.md)
 - [Main README](../README.md)
 - [Chrome Web Store Documentation](https://developer.chrome.com/docs/webstore/)

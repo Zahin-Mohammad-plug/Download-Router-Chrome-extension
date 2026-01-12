@@ -1,254 +1,213 @@
-# Download Router Chrome Extension
+# Download Router
 
-Automatically organize your downloads by routing them to specific folders based on website domains and file types.
+A Chrome extension that automatically saves your downloads to different folders based on rules you set. Instead of everything landing in Downloads, route files by website domain or file type.
 
-## ✨ Features
+## What it does
 
-### 🎯 Smart Download Routing
-- **Domain-based routing**: Route downloads from specific websites to designated folders (e.g., `printables.com` → `/3DPrinting/`)
-- **File type groups**: Organize files by extension into predefined or custom groups (e.g., `.exe`, `.msi` → `/SoftwareInstallers/`)
-- **Rule priority system**: Domain rules take precedence over file type rules for precise control
-- **Tie-breaker preferences**: Choose which rule to apply when multiple rules match
+You create rules like "anything from github.com goes to Code/GitHub" or "all .stl files go to 3DPrinting". When you download something, the extension moves it to the right folder. No more digging through Downloads trying to find stuff.
 
-### 🎨 Modern User Interface
-- **Shadow DOM isolation**: Clean, isolated styling that doesn't interfere with websites
-- **Professional overlay system**: Floating confirmation with countdown timer and intuitive controls
-- **Dark mode support**: Automatic theme switching based on system preferences
-- **Responsive design**: Works seamlessly on all screen sizes
+The extension shows a confirmation overlay so you can see where it's going and change it if needed. It auto-saves after a few seconds if you don't interact with it.
 
-### ⚙️ Advanced Configuration
-- **Tabbed settings interface**: Organized rules management, groups configuration, and settings
-- **Folder browser**: Visual folder picker for easy path selection
-- **Real-time validation**: Instant feedback and rule conflict detection
-- **Export/import**: Backup and share your configuration
+## Status
 
-### 📊 Activity Tracking
-- **Download statistics**: Track total downloads, routed files, and efficiency metrics
-- **Recent activity**: View recent downloads with routing status
-- **Performance insights**: Monitor how well your rules are working
+- **Extension**: v2.1.0, works on macOS and Windows
+- **Companion App**: v1.0.0, tested on macOS. Windows builds ready but need testing on actual Windows machine
+- **Chrome Web Store**: Not published yet
 
-### 🔔 Fallback Notifications
-- **Overlay injection**: Primary method with professional styling and animations
-- **Chrome notifications**: Fallback system when overlay injection fails
-- **Action buttons**: Save, change location, or edit rules directly from notifications
-- **Auto-save timeout**: Configurable delay before automatic file saving
+The companion app is optional but recommended. Without it, you can only route files to folders within your Downloads directory. With it, you get native folder pickers and can save files anywhere on your computer.
 
-## 🚀 Installation
+**Companion App Installation**: Currently in progress - the installer is being improved. See `companion/INSTALL.md` for manual installation steps.
 
-### Extension Installation
-1. Download or clone this repository
-2. Open Chrome and navigate to `chrome://extensions/`
-3. Enable "Developer mode" in the top right
+## Installation
+
+### Quick start (extension only)
+
+1. Clone or download this repo
+2. Open Chrome → `chrome://extensions/`
+3. Enable "Developer mode" (top right)
 4. Click "Load unpacked" and select the `extension/` folder
-5. The Download Router icon will appear in your extension toolbar
 
-### Companion App Installation (Recommended)
-For native folder picker and absolute path support, install the companion app:
+That's it. The extension works without the companion app, but you'll be limited to routing files within your Downloads folder.
 
-**macOS:**
-1. Download the DMG from [Releases](https://github.com/Zahin-Mohammad-plug/Download-Router-Chrome-extension/releases)
-2. Install the companion app
-3. Run the installation script to register with Chrome
+### Companion app (recommended)
 
-**Windows:**
-1. Download the EXE installer from [Releases](https://github.com/Zahin-Mohammad-plug/Download-Router-Chrome-extension/releases)
-2. Run the installer (automatically registers with Chrome)
-
-See [Companion Installation Guide](docs/COMPANION_INSTALL.md) for detailed installation instructions.
-
-**Note:** The extension works without the companion app, but with limited features (relative paths only within Downloads directory). The companion app enables:
+The companion app enables:
 - Native OS folder picker dialogs
-- Absolute path support (save anywhere on your computer)
-- Folder verification and automatic creation
-- Post-download file routing to any location
+- Saving files anywhere on your computer (absolute paths)
+- Post-download file moving (download to Downloads, then move elsewhere)
 
-### From Chrome Web Store
-*Coming soon - pending review*
+Installation steps are in `companion/INSTALL.md`. The installer setup is still being worked on - for now you'll need to manually run the installer script.
 
-## 📖 Usage
+## How it works
 
-### Setting Up Rules
+### Rules
 
-#### Domain Rules
-Route downloads from specific websites to folders:
-1. Open the extension options
-2. Go to the "Rules" tab
-3. Click "Add Domain Rule"
-4. Enter the domain (e.g., `github.com`) and target folder (e.g., `Code/GitHub`)
+You can create two types of rules:
 
-#### File Type Groups
-Organize files by extension:
-1. Go to the "Groups" tab in options
-2. Create or modify groups (e.g., "3D Files" for `.stl`, `.obj`, `.3mf`)
-3. Assign folders to each group
+1. **Domain rules**: Route downloads based on the website
+   - Example: `printables.com` → `3DPrinting/`
+   - Example: `github.com` → `Code/GitHub/`
 
-#### Priority System
-When multiple rules match a download:
-- **Domain rules** always take precedence
-- **File type rules** apply when no domain rule matches
-- **Tie-breaker settings** determine behavior when conflicts occur
+2. **File type groups**: Route downloads based on file extension
+   - Example: All `.stl`, `.obj`, `.3mf` files → `3DPrinting/`
+   - Example: All `.pdf` files → `Documents/PDFs/`
 
-### Confirmation System
+Domain rules always win over file type rules. If multiple rules could apply, you can configure tie-breaker behavior in settings.
 
-When you download a file, you'll see a floating overlay in the bottom-right corner with:
-- **File destination**: Shows where the file will be saved
-- **Edit Rules**: Quick access to create new routing rules
-- **Change Location**: Modify the destination for this download
-- **Save countdown**: 5-second timer before auto-save (pauses during interaction)
+### Confirmation overlay
 
-If the overlay fails to appear, you'll receive a Chrome notification with the same options.
+When you download something, a small overlay appears in the bottom-right showing where the file will be saved. You can:
+- Change the destination for just this download
+- Quickly create a new rule
+- Let it auto-save after the countdown (default 5 seconds)
 
-### Managing Your Setup
+If the overlay can't be injected (some sites block it), you'll get a Chrome notification instead with the same options.
 
-#### Extension Popup
-Click the extension icon to view:
-- **Extension status**: Enable/disable routing
-- **Quick statistics**: Downloads processed, rules active, efficiency rating
-- **Recent activity**: Last few downloads with routing status
+### Settings
 
-#### Options Page
-Right-click the extension icon and select "Options" for:
-- **Rules management**: Create, edit, and organize routing rules
-- **Groups configuration**: Set up file type categories
-- **Settings**: Adjust confirmation timeout, tie-breaker preferences
-- **Folder browser**: Visual selection of download destinations
+Access settings by right-clicking the extension icon → Options.
 
-## ⚙️ Configuration Options
+- **Rules tab**: Add/edit domain and file type routing rules
+- **Groups tab**: Organize file extensions into groups (videos, images, documents, etc.)
+- **Settings tab**: Configure confirmation timeout, tie-breakers, companion app status
+- **Folders tab**: Browse and manage your download destinations
 
-### General Settings
-- **Enable confirmation overlay**: Show/hide the download confirmation dialog
-- **Confirmation timeout**: Time before auto-save (1-30 seconds)
-- **Tie-breaker preference**: Domain priority, Extension priority, or Ask user
+The extension popup (click the icon) shows quick stats and recent downloads.
 
-### Default Groups
-The extension includes these predefined groups:
-- **Videos**: `mp4`, `mov`, `mkv`, `avi`, `wmv`, `flv`, `webm`
-- **Images**: `jpg`, `jpeg`, `png`, `gif`, `bmp`, `svg`, `webp`
-- **Documents**: `pdf`, `doc`, `docx`, `txt`, `rtf`, `odt`
-- **3D Files**: `stl`, `obj`, `3mf`, `step`, `stp`, `ply`
-- **Archives**: `zip`, `rar`, `7z`, `tar`, `gz`
-- **Software**: `exe`, `msi`, `dmg`, `deb`, `rpm`, `pkg`
+## Default file groups
 
-## 🛠️ Technical Details
+The extension comes with some pre-configured groups:
+
+- **Videos**: mp4, mov, mkv, avi, wmv, flv, webm
+- **Images**: jpg, jpeg, png, gif, bmp, svg, webp
+- **Documents**: pdf, doc, docx, txt, rtf, odt
+- **3D Files**: stl, obj, 3mf, step, stp, ply
+- **Archives**: zip, rar, 7z, tar, gz
+- **Software**: exe, msi, dmg, deb, rpm, pkg
+
+You can modify these or create your own.
+
+## Technical stuff
 
 ### Architecture
-- **Manifest V3**: Latest Chrome extension platform
-- **Shadow DOM**: Isolated styling for overlay components
-- **Chrome APIs**: Downloads, Storage, Notifications, ActiveTab
-- **Modern CSS**: CSS Grid, Flexbox, Custom Properties, Dark Mode
 
-### File Structure
+- Manifest V3 extension
+- Shadow DOM for overlay isolation (doesn't interfere with websites)
+- Service worker handles download interception and routing logic
+- Companion app is Electron-based, uses Chrome native messaging API
+
+### Companion app structure
+
+The companion app code is cross-platform - same source works on macOS, Windows, and Linux. Platform-specific stuff (like folder pickers) uses `process.platform` to detect the OS and call the right native commands:
+
+- macOS: osascript for dialogs
+- Windows: PowerShell for dialogs
+- Linux: zenity/kdialog for dialogs
+
+File operations (move, verify, create folders) use Node.js fs module which is already cross-platform.
+
+### File structure
+
 ```
-📁 Download-Router-Chrome-extension/
-├── 📁 extension/              # Chrome extension (load this folder in Chrome)
-│   ├── 📄 manifest.json       # Extension configuration
-│   ├── 📄 background.js       # Service worker & routing logic
-│   ├── 📄 content.js          # Shadow DOM overlay system
-│   ├── 📄 popup.html/js/css   # Extension popup interface
-│   ├── 📄 options.html/js/css # Settings & configuration
-│   ├── 📄 overlay.css         # Overlay styles
-│   ├── 📁 lib/                # Shared libraries
-│   │   └── native-messaging-client.js
-│   └── 📁 icons/              # Extension icons
-├── 📁 companion/              # Companion app (Electron)
-├── 📁 tests/                  # Test scripts
-├── 📁 docs/                   # Documentation
-│   ├── ARCHITECTURE.md
-│   ├── COMPANION_INSTALL.md
-│   ├── DEPLOYMENT.md
-│   └── TESTING.md
-└── 📄 README.md               # This file
+extension/           # Chrome extension (load this in Chrome)
+  ├── manifest.json
+  ├── background.js  # Service worker, routing logic
+  ├── content.js     # Overlay injection
+  ├── options.js     # Settings page
+  ├── popup.js       # Extension popup
+  └── lib/           # Shared utilities
+
+companion/           # Electron companion app
+  ├── main.js        # Entry point, native messaging host
+  ├── native-messaging/
+  ├── services/      # Folder picker, file mover, etc.
+  └── install/       # Installation scripts
+
+docs/                # Documentation
+tests/               # Test scripts
 ```
 
-See [Architecture Documentation](docs/ARCHITECTURE.md) for detailed structure information.
+## Development
 
-### Permissions Required
-- `downloads`: Monitor and modify download behavior
-- `storage`: Save rules and preferences
-- `notifications`: Fallback notification system
-- `activeTab`: Inject overlay into current tab
-- `host_permissions`: Access all websites for overlay injection
+### Extension development
 
-## 🤝 Contributing
+1. Load the `extension/` folder in Chrome (Developer mode → Load unpacked)
+2. Make changes
+3. Reload the extension in `chrome://extensions/`
+4. Test
 
-We welcome contributions! Here's how to get started:
+No build step needed for development. Use Chrome DevTools for debugging.
 
-1. **Fork the repository**
-2. **Create a feature branch**: `git checkout -b feature-name`
-3. **Make your changes**: Follow the existing code style
-4. **Test thoroughly**: Ensure all features work properly
-5. **Submit a pull request**: Describe your changes clearly
+### Companion app development
 
-### Development Setup
-1. Clone the repository
-2. Load the `extension/` folder in Chrome (Developer mode → Load unpacked)
-3. Make changes to the code in `extension/`
-4. Reload the extension to test changes
-5. Use browser dev tools for debugging
+```bash
+cd companion
+npm install
+npm start          # Run in dev mode
+npm run build:mac  # Build macOS DMG
+npm run build:win  # Build Windows installer (from macOS, but test on Windows)
+```
 
-**Important:** When loading the extension, select the `extension/` directory, not the repository root.
+The same codebase builds for both platforms. Platform detection happens at runtime.
 
-For detailed development and deployment instructions, see:
-- [Deployment Guide](docs/DEPLOYMENT.md) - Setting up development and Web Store builds
-- [Testing Guide](docs/TESTING.md) - Comprehensive testing procedures
-- [Architecture Documentation](docs/ARCHITECTURE.md) - Project structure and architecture
+## Known issues and limitations
 
-### Code Standards
-- Use modern JavaScript (ES6+)
-- Follow consistent indentation (2 spaces)
-- Add comments for complex logic
-- Test cross-browser compatibility
-- Ensure accessibility compliance
+- Companion app installer needs work (documented in progress)
+- Windows companion app builds exist but need real Windows testing
+- Some websites block the overlay injection (falls back to notifications)
+- Extension ID detection could be smoother (working on it)
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
-### Common Issues
+**Extension not routing downloads:**
+- Check that it's enabled in `chrome://extensions/`
+- Verify your rules are set up correctly (check spelling)
+- Make sure folders exist (or enable auto-create in settings)
 
-**Overlay not appearing**
-- Check if the website blocks content scripts
-- Look for fallback notifications in Chrome
-- Verify extension permissions
+**Companion app not connecting:**
+- Check the native messaging host manifest exists (see `companion/INSTALL.md`)
+- Verify the extension ID in the manifest matches your actual extension ID
+- Restart Chrome completely (not just reload)
+- Check logs at `~/Library/Logs/Download Router Companion/` (macOS)
 
-**Rules not working**
-- Confirm rule syntax (domain/extension spelling)
-- Check rule priority conflicts
-- Review tie-breaker settings
+**Overlay not appearing:**
+- Some sites block content script injection
+- Check for Chrome notifications instead
+- Enable notifications in Chrome settings if needed
 
-**Downloads still going to default folder**
-- Ensure extension is enabled
-- Verify folder paths exist
-- Check for browser download manager conflicts
+See `docs/TESTING.md` for more detailed troubleshooting.
 
-### Debug Mode
-Enable Chrome developer tools and check the console for error messages. The extension logs detailed information about rule matching and download processing.
+## Contributing
 
-For more detailed troubleshooting, see the [Testing Guide](docs/TESTING.md).
+Contributions welcome. Some areas that could use help:
+- Windows testing and bug fixes
+- Companion app installer improvements
+- Additional file type groups
+- Better error messages
 
-## 📝 License
+Follow the existing code style and test your changes before submitting a PR.
 
-MIT License - see LICENSE file for details.
+## License
 
-## 🔗 Links
+MIT License
 
-- **GitHub Repository**: [Download-Router-Chrome-extension](https://github.com/Zahin-Mohammad-plug/Download-Router-Chrome-extension)
-- **Issues & Feature Requests**: [GitHub Issues](https://github.com/Zahin-Mohammad-plug/Download-Router-Chrome-extension/issues)
-- **Chrome Web Store**: *Coming soon*
+## Version history
 
-## 📈 Version History
+### v2.1.0
+- Production-ready extension
+- Cross-platform companion app
+- Improved file conflict handling
+- Better error messages
+- Code cleanup
 
-### v2.0.0 (Current)
-- ✨ Complete UI redesign with Shadow DOM
-- 🎨 Professional styling with dark mode support
-- 📊 Real-time statistics and activity tracking
-- 🔔 Enhanced fallback notification system
-- ⚡ Improved performance and reliability
+### v2.0.0
+- Complete UI redesign with Shadow DOM
+- Dark mode support
+- Statistics and activity tracking
+- Companion app with native messaging
+- Enhanced notification system
 
 ### v1.0.0
-- 🎯 Basic domain and file type routing
-- ⚙️ Simple configuration interface
-- 📁 Folder picker functionality
-- 🔧 Rule priority system
-
----
-
-*Made with ❤️ for better download organization*
+- Initial release
+- Basic domain and file type routing
+- Simple configuration interface

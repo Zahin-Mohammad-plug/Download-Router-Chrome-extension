@@ -31,8 +31,8 @@ This guide provides comprehensive testing procedures for the Download Router Chr
 1. In Options → **Rules** tab
 2. Click **+ Add Rule** or **Edit** on existing rule
 3. Click **Browse** button next to Folder field
-4. Should open **native macOS folder picker**
-5. Select a folder (e.g., `/Users/dev/Desktop/Test-github`)
+4. Should open **native OS folder picker** (macOS Finder, Windows Explorer, or Linux dialog)
+5. Select a folder (platform-appropriate path)
 6. Click **Save Changes**
 
 ### Step 4: Test Download Routing
@@ -427,7 +427,6 @@ Native messaging host initialization and errors are logged to `companion/logs/co
 
 ## Additional Resources
 
-- [Architecture Documentation](ARCHITECTURE.md)
 - [Deployment Guide](DEPLOYMENT.md)
 - [Companion Installation](COMPANION_INSTALL.md)
 - [Main README](../README.md)

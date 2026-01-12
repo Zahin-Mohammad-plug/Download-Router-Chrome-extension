@@ -1,8 +1,14 @@
 /**
  * host.js
  * 
+ * Platform: Cross-platform (macOS, Windows, Linux)
  * Purpose: Native Messaging Host protocol implementation.
  * Role: Handles Chrome Native Messaging protocol communication via stdin/stdout.
+ * 
+ * Platform Support:
+ * - Uses Node.js stdin/stdout which is cross-platform
+ * - Binary protocol works identically on all platforms
+ * - Buffer handling is platform-agnostic
  * 
  * Native Messaging Protocol:
  * - Messages are JSON strings, UTF-8 encoded

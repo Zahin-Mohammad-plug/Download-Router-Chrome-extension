@@ -1,14 +1,21 @@
 /**
  * main.js
  * 
+ * Platform: Cross-platform (macOS, Windows, Linux)
  * Purpose: Main entry point for Download Router Companion Electron application.
  * Role: Initializes native messaging host to communicate with Chrome extension,
  *       handles OS-level file operations, and provides native folder picker dialogs.
  * 
+ * Platform Notes:
+ * - Native messaging protocol (stdin/stdout JSON) is cross-platform
+ * - Uses platform-specific services for dialogs (folder-picker-native.js, file-save-dialog.js)
+ * - macOS-specific: Hides dock icon (app.dock.hide()) - not applicable on Windows/Linux
+ * - Electron dialogs are available on all platforms but native OS commands preferred for speed
+ * 
  * Key Responsibilities:
  * - Set up native messaging protocol communication via stdin/stdout
- * - Route messages to appropriate service handlers
- * - Provide native OS folder picker dialogs
+ * - Route messages to appropriate service handlers (or handle directly for speed)
+ * - Provide native OS folder picker dialogs via platform-specific services
  * - Handle file system operations (verify, create, list, move)
  * - Manage post-download file routing
  */
@@ -16,17 +23,37 @@
 // CRITICAL: Load only essential modules first - defer Electron until after native messaging setup
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const nativeMessagingHost = require('./native-messaging/host');
 
-// Set up logging to logs/debug directory
-const REPO_ROOT = path.join(__dirname, '..');
-const LOG_DIR = path.join(REPO_ROOT, 'logs', 'debug');
+// Set up logging to user's home directory (writable location)
+// Use platform-appropriate log directory
+const platform = process.platform;
+let LOG_DIR;
+
+if (platform === 'darwin') {
+  // macOS: Use ~/Library/Logs/Download Router Companion/
+  LOG_DIR = path.join(os.homedir(), 'Library', 'Logs', 'Download Router Companion');
+} else if (platform === 'win32') {
+  // Windows: Use %APPDATA%/Download Router Companion/logs
+  LOG_DIR = path.join(os.homedir(), 'AppData', 'Roaming', 'Download Router Companion', 'logs');
+} else {
+  // Linux: Use ~/.local/share/Download Router Companion/logs
+  LOG_DIR = path.join(os.homedir(), '.local', 'share', 'Download Router Companion', 'logs');
+}
+
 const LOG_FILE = path.join(LOG_DIR, `companion-main-${Date.now()}.log`);
 const LATEST_LOG = path.join(LOG_DIR, 'companion-main-latest.log');
 
-// Ensure log directory exists
-if (!fs.existsSync(LOG_DIR)) {
-  fs.mkdirSync(LOG_DIR, { recursive: true });
+// Ensure log directory exists (with error handling for read-only scenarios)
+try {
+  if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+  }
+} catch (error) {
+  // If we can't create logs directory, fail silently (app should still function)
+  // The try/catch in logToFile will handle write failures
+  console.error(`Warning: Could not create log directory at ${LOG_DIR}:`, error.message);
 }
 
 // Simple logging function
@@ -34,10 +61,15 @@ function logToFile(message) {
   const timestamp = new Date().toISOString();
   const logMessage = `[${timestamp}] ${message}\n`;
   try {
+    // Ensure directory exists before writing (may fail in read-only environments)
+    if (!fs.existsSync(LOG_DIR)) {
+      fs.mkdirSync(LOG_DIR, { recursive: true });
+    }
     fs.appendFileSync(LOG_FILE, logMessage);
     fs.appendFileSync(LATEST_LOG, logMessage);
   } catch (error) {
-    // Can't log if logging fails
+    // Silently fail if logging isn't possible (e.g., read-only filesystem)
+    // App should continue functioning even without logs
   }
 }
 

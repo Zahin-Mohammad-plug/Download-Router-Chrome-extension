@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test Companion App Functionality (Phase 4.1.1.3)
+# Test Companion App Functionality
 # Tests: folder picker, folder operations, file moving
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run All Companion App Tests (Phase 4.1.1)
+# Run All Companion App Tests
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$REPO_ROOT/logs/debug"
@@ -11,7 +11,7 @@ exec > >(tee -a "$LOG_FILE")
 exec 2>&1
 
 echo "=========================================="
-echo "  Companion App Testing (Phase 4.1.1)"
+echo "  Companion App Testing"
 echo "=========================================="
 echo "Timestamp: $(date)"
 echo "Log file: $LOG_FILE"
@@ -22,7 +22,7 @@ cd "$REPO_ROOT"
 
 TOTAL_ERRORS=0
 
-echo "=== Test 1: Installation Test (4.1.1.1) ==="
+echo "=== Test 1: Installation Test ==="
 echo ""
 if [ -x "$REPO_ROOT/tests/test-companion-install.sh" ]; then
     bash "$REPO_ROOT/tests/test-companion-install.sh"
@@ -38,7 +38,7 @@ echo ""
 echo "=========================================="
 echo ""
 
-echo "=== Test 2: Native Messaging Connection (4.1.1.2) ==="
+echo "=== Test 2: Native Messaging Connection ==="
 echo ""
 if [ -x "$REPO_ROOT/tests/test-companion-messaging.sh" ]; then
     bash "$REPO_ROOT/tests/test-companion-messaging.sh"
@@ -54,7 +54,7 @@ echo ""
 echo "=========================================="
 echo ""
 
-echo "=== Test 3: Functionality Tests (4.1.1.3) ==="
+echo "=== Test 3: Functionality Tests ==="
 echo ""
 echo "⚠️  This test requires user interaction for folder picker."
 echo "    Press Enter to continue, or Ctrl+C to skip..."
@@ -80,12 +80,12 @@ echo ""
 if [ $TOTAL_ERRORS -eq 0 ]; then
     echo "✅ All companion app tests completed successfully!"
     echo ""
-    echo "Phase 4.1.1 Companion App Testing: PASSED"
+    echo "Companion App Testing: PASSED"
 else
     echo "❌ Some tests failed or had errors"
     echo "   Total errors: $TOTAL_ERRORS"
     echo ""
-    echo "Phase 4.1.1 Companion App Testing: FAILED"
+    echo "Companion App Testing: FAILED"
 fi
 
 echo ""

@@ -1,9 +1,16 @@
 /**
  * file-mover.js
  * 
+ * Platform: Cross-platform (macOS, Windows, Linux)
  * Purpose: Post-download file moving service.
  * Role: Moves files after Chrome downloads them to route to absolute paths
  *       outside the Downloads directory.
+ * 
+ * Platform Support:
+ * - Uses Node.js fs.rename which is cross-platform
+ * - Path normalization handles both forward slashes (Unix) and backslashes (Windows)
+ * - File conflict resolution works identically on all platforms
+ * - Creates destination folders with platform-appropriate permissions
  * 
  * Key Responsibilities:
  * - Move files from Downloads to target absolute paths

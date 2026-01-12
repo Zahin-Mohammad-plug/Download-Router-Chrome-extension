@@ -1,9 +1,15 @@
 /**
  * file-save-dialog.js
  * 
+ * Platform: Cross-platform (macOS, Windows, Linux)
  * Purpose: Native OS Save As dialog using OS-level commands (no Electron).
- * Role: Opens native file save dialogs using macOS osascript/Windows PowerShell
+ * Role: Opens native file save dialogs using platform-specific commands
  *       and returns the selected absolute file path.
+ * 
+ * Platform Support:
+ * - macOS: Uses osascript (AppleScript) for native Save As dialog
+ * - Windows: Uses PowerShell with System.Windows.Forms.SaveFileDialog
+ * - Linux: Uses zenity (GNOME) or kdialog (KDE) for native dialogs
  * 
  * This approach eliminates Electron startup overhead, allowing instant responses.
  */
