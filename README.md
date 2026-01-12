@@ -42,17 +42,23 @@ Installation steps are in `companion/INSTALL.md`. The installer setup is still b
 
 ### Rules
 
-You can create two types of rules:
+You can create three types of rules:
 
-1. **Domain rules**: Route downloads based on the website
+1. **Domain rules**: Route downloads based on the website domain
    - Example: `printables.com` → `3DPrinting/`
    - Example: `github.com` → `Code/GitHub/`
+   - Default priority: 2.0
 
-2. **File type groups**: Route downloads based on file extension
+2. **Extension rules**: Route downloads based on individual file extensions
+   - Example: `.stl` → `3DPrinting/`
+   - You can create these manually or they're auto-created from file type groups
+
+3. **File type groups**: Groups of related file extensions that share a destination
    - Example: All `.stl`, `.obj`, `.3mf` files → `3DPrinting/`
-   - Example: All `.pdf` files → `Documents/PDFs/`
+   - Example: All `.pdf`, `.doc` files → `Documents/`
+   - Default priority: 3.0
 
-Domain rules always win over file type rules. If multiple rules could apply, you can configure tie-breaker behavior in settings.
+**Priority system**: Each rule has a priority number (lower = higher priority). Rules are sorted by priority, then by type (domain > extension > filetype) as a tiebreaker. File type groups can have an "override domain rules" option that boosts their priority to beat domain rules.
 
 ### Confirmation overlay
 
@@ -67,25 +73,25 @@ If the overlay can't be injected (some sites block it), you'll get a Chrome noti
 
 Access settings by right-clicking the extension icon → Options.
 
-- **Rules tab**: Add/edit domain and file type routing rules
-- **Groups tab**: Organize file extensions into groups (videos, images, documents, etc.)
-- **Settings tab**: Configure confirmation timeout, tie-breakers, companion app status
+- **Rules tab**: Add/edit domain and extension routing rules, set priorities
+- **Groups tab**: Organize file extensions into groups (videos, images, documents, etc.), configure group priorities and override options
+- **Settings tab**: Configure confirmation timeout, conflict resolution behavior, companion app status
 - **Folders tab**: Browse and manage your download destinations
 
 The extension popup (click the icon) shows quick stats and recent downloads.
 
 ## Default file groups
 
-The extension comes with some pre-configured groups:
+The extension comes with these pre-configured file type groups:
 
-- **Videos**: mp4, mov, mkv, avi, wmv, flv, webm
-- **Images**: jpg, jpeg, png, gif, bmp, svg, webp
-- **Documents**: pdf, doc, docx, txt, rtf, odt
-- **3D Files**: stl, obj, 3mf, step, stp, ply
-- **Archives**: zip, rar, 7z, tar, gz
-- **Software**: exe, msi, dmg, deb, rpm, pkg
+- **Videos** → `Videos/`: mp4, mov, mkv, avi, wmv, flv, webm
+- **Images** → `Images/`: jpg, jpeg, png, gif, bmp, svg, webp
+- **Documents** → `Documents/`: pdf, doc, docx, txt, rtf, odt
+- **3D Files** → `3D Files/`: stl, obj, 3mf, step, stp, ply
+- **Archives** → `Archives/`: zip, rar, 7z, tar, gz
+- **Software** → `Software/`: exe, msi, dmg, deb, rpm, pkg
 
-You can modify these or create your own.
+Each group has priority 3.0 by default and can be modified, disabled, or deleted. You can create your own groups with any extensions you want.
 
 ## Technical stuff
 
@@ -162,7 +168,8 @@ The same codebase builds for both platforms. Platform detection happens at runti
 **Extension not routing downloads:**
 - Check that it's enabled in `chrome://extensions/`
 - Verify your rules are set up correctly (check spelling)
-- Make sure folders exist (or enable auto-create in settings)
+- Check rule priorities - lower priority numbers win. Domain rules default to 2.0, file type groups default to 3.0
+- Make sure folders exist (or enable auto-create in settings if using companion app)
 
 **Companion app not connecting:**
 - Check the native messaging host manifest exists (see `companion/INSTALL.md`)
