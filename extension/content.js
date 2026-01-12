@@ -371,10 +371,161 @@ class DownloadOverlay {
       .overlay-actions {
         padding: 20px 24px;
         display: flex;
-        justify-content: space-between;
-        align-items: center;
+        flex-direction: column;
         gap: 12px;
         background: rgba(239, 68, 68, 0.02);
+      }
+
+      .primary-actions,
+      .secondary-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .primary-actions {
+        justify-content: flex-start;
+      }
+
+      .secondary-actions {
+        justify-content: center;
+      }
+
+      .btn.text {
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        padding: 8px 12px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all var(--transition-base);
+      }
+
+      .btn.text:hover {
+        background: var(--surface);
+        color: var(--primary);
+      }
+
+      .rule-info, .conflict-info {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 8px 0;
+        font-size: 12px;
+        flex-wrap: wrap;
+      }
+
+      .rule-badge {
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 10px;
+        letter-spacing: 0.5px;
+      }
+
+      .rule-badge.domain {
+        background: #e3f2fd;
+        color: #1976d2;
+      }
+
+      .rule-badge.extension {
+        background: #f3e5f5;
+        color: #7b1fa2;
+      }
+
+      .rule-badge.filetype {
+        background: #e8f5e9;
+        color: #388e3c;
+      }
+
+      .priority-badge {
+        padding: 2px 6px;
+        background: #fef3c7;
+        color: #92400e;
+        border-radius: 3px;
+        font-size: 10px;
+        font-weight: 500;
+      }
+
+      .rule-value {
+        font-size: 11px;
+        color: var(--text-secondary);
+      }
+
+      .conflict-selector {
+        padding: 16px;
+        background: #fff9e6;
+        border: 1px solid #ffeb3b;
+        border-radius: 8px;
+        margin: 16px 24px;
+      }
+
+      .conflict-title {
+        font-weight: 600;
+        margin-bottom: 12px;
+        color: #d84315;
+        font-size: 13px;
+      }
+
+      .conflict-badge {
+        background: #ffeb3b;
+        color: #d84315;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-weight: 600;
+        font-size: 11px;
+      }
+
+      .conflict-option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px;
+        cursor: pointer;
+        border-radius: 4px;
+        margin-bottom: 4px;
+      }
+
+      .conflict-option:hover {
+        background: #fff;
+      }
+
+      .conflict-option input[type="radio"] {
+        margin: 0;
+        cursor: pointer;
+      }
+
+      .rule-details {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        flex: 1;
+      }
+
+      .saveas-editor,
+      .rule-editor-inline,
+      .group-selector-inline {
+        padding: 16px 24px;
+        background: var(--surface);
+        border-top: 1px solid var(--border);
+        margin-top: 0;
+      }
+
+      .saveas-editor.hidden,
+      .rule-editor-inline.hidden,
+      .group-selector-inline.hidden {
+        display: none;
+      }
+
+      .group-select-inline {
+        flex: 1;
+        padding: 8px 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        font-size: 13px;
+        background: var(--surface-elevated);
+        color: var(--text);
       }
 
       .action-btn {
@@ -424,7 +575,9 @@ class DownloadOverlay {
         display: flex;
         align-items: center;
         gap: 12px;
-        flex: 1;
+        width: 100%;
+        padding-top: 8px;
+        border-top: 1px solid var(--border-subtle);
       }
 
       .countdown-info {
@@ -893,37 +1046,79 @@ class DownloadOverlay {
       this.currentDownloadInfo.absoluteDestination
     );
 
+    // Show matching rule/file type info
+    let ruleInfo = '';
+    if (this.currentDownloadInfo.finalRule) {
+      const source = this.currentDownloadInfo.finalRule.source || 'rule';
+      const priority = this.currentDownloadInfo.finalRule.priority !== undefined ? 
+        parseFloat(this.currentDownloadInfo.finalRule.priority).toFixed(1) : '2.0';
+      const sourceLabel = source === 'domain' ? 'DOMAIN' : 
+                         source === 'extension' ? 'EXTENSION' : 
+                         source === 'filetype' ? 'FILE TYPE' : 'RULE';
+      ruleInfo = `
+        <div class="rule-info">
+          <span class="rule-badge ${source}">${sourceLabel}</span>
+          <span class="priority-badge">Priority ${priority}</span>
+          ${this.currentDownloadInfo.finalRule.value ? 
+            `<span class="rule-value">${this.currentDownloadInfo.finalRule.value}</span>` : ''}
+        </div>
+      `;
+    } else if (this.currentDownloadInfo.conflictRules && this.currentDownloadInfo.conflictRules.length > 0) {
+      ruleInfo = `
+        <div class="conflict-info">
+          <span class="conflict-badge">⚠ ${this.currentDownloadInfo.conflictRules.length} rules conflict</span>
+          <span>Choose below</span>
+        </div>
+      `;
+    }
+
     const overlayHTML = `
       <div class="overlay-container">
         <div class="overlay-content">
           <div class="overlay-header">
-            <div class="overlay-title">Saving your download...</div>
+            <div class="overlay-title">Save Download</div>
             <div class="overlay-filename">
               ${this.getSVGIcon(fileIcon)}
               <span>${this.currentDownloadInfo.filename}</span>
             </div>
+            ${ruleInfo}
             <div class="overlay-path">
               ${this.getSVGIcon('folder')}
               <span>Saving to: ${formattedPath}</span>
             </div>
           </div>
           
+          ${this.currentDownloadInfo.conflictRules && this.currentDownloadInfo.conflictRules.length > 0 ? 
+            this.createConflictSelector(this.currentDownloadInfo) : ''}
+          
           <div class="overlay-actions">
-            <button class="action-btn edit-rules-btn">
-              ${this.getSVGIcon('pencil')}
-              <span>Edit Rules</span>
-            </button>
-            <button class="action-btn change-location-btn">
-              ${this.getSVGIcon('folder')}
-              <span>Change Location</span>
-            </button>
+            <div class="primary-actions">
+              <button class="btn primary save-btn">
+                ${this.getSVGIcon('check')}
+                <span>Save Now</span>
+              </button>
+              <button class="btn secondary saveas-btn">
+                ${this.getSVGIcon('folder')}
+                <span>Save As</span>
+              </button>
+            </div>
+            
+            <div class="secondary-actions">
+              <button class="btn text edit-rule-btn">
+                ${this.getSVGIcon('settings')}
+                <span>Edit Rule</span>
+              </button>
+              <button class="btn text add-to-group-btn">
+                ${this.getSVGIcon('pencil')}
+                <span>Add to File Type</span>
+              </button>
+            </div>
             
             <div class="countdown-section">
-              <div class="countdown-info" id="countdown-text">Auto-saving in 5s...</div>
+              <div class="countdown-info">Auto-saving in <span id="countdown-seconds">5</span>s</div>
               <div class="countdown-bar">
                 <div class="countdown-fill" id="countdown-fill"></div>
               </div>
-              <button class="save-btn">Save Now</button>
             </div>
           </div>
 
@@ -992,7 +1187,8 @@ class DownloadOverlay {
             </div>
           </div>
 
-          <div class="location-picker">
+          <!-- Inline Save As editor (hidden by default) -->
+          <div class="saveas-editor hidden">
             <div class="rules-header">
               <div class="rules-title">Save As</div>
               <div class="rules-info">Choose filename and destination folder</div>
@@ -1010,8 +1206,68 @@ class DownloadOverlay {
                 </div>
               </div>
               <div class="rules-actions">
-                <button class="cancel-btn">Cancel</button>
-                <button class="apply-btn">Save Here</button>
+                <button class="cancel-btn saveas-cancel">Cancel</button>
+                <button class="apply-btn saveas-apply">Save Here</button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Inline Edit Rule editor (hidden by default) -->
+          <div class="rule-editor-inline hidden">
+            <div class="rules-header">
+              <div class="rules-title">Edit Routing Rule</div>
+              <div class="rules-info">Domain: ${this.currentDownloadInfo.domain} • Type: .${this.currentDownloadInfo.extension}</div>
+            </div>
+            <div class="rules-content">
+              <div class="rule-type-selector">
+                <label>
+                  <input type="radio" name="ruleTypeInline" value="domain" checked>
+                  Route domain → folder
+                </label>
+                <label>
+                  <input type="radio" name="ruleTypeInline" value="extension">
+                  Route file type → folder
+                </label>
+              </div>
+              
+              <div class="domain-rule-config-inline">
+                <div class="rule-row">
+                  <span>${this.currentDownloadInfo.domain}</span> → 
+                  <input type="text" class="folder-input inline-folder-input" placeholder="Choose folder">
+                  <button class="browse-btn inline-browse-btn">Browse</button>
+                </div>
+              </div>
+              
+              <div class="extension-rule-config-inline hidden">
+                <div class="rule-row">
+                  <span>.${this.currentDownloadInfo.extension}</span> → 
+                  <input type="text" class="folder-input inline-folder-input" placeholder="Choose folder">
+                  <button class="browse-btn inline-browse-btn">Browse</button>
+                </div>
+              </div>
+              
+              <div class="rules-actions">
+                <button class="cancel-btn rule-editor-cancel">Cancel</button>
+                <button class="apply-btn rule-editor-apply">Apply Rule</button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Inline Add to File Type selector (hidden by default) -->
+          <div class="group-selector-inline hidden">
+            <div class="rules-header">
+              <div class="rules-title">Add to File Type</div>
+              <div class="rules-info">Add .${this.currentDownloadInfo.extension} to an existing file type group</div>
+            </div>
+            <div class="rules-content">
+              <div class="rule-row">
+                <select class="group-select-inline">
+                  <option value="">Select file type...</option>
+                </select>
+                <button class="apply-btn add-to-group-confirm">Add</button>
+              </div>
+              <div class="rules-actions">
+                <button class="cancel-btn group-selector-cancel">Cancel</button>
               </div>
             </div>
           </div>
@@ -1059,23 +1315,195 @@ class DownloadOverlay {
       this.saveDownload();
     });
     
-    // Attach click handler to Edit Rules button
-    root.querySelector('.edit-rules-btn').addEventListener('click', () => {
-      // showRulesEditor: Displays rules editor panel
-      this.showRulesEditor();
+    // Save As button - show inline editor
+    const saveasBtn = root.querySelector('.saveas-btn');
+    if (saveasBtn) {
+      saveasBtn.addEventListener('click', () => {
+        const editor = root.querySelector('.saveas-editor');
+        const ruleEditor = root.querySelector('.rule-editor-inline');
+        const groupSelector = root.querySelector('.group-selector-inline');
+        
+        if (editor) {
+          editor.classList.toggle('hidden');
+          if (!editor.classList.contains('hidden')) {
+            if (ruleEditor) ruleEditor.classList.add('hidden');
+            if (groupSelector) groupSelector.classList.add('hidden');
+            this.pauseCountdown();
+          } else {
+            this.resumeCountdown();
+          }
+        }
+      });
+    }
+
+    // Edit Rule button - show inline rule editor
+    const editRuleBtn = root.querySelector('.edit-rule-btn');
+    if (editRuleBtn) {
+      editRuleBtn.addEventListener('click', () => {
+        const editor = root.querySelector('.rule-editor-inline');
+        const saveasEditor = root.querySelector('.saveas-editor');
+        const groupSelector = root.querySelector('.group-selector-inline');
+        
+        if (editor) {
+          editor.classList.toggle('hidden');
+          if (!editor.classList.contains('hidden')) {
+            if (saveasEditor) saveasEditor.classList.add('hidden');
+            if (groupSelector) groupSelector.classList.add('hidden');
+            this.pauseCountdown();
+          } else {
+            this.resumeCountdown();
+          }
+        }
+      });
+    }
+
+    // Add to File Type button
+    const addToGroupBtn = root.querySelector('.add-to-group-btn');
+    if (addToGroupBtn) {
+      addToGroupBtn.addEventListener('click', () => {
+        const selector = root.querySelector('.group-selector-inline');
+        const saveasEditor = root.querySelector('.saveas-editor');
+        const ruleEditor = root.querySelector('.rule-editor-inline');
+        
+        if (selector) {
+          selector.classList.toggle('hidden');
+          if (!selector.classList.contains('hidden')) {
+            if (saveasEditor) saveasEditor.classList.add('hidden');
+            if (ruleEditor) ruleEditor.classList.add('hidden');
+            this.pauseCountdown();
+            this.populateGroupSelector();
+          } else {
+            this.resumeCountdown();
+          }
+        }
+      });
+    }
+
+    // Conflict rule selection
+    root.querySelectorAll('input[name="conflict-rule"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const index = parseInt(e.target.value);
+        if (this.currentDownloadInfo.conflictRules && this.currentDownloadInfo.conflictRules[index]) {
+          this.currentDownloadInfo.finalRule = this.currentDownloadInfo.conflictRules[index];
+          const isAbsPath = /^(\/|[A-Za-z]:[\\\/])/.test(this.currentDownloadInfo.finalRule.folder);
+          if (isAbsPath) {
+            this.currentDownloadInfo.resolvedPath = this.currentDownloadInfo.filename;
+            this.currentDownloadInfo.absoluteDestination = this.currentDownloadInfo.finalRule.folder;
+            this.currentDownloadInfo.useAbsolutePath = true;
+            this.currentDownloadInfo.needsMove = true;
+          } else {
+            this.currentDownloadInfo.resolvedPath = buildRelativePath(
+              this.currentDownloadInfo.finalRule.folder,
+              this.currentDownloadInfo.filename
+            );
+            this.currentDownloadInfo.absoluteDestination = null;
+            this.currentDownloadInfo.useAbsolutePath = false;
+            this.currentDownloadInfo.needsMove = false;
+          }
+          // Update display
+          this.updatePathDisplay();
+        }
+      });
     });
-    
-    // Attach click handler to Change Location button
-    root.querySelector('.change-location-btn').addEventListener('click', () => {
-      // showLocationPicker: Displays location picker panel
-      this.showLocationPicker();
+
+    // Inline Save As editor handlers
+    const saveasCancelBtn = root.querySelector('.saveas-cancel');
+    const saveasApplyBtn = root.querySelector('.saveas-apply');
+    if (saveasCancelBtn) {
+      saveasCancelBtn.addEventListener('click', () => {
+        const editor = root.querySelector('.saveas-editor');
+        if (editor) {
+          editor.classList.add('hidden');
+          this.resumeCountdown();
+        }
+      });
+    }
+    if (saveasApplyBtn) {
+      saveasApplyBtn.addEventListener('click', () => {
+        this.applyLocationChange();
+      });
+    }
+
+    // Inline Save As browse button
+    const saveasBrowseBtn = root.querySelector('.saveas-editor .browse-btn');
+    if (saveasBrowseBtn) {
+      saveasBrowseBtn.addEventListener('click', () => {
+        this.openNativeFolderPicker((selectedPath) => {
+          if (selectedPath) {
+            const input = root.querySelector('.saveas-editor .folder-path-input');
+            if (input) input.value = selectedPath;
+          }
+        });
+      });
+    }
+
+    // Inline rule editor handlers
+    const ruleEditorCancelBtn = root.querySelector('.rule-editor-cancel');
+    const ruleEditorApplyBtn = root.querySelector('.rule-editor-apply');
+    if (ruleEditorCancelBtn) {
+      ruleEditorCancelBtn.addEventListener('click', () => {
+        const editor = root.querySelector('.rule-editor-inline');
+        if (editor) {
+          editor.classList.add('hidden');
+          this.resumeCountdown();
+        }
+      });
+    }
+    if (ruleEditorApplyBtn) {
+      ruleEditorApplyBtn.addEventListener('click', () => {
+        this.applyInlineRuleChanges();
+      });
+    }
+
+    // Inline rule editor type selector
+    root.querySelectorAll('input[name="ruleTypeInline"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const domainConfig = root.querySelector('.domain-rule-config-inline');
+        const extensionConfig = root.querySelector('.extension-rule-config-inline');
+        if (domainConfig && extensionConfig) {
+          if (e.target.value === 'domain') {
+            domainConfig.classList.remove('hidden');
+            extensionConfig.classList.add('hidden');
+          } else {
+            domainConfig.classList.add('hidden');
+            extensionConfig.classList.remove('hidden');
+          }
+        }
+      });
     });
-    
-    // Set up additional event handlers for panels
-    // setupRulesEditorEvents: Attaches handlers for rules editor interactions
-    this.setupRulesEditorEvents();
-    // setupLocationPickerEvents: Attaches handlers for location picker interactions
-    this.setupLocationPickerEvents();
+
+    // Inline rule editor browse buttons
+    root.querySelectorAll('.rule-editor-inline .inline-browse-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const ruleRow = btn.closest('.rule-row');
+        const input = ruleRow ? ruleRow.querySelector('.inline-folder-input') : null;
+        if (input) {
+          this.openNativeFolderPicker((selectedPath) => {
+            if (selectedPath) {
+              input.value = selectedPath;
+            }
+          });
+        }
+      });
+    });
+
+    // Inline group selector handlers
+    const groupSelectorCancelBtn = root.querySelector('.group-selector-cancel');
+    const addToGroupConfirmBtn = root.querySelector('.add-to-group-confirm');
+    if (groupSelectorCancelBtn) {
+      groupSelectorCancelBtn.addEventListener('click', () => {
+        const selector = root.querySelector('.group-selector-inline');
+        if (selector) {
+          selector.classList.add('hidden');
+          this.resumeCountdown();
+        }
+      });
+    }
+    if (addToGroupConfirmBtn) {
+      addToGroupConfirmBtn.addEventListener('click', () => {
+        this.applyAddToGroup();
+      });
+    }
   }
 
   /**
@@ -1297,10 +1725,165 @@ class DownloadOverlay {
 
   hideLocationPicker() {
     const locationPicker = this.shadowRoot.querySelector('.location-picker');
-    locationPicker.classList.remove('visible');
+    if (locationPicker) {
+      locationPicker.classList.remove('visible');
+    }
     this.locationPickerVisible = false;
     // Resume countdown when picker is closed
     this.resumeCountdown();
+  }
+
+  /**
+   * Creates conflict selector HTML for when multiple rules match.
+   * 
+   * Inputs:
+   *   - downloadInfo: Object containing conflictRules array
+   * 
+   * Outputs: String HTML for conflict selector
+   */
+  createConflictSelector(downloadInfo) {
+    const rules = downloadInfo.conflictRules || [];
+    if (rules.length === 0) return '';
+    
+    return `
+      <div class="conflict-selector">
+        <div class="conflict-title">Multiple rules match - choose one:</div>
+        ${rules.map((rule, index) => {
+          const priority = rule.priority !== undefined ? parseFloat(rule.priority).toFixed(1) : '2.0';
+          const sourceLabel = rule.source === 'domain' ? 'DOMAIN' : 
+                             rule.source === 'extension' ? 'EXTENSION' : 
+                             rule.source === 'filetype' ? 'FILE TYPE' : 'RULE';
+          return `
+            <label class="conflict-option">
+              <input type="radio" name="conflict-rule" value="${index}" 
+                     ${index === 0 ? 'checked' : ''}>
+              <span class="rule-badge ${rule.source}">${sourceLabel}</span>
+              <span class="rule-details">
+                ${rule.value || rule.folder} → ${rule.folder}
+                <span class="priority-badge">Priority ${priority}</span>
+              </span>
+            </label>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  /**
+   * Updates path display in overlay header.
+   */
+  updatePathDisplay() {
+    const root = this.shadowRoot;
+    const formattedPath = formatPathDisplay(
+      this.currentDownloadInfo.resolvedPath,
+      this.currentDownloadInfo.absoluteDestination
+    );
+    const pathSpan = root.querySelector('.overlay-path span');
+    if (pathSpan) {
+      pathSpan.textContent = 'Saving to: ' + formattedPath;
+    }
+  }
+
+  /**
+   * Applies inline rule changes from overlay.
+   */
+  applyInlineRuleChanges() {
+    const root = this.shadowRoot;
+    const ruleType = root.querySelector('input[name="ruleTypeInline"]:checked')?.value;
+    
+    if (!ruleType) return;
+    
+    let folder = '';
+    if (ruleType === 'domain') {
+      const input = root.querySelector('.domain-rule-config-inline .inline-folder-input');
+      folder = input ? input.value.trim() : '';
+    } else {
+      const input = root.querySelector('.extension-rule-config-inline .inline-folder-input');
+      folder = input ? input.value.trim() : '';
+    }
+    
+    if (folder) {
+      const isAbsPath = /^(\/|[A-Za-z]:[\\\/])/.test(folder);
+      
+      // Send rule to background
+      chrome.runtime.sendMessage({
+        type: 'addRule',
+        rule: {
+          type: ruleType,
+          value: ruleType === 'domain' ? this.currentDownloadInfo.domain : this.currentDownloadInfo.extension,
+          folder: folder,
+          priority: 2.0,
+          enabled: true
+        }
+      });
+      
+      // Update current download info
+      if (isAbsPath) {
+        this.currentDownloadInfo.resolvedPath = this.currentDownloadInfo.filename;
+        this.currentDownloadInfo.absoluteDestination = folder;
+        this.currentDownloadInfo.useAbsolutePath = true;
+        this.currentDownloadInfo.needsMove = true;
+      } else {
+        this.currentDownloadInfo.resolvedPath = buildRelativePath(folder, this.currentDownloadInfo.filename);
+        this.currentDownloadInfo.absoluteDestination = null;
+        this.currentDownloadInfo.useAbsolutePath = false;
+        this.currentDownloadInfo.needsMove = false;
+      }
+      
+      this.updatePathDisplay();
+    }
+    
+    // Hide editor
+    const editor = root.querySelector('.rule-editor-inline');
+    if (editor) {
+      editor.classList.add('hidden');
+      this.resumeCountdown();
+    }
+  }
+
+  /**
+   * Populates group selector with available file types.
+   */
+  async populateGroupSelector() {
+    const root = this.shadowRoot;
+    const select = root.querySelector('.group-select-inline');
+    if (!select) return;
+    
+    try {
+      const data = await chrome.storage.sync.get(['groups']);
+      const groups = data.groups || {};
+      
+      select.innerHTML = '<option value="">Select file type...</option>' +
+        Object.keys(groups).map(name => {
+          return `<option value="${name}">${name} (${groups[name].extensions})</option>`;
+        }).join('');
+    } catch (error) {
+      console.error('Failed to load groups:', error);
+    }
+  }
+
+  /**
+   * Applies add to group action from overlay.
+   */
+  applyAddToGroup() {
+    const root = this.shadowRoot;
+    const select = root.querySelector('.group-select-inline');
+    const groupName = select ? select.value : '';
+    
+    if (!groupName) return;
+    
+    chrome.runtime.sendMessage({
+      type: 'addToGroup',
+      extension: this.currentDownloadInfo.extension,
+      group: groupName
+    });
+    
+    // Hide selector
+    const selector = root.querySelector('.group-selector-inline');
+    if (selector) {
+      selector.classList.add('hidden');
+      this.resumeCountdown();
+    }
   }
 
   /**
@@ -1423,12 +2006,14 @@ class DownloadOverlay {
   applyLocationChange() {
     const root = this.shadowRoot;
     
-    // Get filename (may have been edited by user)
-    const filenameInput = root.querySelector('.location-picker .filename-input');
+    // Get filename (may have been edited by user) - check both old and new selectors
+    const filenameInput = root.querySelector('.saveas-editor .filename-input') || 
+                         root.querySelector('.location-picker .filename-input');
     const newFilename = filenameInput ? filenameInput.value.trim() : this.currentDownloadInfo.filename;
     
-    // Get folder path
-    const folderInput = root.querySelector('.location-picker .folder-path-input');
+    // Get folder path - check both old and new selectors
+    const folderInput = root.querySelector('.saveas-editor .folder-path-input') || 
+                       root.querySelector('.location-picker .folder-path-input');
     const newLocation = folderInput ? folderInput.value.trim() : '';
     
     // Update filename if changed
@@ -1475,21 +2060,16 @@ class DownloadOverlay {
     }
     
     // Update overlay display with formatted path
-    const displayPath = formatPathDisplay(
-      this.currentDownloadInfo.resolvedPath,
-      this.currentDownloadInfo.absoluteDestination
-    );
-    const pathSpan = root.querySelector('.overlay-path span');
-    if (pathSpan) {
-      pathSpan.textContent = 'Saving to: ' + displayPath;
-    } else {
-      root.querySelector('.overlay-path').innerHTML = `
-        ${this.getSVGIcon('folder')}
-        <span>Saving to: ${displayPath}</span>
-      `;
-    }
+    this.updatePathDisplay();
     
-    this.hideLocationPicker();
+    // Hide inline editor
+    const editor = root.querySelector('.saveas-editor');
+    if (editor) {
+      editor.classList.add('hidden');
+      this.resumeCountdown();
+    } else {
+      this.hideLocationPicker();
+    }
   }
 
   /**
@@ -1507,8 +2087,10 @@ class DownloadOverlay {
    */
   startCountdown() {
     // Get reference to countdown progress bar and text elements
-    const countdownFill = this.shadowRoot.querySelector('#countdown-fill');
-    const countdownText = this.shadowRoot.querySelector('#countdown-text');
+    const root = this.shadowRoot;
+    const countdownFill = root.querySelector('#countdown-fill');
+    const countdownText = root.querySelector('.countdown-info');
+    const countdownSeconds = root.querySelector('#countdown-seconds');
     // Reset countdown time to 5 seconds (5000 milliseconds)
     this.timeLeft = 5000; // Reset to 5 seconds
     // Update interval: update progress bar every 50ms for smooth animation
@@ -1533,10 +2115,15 @@ class DownloadOverlay {
         countdownFill.style.width = percentage + '%';
       }
       
+      // Update countdown seconds display
+      if (countdownSeconds) {
+        countdownSeconds.textContent = secondsLeft > 0 ? secondsLeft : '0';
+      }
+      
       // Update countdown text
       if (countdownText) {
         if (secondsLeft > 0) {
-          countdownText.textContent = `Auto-saving in ${secondsLeft}s...`;
+          countdownText.innerHTML = `Auto-saving in <span id="countdown-seconds">${secondsLeft}</span>s`;
         } else {
           countdownText.textContent = 'Saving now...';
         }

@@ -17,9 +17,8 @@
       </div>
       <nav class="tab-navigation">
         <button class="tab-btn active" data-tab="rules">Rules</button>
-        <button class="tab-btn" data-tab="groups">Groups</button>
+        <button class="tab-btn" data-tab="filetypes">File Types</button>
         <button class="tab-btn" data-tab="settings">Settings</button>
-        <button class="tab-btn" data-tab="folders">Folders</button>
       </nav>
     </header>
 
@@ -47,29 +46,29 @@
         </div>
       </div>
 
-      <!-- Groups Tab -->
-      <div class="tab-content" id="groups-tab">
+      <!-- File Types Tab -->
+      <div class="tab-content" id="filetypes-tab">
         <div class="section-header">
-          <h2>File Groups</h2>
+          <h2>File Types</h2>
           <p class="section-description">Organize file types into groups for easier management</p>
         </div>
         
         <div class="groups-container" id="groups-container">
           <div class="empty-state" id="groups-empty">
             <div class="empty-icon" id="groups-empty-icon"></div>
-            <h3>No groups configured</h3>
-            <p>Create groups to organize similar file types together</p>
+            <h3>No file types configured</h3>
+            <p>Create file types to organize similar file extensions together</p>
           </div>
         </div>
         
         <div class="section-actions">
           <button class="btn primary" id="add-group">
             <span class="btn-icon" id="add-group-icon"></span>
-            Add Group
+            Add File Type
           </button>
           <button class="btn secondary" id="load-defaults">
             <span class="btn-icon" id="load-defaults-icon"></span>
-            Load Default Groups
+            Load Default File Types
           </button>
         </div>
       </div>
@@ -101,33 +100,37 @@
 
           <div class="setting-card">
             <div class="setting-header">
-              <h3>Rule Priority</h3>
+              <h3>Default Folder</h3>
             </div>
-            <p class="setting-description">When both domain and extension rules match, prefer:</p>
+            <p class="setting-description">Where to save downloads when no rules match</p>
+            
+            <div class="setting-input">
+              <input type="text" id="default-folder" value="Downloads" class="form-input" placeholder="Downloads">
+              <button id="browse-default-folder" class="btn secondary">Browse</button>
+            </div>
+          </div>
+
+          <div class="setting-card">
+            <div class="setting-header">
+              <h3>Conflict Resolution</h3>
+            </div>
+            <p class="setting-description">When multiple rules have the same priority:</p>
             
             <div class="radio-group">
               <label class="radio-option">
-                <input type="radio" name="tie-breaker" value="domain" checked>
+                <input type="radio" name="conflict-resolution" value="auto" checked>
                 <span class="radio-custom"></span>
                 <div class="radio-content">
-                  <strong>Domain Rules</strong>
-                  <small>Prioritize website-specific folders</small>
+                  <strong>Auto-resolve</strong>
+                  <small>Use highest priority rule automatically</small>
                 </div>
               </label>
               <label class="radio-option">
-                <input type="radio" name="tie-breaker" value="extension">
-                <span class="radio-custom"></span>
-                <div class="radio-content">
-                  <strong>File Type Rules</strong>
-                  <small>Prioritize file extension groups</small>
-                </div>
-              </label>
-              <label class="radio-option">
-                <input type="radio" name="tie-breaker" value="ask">
+                <input type="radio" name="conflict-resolution" value="ask">
                 <span class="radio-custom"></span>
                 <div class="radio-content">
                   <strong>Ask Every Time</strong>
-                  <small>Show options in overlay</small>
+                  <small>Show conflict dialog in overlay</small>
                 </div>
               </label>
             </div>
@@ -135,40 +138,6 @@
         </div>
       </div>
 
-      <!-- Folders Tab -->
-      <div class="tab-content" id="folders-tab">
-        <div class="section-header">
-          <h2>Download Folders</h2>
-          <p class="section-description">Manage and browse your download folder structure</p>
-        </div>
-        
-        <div class="folder-browser">
-          <div class="folder-toolbar">
-            <div class="folder-path" id="current-path">
-              <span class="path-icon" id="path-icon"></span>
-              <span id="path-text">Downloads</span>
-            </div>
-            <button class="btn secondary small" id="refresh-folders">
-              <span class="btn-icon" id="refresh-folders-icon"></span>
-              Refresh
-            </button>
-          </div>
-          
-          <div class="folder-list" id="folder-list">
-            <div class="loading-state">
-              <div class="spinner"></div>
-              <p>Loading folders...</p>
-            </div>
-          </div>
-          
-          <div class="folder-actions">
-            <button class="btn secondary" id="create-folder">
-              <span class="btn-icon" id="create-folder-icon"></span>
-              Create Folder
-            </button>
-          </div>
-        </div>
-      </div>
     </main>
 
     <footer class="app-footer">

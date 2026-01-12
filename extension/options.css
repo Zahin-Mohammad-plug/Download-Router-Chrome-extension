@@ -1119,3 +1119,77 @@ input:checked + .toggle-slider:before {
     vertical-align: middle;
   }
 }
+
+/* Priority input styling */
+.rule-priority,
+.group-priority {
+  font-size: 13px;
+  padding: 8px;
+  width: 100px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+}
+
+.rule-priority:focus,
+.group-priority:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+}
+
+.priority-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.help-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: normal;
+  display: block;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+/* Toggle label styling */
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  user-select: none;
+}
+
+.toggle-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--primary-color);
+}
+
+.toggle-label span {
+  color: var(--text-secondary);
+}
+
+.toggle-label:hover span {
+  color: var(--text-primary);
+}
+
+/* Setting input group */
+.setting-input {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.setting-input .form-input {
+  flex: 1;
+}

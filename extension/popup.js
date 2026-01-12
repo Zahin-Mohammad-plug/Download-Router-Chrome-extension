@@ -138,6 +138,33 @@ class PopupApp {
       this.toggleExtension();
     });
 
+    // Clear recent activity button
+    const clearActivityBtn = document.getElementById('clear-activity');
+    if (clearActivityBtn) {
+      clearActivityBtn.addEventListener('click', async () => {
+        if (confirm('Clear all recent downloads?')) {
+          await chrome.storage.local.set({
+            downloadStats: {
+              totalDownloads: this.stats.totalDownloads,
+              routedDownloads: this.stats.routedDownloads,
+              recentActivity: [] // Clear activity
+            }
+          });
+          this.stats.recentActivity = [];
+          this.loadRecentActivity();
+          this.showToast('Recent activity cleared');
+        }
+      });
+    }
+
+    // Add rule quick button
+    const addRuleQuickBtn = document.getElementById('add-rule-quick');
+    if (addRuleQuickBtn) {
+      addRuleQuickBtn.addEventListener('click', () => {
+        chrome.runtime.openOptionsPage();
+      });
+    }
+
     // Help link - opens README in new tab
     document.getElementById('help-link').addEventListener('click', (e) => {
       // preventDefault: Prevents default anchor link behavior
@@ -182,6 +209,31 @@ class PopupApp {
     //   Outputs: Array of strings
     document.getElementById('groups-count').textContent = Object.keys(this.groups).length;
     document.getElementById('downloads-count').textContent = this.stats.totalDownloads;
+
+    // Show first 3 rules in preview
+    const rulesList = document.getElementById('rules-list');
+    if (rulesList) {
+      const enabledRules = this.rules.filter(r => r.enabled !== false);
+      if (enabledRules.length === 0) {
+        rulesList.innerHTML = '<p class="empty-text">No rules configured</p>';
+      } else {
+        rulesList.innerHTML = enabledRules.slice(0, 3).map(rule => {
+          const priority = rule.priority !== undefined ? parseFloat(rule.priority).toFixed(1) : '2.0';
+          return `
+            <div class="rule-preview">
+              <span class="rule-badge ${rule.type}">${rule.type.toUpperCase()}</span>
+              <span class="rule-value" title="${rule.value}">${rule.value.length > 20 ? rule.value.substring(0, 20) + '...' : rule.value}</span>
+              <span class="rule-arrow">→</span>
+              <span class="rule-folder" title="${rule.folder}">${rule.folder.length > 15 ? rule.folder.substring(0, 15) + '...' : rule.folder}</span>
+              <span class="priority-indicator">P${priority}</span>
+            </div>
+          `;
+        }).join('');
+        if (enabledRules.length > 3) {
+          rulesList.innerHTML += `<p class="more-rules">+${enabledRules.length - 3} more</p>`;
+        }
+      }
+    }
 
     // Update extension toggle button appearance based on state
     const toggleBtn = document.getElementById('toggle-extension');
@@ -578,6 +630,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Set welcome icon
     const welcomeIcon = document.getElementById('welcome-icon');
     if (welcomeIcon) welcomeIcon.innerHTML = getIcon('folder', 64);
+    
+    // Set clear icon
+    const clearIcon = document.getElementById('clear-icon');
+    if (clearIcon) clearIcon.innerHTML = getIcon('x', 16) || getIcon('trash', 16) || '×';
     
     // Set check icons in welcome tips
     document.querySelectorAll('.check-icon').forEach(icon => {

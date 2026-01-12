@@ -26,7 +26,7 @@
         </div>
         <div class="stat-item">
           <span class="stat-number" id="groups-count">0</span>
-          <span class="stat-label">Groups</span>
+          <span class="stat-label">File Types</span>
         </div>
         <div class="stat-item">
           <span class="stat-number" id="downloads-count">0</span>
@@ -34,8 +34,23 @@
         </div>
       </div>
 
+      <div class="rules-preview" id="rules-preview">
+        <div class="section-header">
+          <h3>Active Rules</h3>
+          <button id="add-rule-quick" class="btn-text" title="Add Rule">+ Add</button>
+        </div>
+        <div id="rules-list">
+          <p class="empty-text">No rules configured</p>
+        </div>
+      </div>
+
       <div class="recent-activity" id="recent-activity">
-        <h3>Recent Downloads</h3>
+        <div class="section-header">
+          <h3>Recent Downloads</h3>
+          <button id="clear-activity" class="btn-icon" title="Clear all">
+            <span id="clear-icon"></span>
+          </button>
+        </div>
         <div class="activity-list" id="activity-list">
           <div class="empty-state">
             <div class="empty-icon icon-list"></div>

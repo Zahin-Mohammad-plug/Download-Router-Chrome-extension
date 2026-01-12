@@ -33,14 +33,8 @@ class OptionsApp {
    * Outputs: None (calls init method)
    */
   constructor() {
-    // Current active tab name ('rules', 'groups', 'settings', or 'folders')
+    // Current active tab name ('rules', 'filetypes', 'settings')
     this.currentTab = 'rules';
-    // Current download path being viewed
-    this.currentPath = '';
-    // Array of available folders for browsing
-    this.availableFolders = [];
-    // Currently selected folder in folder picker
-    this.selectedFolder = '';
     // Array of routing rules
     this.rules = [];
     // Object mapping group names to group configurations
@@ -73,14 +67,72 @@ class OptionsApp {
     this.setupTabNavigation();
     // Render the currently active tab
     this.renderCurrentTab();
-    // Load available folders for browser
-    this.loadFolders();
     // Check companion app status and update UI
     this.checkCompanionAppStatus();
   }
 
   /**
+   * Helper method to check companion app status with retry logic.
+   * Used by multiple methods that need to verify companion app availability.
+   * 
+   * Inputs: None
+   * 
+   * Outputs: Promise resolving to status object
+   */
+  async checkCompanionAppStatusHelper() {
+    // Retry logic: service worker may need time to wake up
+    let status = { installed: false };
+    const maxRetries = 3;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        status = await new Promise((resolve, reject) => {
+          // Set timeout for the message
+          const timeout = setTimeout(() => {
+            resolve({ installed: false, error: 'Timeout waiting for response' });
+          }, 6000); // 6 second timeout
+          
+          chrome.runtime.sendMessage({ type: 'checkCompanionApp' }, (response) => {
+            clearTimeout(timeout);
+            if (chrome.runtime.lastError) {
+              // Check if it's a service worker not awake error
+              const errorMsg = chrome.runtime.lastError.message || '';
+              if (errorMsg.includes('message port closed') || errorMsg.includes('Receiving end does not exist')) {
+                // Service worker not awake, will retry
+                resolve({ installed: false, error: 'Service worker not ready', retry: true });
+              } else {
+                resolve({ installed: false, error: errorMsg });
+              }
+            } else {
+              // Got a valid response
+              resolve(response || { installed: false });
+            }
+          });
+        });
+        
+        // If we got a valid response (not a retry), break out of loop
+        if (!status.error || !status.retry) {
+          break;
+        }
+        
+        // Wait before retrying (exponential backoff)
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1)));
+        }
+      } catch (error) {
+        console.error(`Companion app check attempt ${attempt + 1} failed:`, error);
+        if (attempt === maxRetries - 1) {
+          status = { installed: false, error: error.message };
+        }
+      }
+    }
+    
+    return status;
+  }
+
+  /**
    * Checks companion app installation status and updates UI indicators.
+   * Retries if service worker is not awake.
    * 
    * Inputs: None
    * 
@@ -91,16 +143,7 @@ class OptionsApp {
    */
   async checkCompanionAppStatus() {
     try {
-      const status = await new Promise((resolve, reject) => {
-        chrome.runtime.sendMessage({ type: 'checkCompanionApp' }, (response) => {
-          if (chrome.runtime.lastError) {
-            console.error('Error checking companion app status:', chrome.runtime.lastError.message);
-            resolve({ installed: false, error: chrome.runtime.lastError.message });
-          } else {
-            resolve(response || { installed: false });
-          }
-        });
-      });
+      const status = await this.checkCompanionAppStatusHelper();
       
       // Update UI with companion app status
       // Add status indicator to settings tab or header
@@ -185,14 +228,12 @@ class OptionsApp {
     this.groups = data.groups || this.getDefaultGroups();
     // Build settings object with defaults
     this.settings = {
-      tieBreaker: data.tieBreaker || 'domain',
       confirmationEnabled: data.confirmationEnabled !== false,
       // Convert timeout from milliseconds to seconds for display
-      confirmationTimeout: (data.confirmationTimeout || 5000) / 1000
+      confirmationTimeout: (data.confirmationTimeout || 5000) / 1000,
+      defaultFolder: data.defaultFolder || 'Downloads',
+      conflictResolution: data.conflictResolution || 'auto'
     };
-    this.currentPath = data.downloadPath || 'Downloads';
-    // Use default folders if none exist in storage
-    this.availableFolders = data.availableFolders || this.getCommonFolders();
   }
 
   /**
@@ -226,12 +267,6 @@ class OptionsApp {
     // Set up settings-specific event listeners
     this.setupSettingsListeners();
     
-    // Folder browser controls
-    // Refresh folders button - reloads folder list
-    document.getElementById('refresh-folders').addEventListener('click', () => this.loadFolders());
-    // Create folder button - prompts user to create new folder
-    document.getElementById('create-folder').addEventListener('click', () => this.createFolder());
-    
     // Set up modal interaction listeners
     this.setupModalListeners();
   }
@@ -256,8 +291,28 @@ class OptionsApp {
     confirmationTimeout.value = this.settings.confirmationTimeout;
     timeoutValue.textContent = `${this.settings.confirmationTimeout}s`;
     
-    // Tie breaker
-    document.querySelector(`input[name="tie-breaker"][value="${this.settings.tieBreaker}"]`).checked = true;
+    // Default folder setting
+    const defaultFolderInput = document.getElementById('default-folder');
+    const browseDefaultFolderBtn = document.getElementById('browse-default-folder');
+    if (defaultFolderInput) {
+      defaultFolderInput.value = this.settings.defaultFolder || 'Downloads';
+    }
+    if (browseDefaultFolderBtn) {
+      browseDefaultFolderBtn.addEventListener('click', () => {
+        this.openFolderPicker((folder) => {
+          if (folder && defaultFolderInput) {
+            defaultFolderInput.value = folder;
+          }
+        });
+      });
+    }
+    
+    // Conflict resolution setting
+    const conflictResolution = this.settings.conflictResolution || 'auto';
+    const conflictRadio = document.querySelector(`input[name="conflict-resolution"][value="${conflictResolution}"]`);
+    if (conflictRadio) {
+      conflictRadio.checked = true;
+    }
   }
 
   setupTabNavigation() {
@@ -291,11 +346,8 @@ class OptionsApp {
       case 'rules':
         this.renderRules();
         break;
-      case 'groups':
+      case 'filetypes':
         this.renderGroups();
-        break;
-      case 'folders':
-        this.renderFolders();
         break;
     }
   }
@@ -323,6 +375,8 @@ class OptionsApp {
     const typeName = rule.type === 'domain' ? 'Domain Rule' : 'Extension Rule';
     const iconName = rule.type === 'domain' ? 'globe' : 'file-type';
     const iconHTML = typeof getIcon !== 'undefined' ? getIcon(iconName, 16) : '';
+    const priority = rule.priority !== undefined ? parseFloat(rule.priority).toFixed(1) : '2.0';
+    const enabled = rule.enabled !== false;
     
     return `
       <div class="rule-item" data-index="${index}">
@@ -355,6 +409,29 @@ class OptionsApp {
               <option value="extension" ${rule.type === 'extension' ? 'selected' : ''}>Extension</option>
             </select>
           </div>
+          <div class="form-group">
+            <label class="form-label">
+              Priority
+              <span class="help-text">Lower number = higher priority. Use decimals for fine control (e.g., 1.5, 2.7)</span>
+            </label>
+            <input type="number" 
+                   class="form-input rule-priority" 
+                   data-index="${index}"
+                   value="${priority}"
+                   min="0.1"
+                   max="10"
+                   step="0.1"
+                   placeholder="2.0">
+            <div class="priority-hint">
+              Default: 2.0 | Common: 1.0 (highest), 2.0 (medium), 3.0 (file types)
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="toggle-label">
+              <input type="checkbox" class="rule-enabled" data-index="${index}" ${enabled ? 'checked' : ''}>
+              <span>Enabled</span>
+            </label>
+          </div>
         </div>
       </div>
     `;
@@ -364,8 +441,11 @@ class OptionsApp {
     // Delete rule buttons
     document.querySelectorAll('.delete-rule').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        const index = parseInt(e.target.dataset.index);
-        this.deleteRule(index);
+        // Use currentTarget instead of target to handle nested elements (like icons)
+        const index = parseInt(e.currentTarget.dataset.index || e.target.closest('.delete-rule')?.dataset.index || e.target.dataset.index);
+        if (!isNaN(index)) {
+          this.deleteRule(index);
+        }
       });
     });
     
@@ -381,6 +461,27 @@ class OptionsApp {
       select.addEventListener('change', (e) => {
         const index = parseInt(e.target.dataset.index);
         this.rules[index].type = e.target.value;
+      });
+    });
+    
+    // Priority inputs
+    document.querySelectorAll('.rule-priority').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const index = parseInt(e.target.dataset.index);
+        // Parse as float and round to 1 decimal place
+        const priority = Math.round(parseFloat(e.target.value) * 10) / 10;
+        // Clamp between 0.1 and 10
+        this.rules[index].priority = Math.max(0.1, Math.min(10, priority));
+        // Update input to show rounded value
+        e.target.value = this.rules[index].priority.toFixed(1);
+      });
+    });
+    
+    // Enabled checkboxes
+    document.querySelectorAll('.rule-enabled').forEach(checkbox => {
+      checkbox.addEventListener('change', (e) => {
+        const index = parseInt(e.target.dataset.index);
+        this.rules[index].enabled = e.target.checked;
       });
     });
     
@@ -418,12 +519,16 @@ class OptionsApp {
   }
 
   createGroupHTML(name, group, index) {
+    const priority = group.priority !== undefined ? parseFloat(group.priority).toFixed(1) : '3.0';
+    const overrideDomainRules = group.overrideDomainRules || false;
+    const enabled = group.enabled !== false;
+    
     return `
       <div class="group-item" data-name="${name}">
         <div class="item-header">
           <div class="item-type">
             <span>${typeof getIcon !== 'undefined' ? getIcon('folder', 16) : ''}</span>
-            File Group
+            File Type
           </div>
           <div class="item-actions">
             <button class="btn secondary small edit-group" data-name="${name}">Edit</button>
@@ -432,7 +537,7 @@ class OptionsApp {
         </div>
         <div class="item-content">
           <div class="form-group">
-            <label class="form-label">Group Name</label>
+            <label class="form-label">File Type Name</label>
             <input type="text" class="form-input group-name" value="${name}" data-name="${name}">
           </div>
           <div class="form-group">
@@ -445,6 +550,35 @@ class OptionsApp {
               <span>${typeof getIcon !== 'undefined' ? getIcon('folder', 16) : ''}</span>
               <span class="folder-path">${group.folder}</span>
             </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">
+              Priority
+              <span class="help-text">Lower number = higher priority. Use decimals for fine control (e.g., 2.5, 3.2)</span>
+            </label>
+            <input type="number" 
+                   class="form-input group-priority" 
+                   data-name="${name}"
+                   value="${priority}"
+                   min="0.1"
+                   max="10"
+                   step="0.1"
+                   placeholder="3.0">
+            <div class="priority-hint">
+              Default: 3.0 | File types typically use 2.5-4.0 range
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="toggle-label">
+              <input type="checkbox" class="override-domain" data-name="${name}" ${overrideDomainRules ? 'checked' : ''}>
+              <span>Override Domain Rules (forces file type match even if domain rule exists)</span>
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="toggle-label">
+              <input type="checkbox" class="group-enabled" data-name="${name}" ${enabled ? 'checked' : ''}>
+              <span>Enabled</span>
+            </label>
           </div>
         </div>
       </div>
@@ -480,6 +614,35 @@ class OptionsApp {
       });
     });
     
+    // Priority inputs
+    document.querySelectorAll('.group-priority').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const name = e.target.dataset.name;
+        // Parse as float and round to 1 decimal place
+        const priority = Math.round(parseFloat(e.target.value) * 10) / 10;
+        // Clamp between 0.1 and 10
+        this.groups[name].priority = Math.max(0.1, Math.min(10, priority));
+        // Update input to show rounded value
+        e.target.value = this.groups[name].priority.toFixed(1);
+      });
+    });
+    
+    // Override domain rules checkbox
+    document.querySelectorAll('.override-domain').forEach(checkbox => {
+      checkbox.addEventListener('change', (e) => {
+        const name = e.target.dataset.name;
+        this.groups[name].overrideDomainRules = e.target.checked;
+      });
+    });
+    
+    // Enabled checkboxes
+    document.querySelectorAll('.group-enabled').forEach(checkbox => {
+      checkbox.addEventListener('change', (e) => {
+        const name = e.target.dataset.name;
+        this.groups[name].enabled = e.target.checked;
+      });
+    });
+    
     // Folder picker buttons
     document.querySelectorAll('.folder-picker-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -492,136 +655,32 @@ class OptionsApp {
     });
   }
 
-  renderFolders() {
-    const folderList = document.getElementById('folder-list');
-    const pathText = document.getElementById('path-text');
-    
-    pathText.textContent = this.currentPath || 'Downloads';
-    
-    if (this.availableFolders.length === 0) {
-      folderList.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-icon icon-folder-simple"></div>
-          <h3>No folders found</h3>
-          <p>Create a new folder to get started</p>
-        </div>
-      `;
-      return;
-    }
-    
-    const foldersHTML = this.availableFolders.map(folder => 
-      this.createFolderHTML(folder)
-    ).join('');
-    
-    folderList.innerHTML = foldersHTML;
-    this.attachFolderListeners();
-  }
-
-  createFolderHTML(folder) {
-    const iconName = folder.type === 'folder' ? 'folder' : 'file';
-    const iconHTML = typeof getIcon !== 'undefined' ? getIcon(iconName, 20) : '';
-    return `
-      <div class="folder-item" data-path="${folder.path}">
-        <div class="folder-icon">${iconHTML}</div>
-        <div class="folder-info">
-          <div class="folder-name">${folder.name}</div>
-          <div class="folder-size">${folder.size || 'Folder'}</div>
-        </div>
-      </div>
-    `;
-  }
-
-  attachFolderListeners() {
-    document.querySelectorAll('.folder-item').forEach(item => {
-      item.addEventListener('click', (e) => {
-        document.querySelectorAll('.folder-item').forEach(i => i.classList.remove('selected'));
-        e.currentTarget.classList.add('selected');
-        this.selectedFolder = e.currentTarget.dataset.path;
-      });
-    });
-  }
-
-  /**
-   * Loads folders from file system using companion app, or falls back to default list.
-   * 
-   * Inputs: None
-   * 
-   * Outputs: None (updates this.availableFolders and renders UI)
-   * 
-   * External Dependencies:
-   *   - chrome.runtime.sendMessage: Chrome API for communicating with background script
-   */
-  async loadFolders() {
-    try {
-      // Check if companion app is available
-      const companionStatus = await chrome.runtime.sendMessage({ type: 'checkCompanionApp' });
-      
-      if (companionStatus && companionStatus.installed) {
-        // Get default Downloads path (platform-specific)
-        // For now, use currentPath or default to Downloads
-        const defaultPath = this.currentPath || 'Downloads';
-        
-        // Request folder listing from companion app
-        // Note: This requires absolute path, so we'll need to resolve Downloads path
-        // For now, use default list until we implement path resolution
-        this.availableFolders = this.getCommonFolders();
-        
-        // Show indicator that companion app is available
-        const folderList = document.getElementById('folder-list');
-        if (folderList) {
-          const statusIndicator = document.createElement('div');
-          statusIndicator.style.cssText = 'padding: 8px; background: #e3f2fd; color: #1565c0; font-size: 12px; border-radius: 4px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;';
-          const checkIcon = typeof getIcon !== 'undefined' ? getIcon('check-circle', 16) : '✓';
-          statusIndicator.innerHTML = `${checkIcon}<span>Companion app detected - Native folder picker available</span>`;
-          folderList.parentElement.insertBefore(statusIndicator, folderList);
-        }
-      } else {
-        // Fallback to default list
-        this.availableFolders = this.getCommonFolders();
-      }
-    } catch (error) {
-      // Fallback to default list on error
-      console.log('Companion app not available, using default folder list');
-    this.availableFolders = this.getCommonFolders();
-    }
-    
-    this.renderFolders();
-  }
-
-  getCommonFolders() {
-    return [
-      { name: '3D Printing', path: '3D Printing', type: 'folder', size: 'Folder' },
-      { name: 'Documents', path: 'Documents', type: 'folder', size: 'Folder' },
-      { name: 'Images', path: 'Images', type: 'folder', size: 'Folder' },
-      { name: 'Software', path: 'Software', type: 'folder', size: 'Folder' },
-      { name: 'Videos', path: 'Videos', type: 'folder', size: 'Folder' },
-      { name: 'Archives', path: 'Archives', type: 'folder', size: 'Folder' },
-      { name: 'Music', path: 'Music', type: 'folder', size: 'Folder' },
-      { name: 'Games', path: 'Games', type: 'folder', size: 'Folder' },
-      { name: 'Work', path: 'Work', type: 'folder', size: 'Folder' },
-      { name: 'Personal', path: 'Personal', type: 'folder', size: 'Folder' }
-    ];
-  }
 
   setupModalListeners() {
     const overlay = document.getElementById('modal-overlay');
+    if (!overlay) return;
+    
     const closeBtn = document.getElementById('close-modal');
     const cancelBtn = document.getElementById('modal-cancel');
     const selectBtn = document.getElementById('modal-select');
     
-    closeBtn.addEventListener('click', () => this.closeModal());
-    cancelBtn.addEventListener('click', () => this.closeModal());
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => this.closeModal());
+    }
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => this.closeModal());
+    }
     
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) this.closeModal();
     });
     
-    selectBtn.addEventListener('click', () => {
-      if (this.selectedFolder && this.folderSelectCallback) {
-        this.folderSelectCallback(this.selectedFolder);
+    if (selectBtn) {
+      selectBtn.addEventListener('click', () => {
+        // Modal selection handled by native picker now
         this.closeModal();
-      }
-    });
+      });
+    }
   }
 
   /**
@@ -639,20 +698,8 @@ class OptionsApp {
     this.folderSelectCallback = callback;
     
     try {
-      // Check if companion app is available
-      // Wrap in Promise to handle service worker wake-up
-      const companionStatus = await new Promise((resolve, reject) => {
-        chrome.runtime.sendMessage({ type: 'checkCompanionApp' }, (response) => {
-          if (chrome.runtime.lastError) {
-            console.error('Error checking companion app:', chrome.runtime.lastError.message);
-            resolve({ installed: false, error: chrome.runtime.lastError.message });
-          } else {
-            resolve(response || { installed: false });
-          }
-        });
-      });
-      
-      console.log('Companion app status:', companionStatus);
+      // Check if companion app is available (with retry logic)
+      const companionStatus = await this.checkCompanionAppStatusHelper();
       
       if (companionStatus && companionStatus.installed) {
         // Use native folder picker
@@ -660,7 +707,7 @@ class OptionsApp {
           const response = await new Promise((resolve, reject) => {
             chrome.runtime.sendMessage({
               type: 'pickFolderNative',
-              startPath: this.currentPath || null
+              startPath: null
             }, (response) => {
               if (chrome.runtime.lastError) {
                 console.error('Error calling native folder picker:', chrome.runtime.lastError.message);
@@ -710,37 +757,17 @@ class OptionsApp {
         console.log('Companion app not available, using modal fallback');
       }
     } catch (error) {
-      // Companion app check failed - use modal fallback
-      console.log('Companion app check failed, using modal fallback');
+      // Companion app check failed - show error
+      console.log('Companion app check failed:', error);
+      if (callback) callback(null);
     }
-    
-    // Fallback: Show modal with default folder list
-    const modal = document.getElementById('modal-overlay');
-    const folderTree = document.getElementById('folder-tree');
-    
-    // Populate folder tree with available folders
-    const foldersHTML = this.availableFolders.map(folder => 
-      this.createFolderHTML(folder)
-    ).join('');
-    
-    folderTree.innerHTML = foldersHTML;
-    
-    // Attach folder selection listeners
-    folderTree.querySelectorAll('.folder-item').forEach(item => {
-      item.addEventListener('click', (e) => {
-        folderTree.querySelectorAll('.folder-item').forEach(i => i.classList.remove('selected'));
-        e.currentTarget.classList.add('selected');
-        this.selectedFolder = e.currentTarget.dataset.path;
-      });
-    });
-    
-    modal.classList.add('active');
   }
 
   closeModal() {
     const modal = document.getElementById('modal-overlay');
-    modal.classList.remove('active');
-    this.selectedFolder = '';
+    if (modal) {
+      modal.classList.remove('active');
+    }
     this.folderSelectCallback = null;
   }
 
@@ -748,44 +775,43 @@ class OptionsApp {
     this.rules.push({
       type: 'domain',
       value: '',
-      folder: 'Downloads'
+      folder: 'Downloads',
+      priority: 2.0,  // Default priority for rules
+      enabled: true
     });
     this.renderRules();
   }
 
-  deleteRule(index) {
+  async deleteRule(index) {
     this.rules.splice(index, 1);
+    // Save updated rules to storage
+    await this.saveRules();
     this.renderRules();
+    this.showStatus('Rule deleted', 'success');
   }
 
   addGroup() {
-    const name = prompt('Enter group name:');
+    const name = prompt('Enter file type name:');
     if (name && !this.groups[name]) {
       this.groups[name] = {
         extensions: '',
-        folder: 'Downloads'
+        folder: 'Downloads',
+        priority: 3.0,  // Default priority for file types
+        overrideDomainRules: false,
+        enabled: true
       };
       this.renderGroups();
     }
   }
 
-  deleteGroup(name) {
+  async deleteGroup(name) {
     delete this.groups[name];
+    // Save updated groups to storage
+    await this.saveRules();
     this.renderGroups();
+    this.showStatus('Group deleted', 'success');
   }
 
-  createFolder() {
-    const name = prompt('Enter folder name:');
-    if (name) {
-      this.availableFolders.push({
-        name: name,
-        path: name,
-        type: 'folder',
-        size: 'Folder'
-      });
-      this.renderFolders();
-    }
-  }
 
   loadDefaultGroups() {
     this.groups = this.getDefaultGroups();
@@ -806,29 +832,61 @@ class OptionsApp {
     return {
       videos: {
         extensions: 'mp4,mov,mkv,avi,wmv,flv,webm',
-        folder: 'Videos'
+        folder: 'Videos',
+        priority: 3.0,
+        overrideDomainRules: false,
+        enabled: true
       },
       images: {
         extensions: 'jpg,jpeg,png,gif,bmp,svg,webp',
-        folder: 'Images'
+        folder: 'Images',
+        priority: 3.0,
+        overrideDomainRules: false,
+        enabled: true
       },
       documents: {
         extensions: 'pdf,doc,docx,txt,rtf,odt',
-        folder: 'Documents'
+        folder: 'Documents',
+        priority: 3.0,
+        overrideDomainRules: false,
+        enabled: true
       },
       '3d-files': {
         extensions: 'stl,obj,3mf,step,stp,ply',
-        folder: '3D Files'
+        folder: '3D Files',
+        priority: 3.0,
+        overrideDomainRules: false,
+        enabled: true
       },
       archives: {
         extensions: 'zip,rar,7z,tar,gz',
-        folder: 'Archives'
+        folder: 'Archives',
+        priority: 3.0,
+        overrideDomainRules: false,
+        enabled: true
       },
       software: {
         extensions: 'exe,msi,dmg,deb,rpm,pkg',
-        folder: 'Software'
+        folder: 'Software',
+        priority: 3.0,
+        overrideDomainRules: false,
+        enabled: true
       }
     };
+  }
+
+  /**
+   * Saves rules and groups to storage (used for quick updates like delete/add).
+   * 
+   * Inputs: None (uses this.rules and this.groups)
+   * 
+   * Outputs: None (saves to storage)
+   */
+  async saveRules() {
+    await chrome.storage.sync.set({
+      rules: this.rules,
+      groups: this.groups
+    });
   }
 
   /**
@@ -854,9 +912,11 @@ class OptionsApp {
     //   Outputs: Integer
     const confirmationTimeout = parseInt(document.getElementById('confirmation-timeout').value) * 1000;
     // querySelector: Finds first matching element
-    //   Inputs: CSS selector string ('input[name="tie-breaker"]:checked')
+    //   Inputs: CSS selector string ('input[name="conflict-resolution"]:checked')
     //   Outputs: Element or null
-    const tieBreaker = document.querySelector('input[name="tie-breaker"]:checked').value;
+    const conflictResolution = document.querySelector('input[name="conflict-resolution"]:checked')?.value || 'auto';
+    const defaultFolderInput = document.getElementById('default-folder');
+    const defaultFolder = defaultFolderInput ? defaultFolderInput.value : 'Downloads';
     
     // Save all configuration to sync storage
     // chrome.storage.sync.set: Stores data in sync storage
@@ -865,10 +925,10 @@ class OptionsApp {
     await chrome.storage.sync.set({
       rules: this.rules,
       groups: this.groups,
-      tieBreaker: tieBreaker,
       confirmationEnabled: confirmationEnabled,
       confirmationTimeout: confirmationTimeout,
-      availableFolders: this.availableFolders
+      defaultFolder: defaultFolder,
+      conflictResolution: conflictResolution
     });
     
     // Show success message to user
@@ -881,9 +941,10 @@ class OptionsApp {
       this.rules = [];
       this.groups = this.getDefaultGroups();
       this.settings = {
-        tieBreaker: 'domain',
         confirmationEnabled: true,
-        confirmationTimeout: 5
+        confirmationTimeout: 5,
+        defaultFolder: 'Downloads',
+        conflictResolution: 'auto'
       };
       
       await this.saveOptions();

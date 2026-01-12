@@ -287,12 +287,14 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
   // chrome.storage.sync.get: Retrieves stored extension settings
   //   Inputs: Array of keys to retrieve ['rules', 'tieBreaker', 'confirmationEnabled', 'confirmationTimeout']
   //   Outputs: Calls callback with data object containing stored values
-  chrome.storage.sync.get(['rules', 'tieBreaker', 'confirmationEnabled', 'confirmationTimeout'], (data) => {
+  chrome.storage.sync.get(['rules', 'groups', 'confirmationEnabled', 'confirmationTimeout', 'defaultFolder', 'conflictResolution'], (data) => {
     // Load configuration with sensible defaults
     const rules = data.rules || [];
-    const tieBreaker = data.tieBreaker || 'domain';
+    const groups = data.groups || {};
     const confirmationEnabled = data.confirmationEnabled !== false; // Default to true
     const confirmationTimeout = data.confirmationTimeout || 5000; // Default 5 seconds
+    const defaultFolder = data.defaultFolder || 'Downloads';
+    const conflictResolution = data.conflictResolution || 'auto';
     
     // Extract download metadata
     const url = downloadItem.url;
@@ -304,54 +306,118 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
     // Initialize rule matching arrays
     let domainMatches = [];
     let extensionMatches = [];
+    let fileTypeMatches = [];
     let domain = 'unknown';
 
     // Extract domain from URL and find matching domain rules
-    // new URL(): Browser built-in constructor to parse URLs
-    //   Inputs: URL string
-    //   Outputs: URL object with hostname property
     try {
       domain = new URL(url).hostname;
-      // Normalize domain for matching (remove www. prefix)
       const normalizedDomain = normalizeDomain(domain);
-      // Filter rules where type is 'domain' and normalized domain contains normalized rule value
+      // Filter enabled domain rules
       domainMatches = rules.filter(rule => {
-        if (rule.type !== 'domain') return false;
-        // Normalize the rule value (handles https://github.com/, www.github.com, etc.)
+        if (rule.type !== 'domain' || rule.enabled === false) return false;
         const normalizedRuleValue = normalizeDomain(rule.value);
-        // Match if domain contains the rule value (supports subdomain matching)
         return normalizedDomain.includes(normalizedRuleValue) || 
                normalizedRuleValue.includes(normalizedDomain);
-      });
+      }).map(r => ({...r, source: 'domain'}));
     } catch (e) {
       console.error("Invalid URL, cannot determine domain:", url);
     }
     
-    // Find matching extension rules by checking if file extension is in rule's extension list
-    // Split comma-separated extensions and trim whitespace for comparison
-    extensionMatches = rules.filter(rule => rule.type === 'extension' && rule.value.split(',').map(ext => ext.trim()).includes(extension));
+    // Find matching extension rules
+    extensionMatches = rules.filter(rule => {
+      if (rule.type !== 'extension' || rule.enabled === false) return false;
+      return rule.value.split(',').map(ext => ext.trim().toLowerCase()).includes(extension);
+    }).map(r => ({...r, source: 'extension'}));
 
-    // Determine which rule to apply based on priority and tie-breaker settings
-    let finalRule = null;
-
-    // Apply tie-breaker logic when both domain and extension rules match
-    if (domainMatches.length > 0 && extensionMatches.length > 0) {
-      if (tieBreaker === 'domain') {
-        finalRule = domainMatches[0];
-      } else if (tieBreaker === 'extension') {
-        finalRule = extensionMatches[0];
-      } else {
-        // "Ask" logic will be handled in the confirmation prompt
-        // Default to domain rule for now
-        finalRule = domainMatches[0]; 
+    // Find matching file types (groups)
+    for (const [name, group] of Object.entries(groups)) {
+      if (group.enabled === false) continue;
+      
+      // Check if extension is in this file type's extension list
+      const groupExtensions = group.extensions.split(',').map(ext => ext.trim().toLowerCase());
+      if (groupExtensions.includes(extension)) {
+        const fileTypeRule = {
+          type: 'filetype',
+          value: group.extensions,
+          folder: group.folder,
+          priority: parseFloat(group.priority) || 3.0,
+          enabled: group.enabled !== false,
+          overrideDomainRules: group.overrideDomainRules || false,
+          source: 'filetype',
+          groupName: name
+        };
+        
+        // If overrideDomainRules is true, boost priority to beat domain rules
+        if (fileTypeRule.overrideDomainRules && domainMatches.length > 0) {
+          // Set priority to be lower than domain rules' priority (higher priority)
+          const lowestDomainPriority = Math.min(...domainMatches.map(r => parseFloat(r.priority) || 2.0));
+          fileTypeRule.priority = Math.max(0.1, lowestDomainPriority - 0.1);
+        }
+        
+        fileTypeMatches.push(fileTypeRule);
       }
-    } else if (domainMatches.length > 0) {
-      // Only domain rules match
-      finalRule = domainMatches[0];
-    } else if (extensionMatches.length > 0) {
-      // Only extension rules match
-      finalRule = extensionMatches[0];
     }
+
+    // 1. Collect ALL matching rules (domain + extension + file types)
+    const allMatches = [
+      ...domainMatches,
+      ...extensionMatches,
+      ...fileTypeMatches
+    ];
+
+    // 2. Sort by priority (lower number = higher priority)
+    allMatches.sort((a, b) => {
+      const priorityA = parseFloat(a.priority) || 2.0;
+      const priorityB = parseFloat(b.priority) || 2.0;
+      
+      if (priorityA !== priorityB) {
+        return priorityA - priorityB;
+      }
+      // Same priority: domain > extension > filetype
+      const order = { domain: 0, extension: 1, filetype: 2 };
+      return (order[a.source] || 999) - (order[b.source] || 999);
+    });
+
+    // 3. Check for conflicts (multiple rules with same priority)
+    let finalRule = null;
+    if (allMatches.length === 0) {
+      // No matches: use default folder
+      finalRule = { folder: defaultFolder, source: 'default', priority: 999 };
+    } else if (allMatches.length === 1) {
+      finalRule = allMatches[0];
+    } else {
+      // Multiple matches - check priority conflicts
+      const topPriority = parseFloat(allMatches[0].priority) || 2.0;
+      const samePriorityRules = allMatches.filter(r => {
+        const rPriority = parseFloat(r.priority) || 2.0;
+        return Math.abs(rPriority - topPriority) < 0.01; // Float comparison with tolerance
+      });
+
+      if (samePriorityRules.length === 1) {
+        finalRule = samePriorityRules[0];
+      } else if (samePriorityRules.length > 1) {
+        // Multiple rules with same priority
+        if (conflictResolution === 'ask') {
+          // Will be handled in overlay - store conflict rules
+          finalRule = null; // Will set conflictRules in downloadInfo
+        } else {
+          // Auto-resolve: use first (already sorted by type)
+          finalRule = samePriorityRules[0];
+        }
+      } else {
+        // Shouldn't happen, but use first match
+        finalRule = allMatches[0];
+      }
+    }
+
+    // Handle conflict rules for "ask" mode
+    const topPriority = allMatches.length > 0 ? parseFloat(allMatches[0].priority) || 2.0 : 999;
+    const conflictRules = conflictResolution === 'ask' && allMatches.length > 1 ? 
+      allMatches.filter(r => {
+        const rPriority = parseFloat(r.priority) || 2.0;
+        return Math.abs(rPriority - topPriority) < 0.01;
+      }) : null;
 
     // Construct final file path using utility function to handle path normalization
     // Check if rule folder is an absolute path (requires post-download move via companion app)
@@ -369,9 +435,19 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
         // Relative path - build relative path for Chrome downloads API
         resolvedPath = buildRelativePath(finalRule.folder, downloadItem.filename);
       }
+    } else if (conflictRules && conflictRules.length > 0) {
+      // Use first conflict rule as default for path display, user will choose in overlay
+      const defaultConflictRule = conflictRules[0];
+      if (isAbsolutePath(defaultConflictRule.folder)) {
+        resolvedPath = filename;
+        needsAbsoluteMove = true;
+        absoluteDestination = defaultConflictRule.folder;
+      } else {
+        resolvedPath = buildRelativePath(defaultConflictRule.folder, downloadItem.filename);
+      }
     } else {
-      // No rule matches - just use filename
-      resolvedPath = extractFilename(downloadItem.filename);
+      // No rule matches - use default folder
+      resolvedPath = buildRelativePath(defaultFolder, downloadItem.filename);
     }
     
     // Store download information for potential confirmation or later processing
@@ -384,6 +460,7 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
       resolvedPath: resolvedPath,
       originalSuggest: suggest, // Store the suggest callback for later use
       finalRule: finalRule,
+      conflictRules: conflictRules, // NEW: For conflict resolution in overlay
       // Absolute path handling for post-download move
       needsMove: needsAbsoluteMove,
       absoluteDestination: absoluteDestination,
@@ -1218,8 +1295,66 @@ chrome.runtime.onStartup.addListener(() => {
   checkCompanionAppStatus();
 });
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   checkCompanionAppStatus();
+  
+  // Migration: Add priority fields to existing rules and groups
+  if (details.reason === 'update' || details.reason === 'install') {
+    try {
+      const { rules, groups } = await chrome.storage.sync.get(['rules', 'groups']);
+      
+      let needsMigration = false;
+      
+      // Migrate rules: Add default priority 2.0 and enabled flag
+      const migratedRules = (rules || []).map(r => {
+        if (r.priority === undefined || r.enabled === undefined) {
+          needsMigration = true;
+          return {
+            ...r,
+            priority: r.priority !== undefined ? parseFloat(r.priority) : 2.0,
+            enabled: r.enabled !== false
+          };
+        }
+        return r;
+      });
+      
+      // Migrate groups: Add priority 3.0, override flag, and enabled flag
+      const migratedGroups = {};
+      for (const [name, group] of Object.entries(groups || {})) {
+        if (group.priority === undefined || group.overrideDomainRules === undefined || group.enabled === undefined) {
+          needsMigration = true;
+          migratedGroups[name] = {
+            ...group,
+            priority: group.priority !== undefined ? parseFloat(group.priority) : 3.0,
+            overrideDomainRules: group.overrideDomainRules || false,
+            enabled: group.enabled !== false
+          };
+        } else {
+          migratedGroups[name] = group;
+        }
+      }
+      
+      // Only save if migration was needed
+      if (needsMigration) {
+        await chrome.storage.sync.set({ 
+          rules: migratedRules, 
+          groups: migratedGroups
+        });
+        console.log('Migrated rules and groups to priority system');
+      }
+      
+      // Ensure defaultFolder setting exists
+      const { defaultFolder, conflictResolution } = await chrome.storage.sync.get(['defaultFolder', 'conflictResolution']);
+      if (!defaultFolder || conflictResolution === undefined) {
+        await chrome.storage.sync.set({
+          defaultFolder: defaultFolder || 'Downloads',
+          conflictResolution: conflictResolution || 'auto'
+        });
+      }
+    } catch (error) {
+      console.error('Migration error:', error);
+    }
+  }
 });
 
 // Initial check
