@@ -224,21 +224,30 @@ class DownloadOverlay {
   getCSS() {
     return `
       :host {
-        --primary: #6366f1;
-        --primary-hover: #4f46e5;
+        --primary: #ef4444;
+        --primary-hover: #dc2626;
+        --primary-gradient: linear-gradient(135deg, #ef4444 0%, #f97316 50%, #eab308 100%);
         --success: #10b981;
         --success-hover: #059669;
         --warning: #f59e0b;
         --error: #ef4444;
-        --background: #ffffff;
+        --background: rgba(255, 255, 255, 0.95);
         --surface: #f8fafc;
-        --border: #e2e8f0;
-        --text: #1e293b;
-        --text-muted: #64748b;
-        --shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-        --shadow-lg: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 10px 10px -5px rgb(0 0 0 / 0.04);
-        --radius: 12px;
-        --radius-sm: 8px;
+        --surface-elevated: rgba(255, 255, 255, 0.98);
+        --border: rgba(0, 0, 0, 0.08);
+        --border-subtle: rgba(0, 0, 0, 0.06);
+        --text: #1d1d1f;
+        --text-secondary: #6e6e73;
+        --text-muted: #86868b;
+        --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.03), 0 1px 2px rgba(0, 0, 0, 0.04);
+        --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.03);
+        --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.08), 0 4px 6px rgba(0, 0, 0, 0.05);
+        --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.1), 0 10px 10px rgba(0, 0, 0, 0.04);
+        --radius: 16px;
+        --radius-sm: 10px;
+        --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+        --transition-base: 200ms var(--ease-standard);
+        --transition-slow: 300ms var(--ease-standard);
       }
 
       * {
@@ -252,18 +261,19 @@ class DownloadOverlay {
         bottom: 24px;
         right: 24px;
         pointer-events: auto;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
         font-size: 14px;
         z-index: 2147483647;
-        animation: slideIn 0.3s ease-out;
-        min-width: 380px;
-        max-width: 440px;
+        animation: slideIn var(--transition-slow) var(--ease-standard);
+        min-width: 400px;
+        max-width: 460px;
+        transform: translateZ(0);
       }
 
       @keyframes slideIn {
         from {
           opacity: 0;
-          transform: translateY(20px) scale(0.95);
+          transform: translateY(12px) scale(0.97);
         }
         to {
           opacity: 1;
@@ -272,34 +282,51 @@ class DownloadOverlay {
       }
 
       .overlay-content {
-        background: var(--background);
-        border: 1px solid var(--border);
+        background: var(--surface-elevated);
+        backdrop-filter: blur(40px) saturate(180%);
+        -webkit-backdrop-filter: blur(40px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.18);
         border-radius: var(--radius);
-        box-shadow: var(--shadow-lg);
-        backdrop-filter: blur(10px);
+        box-shadow: var(--shadow-xl);
         overflow: hidden;
+        position: relative;
+      }
+      
+      .overlay-content::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.8), transparent);
+        pointer-events: none;
       }
 
       .overlay-header {
-        padding: 20px 20px 16px;
-        border-bottom: 1px solid var(--border);
+        padding: 24px;
+        border-bottom: 1px solid var(--border-subtle);
+        position: relative;
       }
 
       .overlay-title {
         font-size: 16px;
+        line-height: 1.3;
         font-weight: 600;
         color: var(--text);
-        margin-bottom: 8px;
+        margin-bottom: 12px;
+        letter-spacing: -0.01em;
       }
 
       .overlay-filename {
-        font-size: 14px;
+        font-size: 15px;
         font-weight: 500;
         color: var(--text);
-        margin-bottom: 8px;
+        margin-bottom: 10px;
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
+        letter-spacing: -0.01em;
       }
 
       .overlay-filename svg {
@@ -311,12 +338,13 @@ class DownloadOverlay {
 
       .overlay-path {
         font-size: 13px;
-        color: var(--text-muted);
+        color: var(--text-secondary);
         word-break: break-all;
-        line-height: 1.4;
+        line-height: 1.5;
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
+        font-weight: 400;
       }
 
       .overlay-path svg {
@@ -327,43 +355,55 @@ class DownloadOverlay {
       }
 
       .overlay-actions {
-        padding: 16px 20px;
+        padding: 20px 24px;
         display: flex;
         justify-content: space-between;
         align-items: center;
         gap: 12px;
+        background: rgba(239, 68, 68, 0.02);
       }
 
       .action-btn {
-        background: var(--surface);
+        background: var(--surface-elevated);
+        backdrop-filter: blur(20px) saturate(180%);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
         color: var(--text);
-        border: 1px solid var(--border);
+        border: 1px solid var(--border-subtle);
         border-radius: var(--radius-sm);
-        padding: 8px 12px;
+        padding: 10px 16px;
         cursor: pointer;
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 500;
-        transition: all 0.2s ease;
+        transition: all var(--transition-base);
         text-decoration: none;
         display: inline-flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
+        letter-spacing: -0.01em;
+        box-shadow: var(--shadow-soft);
       }
 
       .action-btn svg {
         width: 14px;
         height: 14px;
         flex-shrink: 0;
-        color: var(--text);
+        color: var(--text-secondary);
+        transition: color var(--transition-base);
       }
 
       .action-btn:hover {
-        background: var(--border);
-        transform: translateY(-1px);
+        background: var(--surface-elevated);
+        border-color: var(--primary-color);
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-sm);
       }
       
       .action-btn:hover svg {
         color: var(--primary);
+      }
+      
+      .action-btn:active {
+        transform: translateY(0) scale(0.98);
       }
 
       .countdown-section {
@@ -374,15 +414,16 @@ class DownloadOverlay {
       }
 
       .countdown-info {
-        font-size: 11px;
-        color: var(--text-muted);
+        font-size: 12px;
+        color: var(--text-secondary);
         white-space: nowrap;
+        font-weight: 400;
       }
 
       .countdown-bar {
-        width: 100px;
+        width: 120px;
         height: 6px;
-        background: var(--border);
+        background: rgba(0, 0, 0, 0.08);
         border-radius: 3px;
         overflow: hidden;
         flex-shrink: 0;
@@ -390,10 +431,11 @@ class DownloadOverlay {
 
       .countdown-fill {
         height: 100%;
-        background: linear-gradient(90deg, var(--success), var(--warning));
+        background: linear-gradient(90deg, var(--success) 0%, var(--success-hover) 50%, var(--warning) 100%);
         border-radius: 3px;
         transition: width 0.05s linear;
         width: 0%;
+        box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
       }
 
       .save-btn {
@@ -401,17 +443,42 @@ class DownloadOverlay {
         color: white;
         border: none;
         border-radius: var(--radius-sm);
-        padding: 10px 20px;
+        padding: 12px 24px;
         cursor: pointer;
-        font-size: 13px;
+        font-size: 14px;
         font-weight: 600;
-        transition: all 0.2s ease;
-        box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
+        transition: all var(--transition-base);
+        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+        letter-spacing: -0.01em;
+        position: relative;
+        overflow: hidden;
+      }
+      
+      .save-btn::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 0;
+        height: 0;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.2);
+        transform: translate(-50%, -50%);
+        transition: width 0.4s ease, height 0.4s ease;
+      }
+      
+      .save-btn:active::before {
+        width: 300px;
+        height: 300px;
       }
 
       .save-btn:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+      }
+      
+      .save-btn:active {
+        transform: translateY(0) scale(0.98);
       }
 
       .rules-editor {
@@ -420,12 +487,15 @@ class DownloadOverlay {
         left: 0;
         right: 0;
         bottom: 0;
-        background: var(--background);
+        background: var(--surface-elevated);
+        backdrop-filter: blur(40px) saturate(180%);
+        -webkit-backdrop-filter: blur(40px) saturate(180%);
         border-radius: var(--radius);
         transform: translateY(100%);
-        transition: transform 0.3s ease;
+        transition: transform var(--transition-slow) var(--ease-standard);
         overflow-y: auto;
         max-height: 500px;
+        box-shadow: var(--shadow-xl);
       }
 
       .rules-editor.visible {
@@ -433,25 +503,29 @@ class DownloadOverlay {
       }
 
       .rules-header {
-        padding: 20px;
-        border-bottom: 1px solid var(--border);
-        background: var(--surface);
+        padding: 24px;
+        border-bottom: 1px solid var(--border-subtle);
+        background: rgba(239, 68, 68, 0.03);
       }
 
       .rules-title {
         font-size: 16px;
+        line-height: 1.3;
         font-weight: 600;
         color: var(--text);
         margin-bottom: 8px;
+        letter-spacing: -0.01em;
       }
 
       .rules-info {
         font-size: 13px;
-        color: var(--text-muted);
+        color: var(--text-secondary);
+        font-weight: 400;
+        line-height: 1.5;
       }
 
       .rules-content {
-        padding: 20px;
+        padding: 24px;
       }
 
       .rule-type-selector {
@@ -480,19 +554,25 @@ class DownloadOverlay {
 
       .folder-input {
         flex: 1;
-        padding: 8px 12px;
-        border: 1px solid var(--border);
+        padding: 12px 16px;
+        border: 1px solid var(--border-subtle);
         border-radius: var(--radius-sm);
         font-size: 13px;
         min-width: 120px;
-        background: var(--background);
+        background: var(--surface-elevated);
+        backdrop-filter: blur(20px) saturate(180%);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
         color: var(--text);
+        font-family: inherit;
+        transition: all var(--transition-base);
+        letter-spacing: -0.01em;
       }
       
       .folder-input:focus {
         outline: none;
         border-color: var(--primary);
-        background: var(--background);
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+        background: var(--surface-elevated);
         color: var(--text);
       }
       
@@ -501,34 +581,47 @@ class DownloadOverlay {
       }
 
       .browse-btn {
-        background: var(--primary);
+        background: var(--primary-gradient);
         color: white;
         border: none;
         border-radius: var(--radius-sm);
-        padding: 8px 12px;
+        padding: 12px 16px;
         cursor: pointer;
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 500;
-        transition: all 0.2s ease;
+        transition: all var(--transition-base);
+        box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
+        letter-spacing: -0.01em;
       }
 
       .browse-btn:hover {
-        background: var(--primary-hover);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 10px rgba(239, 68, 68, 0.4);
+      }
+      
+      .browse-btn:active {
+        transform: translateY(0) scale(0.98);
       }
 
       .target-select {
-        padding: 8px 12px;
-        border: 1px solid var(--border);
+        padding: 12px 16px;
+        border: 1px solid var(--border-subtle);
         border-radius: var(--radius-sm);
         font-size: 13px;
-        background: var(--background);
+        background: var(--surface-elevated);
+        backdrop-filter: blur(20px) saturate(180%);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
         color: var(--text);
+        font-family: inherit;
+        transition: all var(--transition-base);
+        letter-spacing: -0.01em;
       }
       
       .target-select:focus {
         outline: none;
         border-color: var(--primary);
-        background: var(--background);
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+        background: var(--surface-elevated);
         color: var(--text);
       }
 
@@ -553,35 +646,53 @@ class DownloadOverlay {
       }
 
       .apply-btn {
-        background: var(--primary);
+        background: var(--primary-gradient);
         color: white;
         border: none;
         border-radius: var(--radius-sm);
-        padding: 8px 16px;
+        padding: 12px 24px;
         cursor: pointer;
-        font-size: 13px;
+        font-size: 14px;
         font-weight: 500;
-        transition: all 0.2s ease;
+        transition: all var(--transition-base);
+        box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+        letter-spacing: -0.01em;
       }
 
       .apply-btn:hover {
-        background: var(--primary-hover);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+      }
+      
+      .apply-btn:active {
+        transform: translateY(0) scale(0.98);
       }
 
       .cancel-btn {
-        background: var(--surface);
+        background: var(--surface-elevated);
+        backdrop-filter: blur(20px) saturate(180%);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
         color: var(--text);
-        border: 1px solid var(--border);
+        border: 1px solid var(--border-subtle);
         border-radius: var(--radius-sm);
-        padding: 8px 16px;
+        padding: 12px 24px;
         cursor: pointer;
-        font-size: 13px;
+        font-size: 14px;
         font-weight: 500;
-        transition: all 0.2s ease;
+        transition: all var(--transition-base);
+        box-shadow: var(--shadow-soft);
+        letter-spacing: -0.01em;
       }
 
       .cancel-btn:hover {
-        background: var(--border);
+        background: var(--surface-elevated);
+        border-color: var(--border);
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-sm);
+      }
+      
+      .cancel-btn:active {
+        transform: translateY(0) scale(0.98);
       }
 
       .location-picker {
@@ -607,27 +718,57 @@ class DownloadOverlay {
 
       @media (prefers-color-scheme: dark) {
         :host {
-          --background: #1e293b;
-          --surface: #334155;
-          --border: #475569;
-          --text: #f1f5f9;
-          --text-muted: #94a3b8;
+          --primary: #f87171;
+          --primary-hover: #ef4444;
+          --primary-gradient: linear-gradient(135deg, #f87171 0%, #fb923c 50%, #fbbf24 100%);
+          --background: rgba(26, 26, 26, 0.95);
+          --surface: #1a1a1a;
+          --surface-elevated: rgba(30, 30, 30, 0.98);
+          --border: rgba(255, 255, 255, 0.12);
+          --border-subtle: rgba(255, 255, 255, 0.08);
+          --text: #f5f5f7;
+          --text-secondary: #a1a1a6;
+          --text-muted: #86868b;
+          --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
+          --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
+          --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.6), 0 4px 6px rgba(0, 0, 0, 0.4);
+          --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.7), 0 10px 10px rgba(0, 0, 0, 0.5);
+        }
+        
+        .overlay-content {
+          border-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .overlay-actions {
+          background: rgba(248, 113, 113, 0.05);
+        }
+        
+        .rules-header {
+          background: rgba(248, 113, 113, 0.05);
+          border-bottom-color: rgba(255, 255, 255, 0.08);
         }
         
         .folder-input,
         .target-select {
-          background: var(--background) !important;
+          background: var(--surface-elevated) !important;
           color: var(--text) !important;
+          border-color: var(--border-subtle);
         }
         
         .folder-input:focus,
         .target-select:focus {
-          background: var(--background) !important;
+          background: var(--surface-elevated) !important;
           color: var(--text) !important;
+          border-color: var(--primary);
+          box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.1);
         }
         
         .folder-input::placeholder {
           color: var(--text-muted);
+        }
+        
+        .countdown-bar {
+          background: rgba(255, 255, 255, 0.12);
         }
       }
     `;
