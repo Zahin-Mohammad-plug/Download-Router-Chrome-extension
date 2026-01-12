@@ -1099,6 +1099,22 @@ class DownloadOverlay {
       });
     }
     
+    // Browse buttons - open native folder picker
+    root.querySelectorAll('.rules-editor .browse-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        // Find the associated input field (sibling or parent's sibling)
+        const ruleRow = btn.closest('.rule-row');
+        const input = ruleRow ? ruleRow.querySelector('.folder-input') : null;
+        if (input) {
+          this.openNativeFolderPicker((selectedPath) => {
+            if (selectedPath) {
+              input.value = selectedPath;
+            }
+          });
+        }
+      });
+    });
+    
     // Apply button
     root.querySelector('.rules-editor .apply-btn').addEventListener('click', () => {
       this.applyRuleChanges();
@@ -1125,6 +1141,17 @@ class DownloadOverlay {
    */
   setupLocationPickerEvents() {
     const root = this.shadowRoot;
+    
+    // Browse button - opens native folder picker
+    root.querySelector('.location-picker .browse-btn').addEventListener('click', () => {
+      this.openNativeFolderPicker((selectedPath) => {
+        if (selectedPath) {
+          // Update the input field with selected path
+          const input = root.querySelector('.location-picker .folder-input');
+          input.value = selectedPath;
+        }
+      });
+    });
     
     // Apply button
     root.querySelector('.location-picker .apply-btn').addEventListener('click', () => {
@@ -1197,6 +1224,38 @@ class DownloadOverlay {
    * External Dependencies:
    *   - resumeCountdown: Method in this class to restart countdown timer
    */
+  /**
+   * Opens native folder picker via background script.
+   * 
+   * Inputs:
+   *   - callback: Function to call with selected path (or null if cancelled)
+   *   - startPath: Optional starting path for the picker
+   * 
+   * Outputs: None (calls callback asynchronously)
+   */
+  openNativeFolderPicker(callback, startPath = null) {
+    chrome.runtime.sendMessage({
+      type: 'pickFolderNative',
+      startPath: startPath
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('Error opening native folder picker:', chrome.runtime.lastError.message);
+        if (callback) callback(null);
+        return;
+      }
+      
+      if (response && response.success && response.path) {
+        if (callback) callback(response.path);
+      } else if (response && response.error && !response.error.includes('cancelled')) {
+        console.error('Native folder picker error:', response.error);
+        if (callback) callback(null);
+      } else {
+        // User cancelled - call callback with null
+        if (callback) callback(null);
+      }
+    });
+  }
+
   hideLocationPicker() {
     const locationPicker = this.shadowRoot.querySelector('.location-picker');
     locationPicker.classList.remove('visible');

@@ -10,6 +10,8 @@
 
 const { execSync } = require('child_process');
 const path = require('path');
+const fs = require('fs');
+const { homedir } = require('os');
 
 /**
  * Opens a native OS folder picker dialog using OS commands and returns selected path.
@@ -25,7 +27,24 @@ async function pickFolder(startPath = null) {
   try {
     if (platform === 'darwin') {
       // macOS: Use osascript to show folder picker
-      const startPathArg = startPath ? `default location "${startPath}"` : '';
+      // Convert relative paths to absolute paths (osascript needs absolute or aliases)
+      let resolvedStartPath = startPath;
+      if (startPath && !path.isAbsolute(startPath)) {
+        // Try resolving relative to home directory Downloads folder
+        const downloadsPath = path.join(homedir(), 'Downloads', startPath);
+        if (fs.existsSync(downloadsPath)) {
+          resolvedStartPath = downloadsPath;
+        } else if (fs.existsSync(path.join(homedir(), startPath))) {
+          resolvedStartPath = path.join(homedir(), startPath);
+        } else {
+          // Just use Downloads as default
+          resolvedStartPath = path.join(homedir(), 'Downloads');
+        }
+      } else if (!resolvedStartPath) {
+        resolvedStartPath = path.join(homedir(), 'Downloads');
+      }
+      
+      const startPathArg = resolvedStartPath ? `default location "${resolvedStartPath}"` : '';
       const script = `
         set theFolder to choose folder with prompt "Select Download Folder" ${startPathArg}
         return POSIX path of theFolder
@@ -34,7 +53,8 @@ async function pickFolder(startPath = null) {
       try {
         const selectedPath = execSync(`osascript -e '${script}'`, {
           encoding: 'utf8',
-          timeout: 60000 // 60 second timeout
+          timeout: 60000, // 60 second timeout
+          stdio: ['ignore', 'pipe', 'pipe'] // Capture stdout and stderr
         }).trim();
         
         if (selectedPath) {
@@ -52,8 +72,15 @@ async function pickFolder(startPath = null) {
           };
         }
       } catch (error) {
-        // User cancelled or timeout
-        if (error.status === 1 || error.message.includes('User cancelled')) {
+        // User cancelled returns status 1, but other errors might also
+        // Check stderr for actual cancellation message
+        const stderr = error.stderr ? error.stderr.toString() : '';
+        const isCancelled = error.status === 1 || 
+                           error.message.includes('User cancelled') || 
+                           stderr.includes('User cancelled') ||
+                           stderr.includes('cancel');
+        
+        if (isCancelled) {
           return {
             success: false,
             error: 'User cancelled folder selection',
@@ -61,7 +88,19 @@ async function pickFolder(startPath = null) {
             type: 'folderPicked'
           };
         }
-        throw error;
+        
+        // For other errors (like GUI access denied), return error instead of throwing
+        return {
+          success: false,
+          error: error.message || 'Failed to open folder picker',
+          code: 'DIALOG_ERROR',
+          type: 'folderPicked',
+          details: {
+            status: error.status,
+            code: error.code,
+            stderr: stderr.substring(0, 200)
+          }
+        };
       }
     } else if (platform === 'win32') {
       // Windows: Use PowerShell to show folder picker

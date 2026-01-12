@@ -652,6 +652,8 @@ class OptionsApp {
         });
       });
       
+      console.log('Companion app status:', companionStatus);
+      
       if (companionStatus && companionStatus.installed) {
         // Use native folder picker
         try {
@@ -669,23 +671,43 @@ class OptionsApp {
             });
           });
           
-          if (response.success && response.path) {
-            // User selected a folder via native picker
-            if (callback) {
-              callback(response.path);
+          console.log('Native folder picker response:', response);
+          
+          if (response && response.success) {
+            if (response.path) {
+              // User selected a folder via native picker
+              console.log('Folder selected:', response.path);
+              if (callback) {
+                callback(response.path);
+              }
+              return;
+            } else {
+              // User cancelled (path is null)
+              console.log('User cancelled folder selection');
+              if (callback) callback(null);
+              return;
             }
-            return;
-          } else if (response.error && !response.error.includes('cancelled')) {
-            // Error (but not cancellation) - fall through to modal
-            console.error('Native folder picker error:', response.error);
+          } else if (response && response.error) {
+            if (response.error.includes('cancelled') || response.error.includes('CANCELLED')) {
+              // User cancelled - don't show modal
+              console.log('User cancelled folder selection (error)');
+              if (callback) callback(null);
+              return;
+            } else {
+              // Error (but not cancellation) - fall through to modal
+              console.error('Native folder picker error:', response.error);
+            }
           } else {
-            // User cancelled - don't show modal
-            return;
+            // No response or unexpected format - fall through to modal
+            console.error('Unexpected native folder picker response:', response);
           }
         } catch (error) {
           // Native picker failed - fall through to modal fallback
-          console.log('Native picker not available, using modal fallback:', error.message);
+          console.error('Native picker failed, using modal fallback:', error.message);
         }
+      } else {
+        // Companion app not installed - use modal fallback
+        console.log('Companion app not available, using modal fallback');
       }
     } catch (error) {
       // Companion app check failed - use modal fallback

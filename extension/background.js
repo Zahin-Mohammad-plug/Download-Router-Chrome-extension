@@ -1056,8 +1056,13 @@ async function pickFolderNative(startPath = null) {
   
   try {
     const path = await self.nativeMessagingClient.pickFolder(startPath);
-    return path;
+    // pickFolder returns null if user cancelled, or a string path if selected
+    return path; // Can be null (cancelled) or string (selected path)
   } catch (error) {
+    // Only throw if it's not a cancellation
+    if (error.message && (error.message.includes('cancelled') || error.message.includes('CANCELLED'))) {
+      return null; // User cancelled - return null instead of throwing
+    }
     throw new Error(`Failed to pick folder: ${error.message}`);
   }
 }
