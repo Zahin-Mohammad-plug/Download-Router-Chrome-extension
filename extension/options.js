@@ -885,5 +885,27 @@ class OptionsApp {
 
 // Initialize the options app
 document.addEventListener('DOMContentLoaded', () => {
+  // Initialize static icons after DOM loads
+  if (typeof getIcon !== 'undefined') {
+    const iconMap = {
+      'options-app-icon': ['folder', 48],
+      'rules-empty-icon': ['list', 48],
+      'groups-empty-icon': ['folder', 48],
+      'add-rule-icon': ['plus', 16],
+      'add-group-icon': ['plus', 16],
+      'load-defaults-icon': ['refresh-cw', 16],
+      'path-icon': ['folder', 20],
+      'refresh-folders-icon': ['refresh-cw', 16],
+      'create-folder-icon': ['folder-plus', 16],
+      'save-options-icon': ['save', 16],
+      'reset-options-icon': ['refresh-cw', 16]
+    };
+    
+    Object.entries(iconMap).forEach(([id, [icon, size]]) => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = getIcon(icon, size);
+    });
+  }
+  
   new OptionsApp();
 });
