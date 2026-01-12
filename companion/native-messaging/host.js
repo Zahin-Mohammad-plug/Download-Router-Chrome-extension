@@ -34,10 +34,25 @@ class NativeMessagingHost {
     // Log initialization attempt (minimal logging - avoid slowing down)
     // console.error('Initializing native messaging host...');
     
-    // Set stdin to binary mode for native messaging protocol
+    // Note: stdin encoding should already be set to null in main.js at process start
+    // However, some Node.js/Electron versions don't respect setEncoding(null) properly
+    // Force binary mode here as well as a safeguard
     // stdin: Standard input stream from Chrome
     // stdout: Standard output stream to Chrome
-    process.stdin.setEncoding(null); // Binary mode - returns Buffers
+    try {
+      process.stdin.setEncoding(null); // Binary mode - returns Buffers
+      // Force internal encoding state if available
+      if (process.stdin._readableState) {
+        process.stdin._readableState.encoding = null;
+      }
+    } catch (err) {
+      // Log but continue - we'll handle string chunks in data handler
+    }
+    
+    // CRITICAL: Clear buffer on init AFTER setting encoding to prevent corruption
+    // Each new connection should start with a fresh buffer
+    // Do this AFTER setEncoding to ensure any buffered data is in correct format
+    this.buffer = Buffer.alloc(0);
     
     // Set stdout to blocking mode if possible (Node.js internal API)
     // This ensures writes complete synchronously when possible
@@ -49,12 +64,128 @@ class NativeMessagingHost {
       }
     }
     
+    // CRITICAL: Remove any existing data listeners to prevent duplicate handlers
+    // This prevents buffer corruption from multiple handlers processing the same data
+    process.stdin.removeAllListeners('data');
+    
+    // CRITICAL: Pause stdin before setting up handlers to prevent data loss/corruption
+    // We'll resume it after handlers are ready
+    process.stdin.pause();
+    
     // CRITICAL: Register data handler BEFORE resuming stdin
     // If we resume first, we might miss the first message chunk
     // Handle incoming messages from stdin - CRITICAL: Process immediately, no delays
+    // NOTE: We'll handle both Buffer and String chunks to work around encoding issues
     process.stdin.on('data', (chunk) => {
-      // Ensure chunk is a Buffer
-      const chunkBuffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      // CRITICAL: Handle chunks that arrive as strings (encoding issue)
+      // Even with setEncoding(null), chunks may arrive as strings in some Node.js/Electron versions
+      // We must convert string chunks to Buffer and handle any UTF-8 corruption
+      let chunkBuffer;
+      if (Buffer.isBuffer(chunk)) {
+        chunkBuffer = chunk;
+      } else if (typeof chunk === 'string') {
+        // Chunk arrived as string - ROOT CAUSE: encoding wasn't properly set to null
+        // Electron/Node.js is interpreting binary data as UTF-8 strings
+        // When binary bytes that aren't valid UTF-8 arrive, they get replaced with (efbfbd)
+        // We need to convert the string back to a Buffer, but this is tricky:
+        // - If string contains replacement chars (), the original binary data is lost
+        // - We can only recover if the string is valid UTF-8 (which native messaging JSON is)
+        
+        // Convert string to UTF-8 buffer
+        // Native messaging protocol uses UTF-8 JSON, so converting string->UTF-8 buffer should work
+        // However, if the original binary had invalid UTF-8 bytes, they may have been replaced
+        // with replacement characters () which we need to handle
+        try {
+          // Check for replacement character (indicates binary data was corrupted)
+          const hasReplacement = chunk.includes('\uFFFD') || chunk.includes('');
+          
+          if (hasReplacement) {
+            // Try to skip replacement chars and find the actual message
+            // Replacement char is 3 bytes (efbfbd), so we need to skip those
+            // But this is complex - better to prevent the issue
+            // For now, convert what we have and let buffer recovery handle it
+          }
+          
+          // CRITICAL: Native messaging protocol format is:
+          // [4-byte binary length (little-endian uint32)] + [UTF-8 JSON string]
+          // If the chunk arrives as a string, the 4-byte binary header may have been
+          // interpreted as UTF-8, causing corruption. However, Chrome sends valid UTF-8
+          // JSON after the header, so we can reconstruct it.
+          // 
+          // The problem: When binary bytes (like the length header) are interpreted as UTF-8,
+          // invalid sequences get replaced with replacement chars (). We can't recover
+          // the original binary bytes from a replacement char.
+          //
+          // Solution: We need to detect and skip replacement chars, then try to parse
+          // the message assuming the JSON part is still valid UTF-8.
+          
+          // Convert string to UTF-8 buffer
+          chunkBuffer = Buffer.from(chunk, 'utf8');
+          
+          // Check if first bytes are replacement chars - this means the 4-byte header was corrupted
+          if (chunkBuffer.length >= 3 && chunkBuffer[0] === 0xEF && chunkBuffer[1] === 0xBF && chunkBuffer[2] === 0xBD) {
+            // The 4-byte length header was corrupted - we need to reconstruct it
+            // Skip the 3-byte replacement char and any following nulls to find JSON start
+            let skipBytes = 3;
+            while (skipBytes < chunkBuffer.length && chunkBuffer[skipBytes] === 0x00) {
+              skipBytes++;
+            }
+            
+            // Find where JSON starts (should be '{' = 0x7B)
+            let jsonStart = skipBytes;
+            while (jsonStart < chunkBuffer.length && chunkBuffer[jsonStart] !== 0x7B) {
+              jsonStart++;
+            }
+            
+            if (jsonStart < chunkBuffer.length) {
+              // Found JSON start - calculate length and reconstruct header
+              // The JSON body length is from '{' to end of chunk
+              const jsonBody = chunkBuffer.slice(jsonStart);
+              const jsonLength = jsonBody.length;
+              
+              // Create new 4-byte length header
+              const newHeader = Buffer.allocUnsafe(4);
+              newHeader.writeUInt32LE(jsonLength, 0);
+              
+              // Combine: new header + JSON body
+              chunkBuffer = Buffer.concat([newHeader, jsonBody]);
+            } else {
+              // JSON start not found - might need more data
+              // Store the cleaned buffer (after skipping corrupted bytes) for next chunk
+              this.buffer = chunkBuffer.slice(skipBytes);
+              return; // Wait for more data
+            }
+          }
+        } catch (convertErr) {
+          // Skip this chunk if conversion fails
+          return;
+        }
+      } else {
+        // Unknown type - try to convert
+        chunkBuffer = Buffer.from(chunk);
+      }
+      
+      // Check for UTF-8 replacement character corruption at start of chunk
+      // This happens when binary data was interpreted as UTF-8
+      if (chunkBuffer.length >= 3 && chunkBuffer[0] === 0xEF && chunkBuffer[1] === 0xBF && chunkBuffer[2] === 0xBD) {
+        // Skip the 3-byte UTF-8 replacement character and any following nulls
+        let skipBytes = 3;
+        while (skipBytes < chunkBuffer.length && chunkBuffer[skipBytes] === 0x00) {
+          skipBytes++;
+        }
+        if (skipBytes < chunkBuffer.length) {
+          chunkBuffer = chunkBuffer.slice(skipBytes);
+        } else {
+          // Entire chunk is corrupted, skip it
+          return;
+        }
+      }
+      
+      // CRITICAL: Clear buffer if it seems corrupted (more than 10MB accumulated)
+      // This handles cases where previous connection left corrupted data
+      if (this.buffer.length > 10 * 1024 * 1024) {
+        this.buffer = Buffer.alloc(0);
+      }
       // Process immediately - don't defer, don't log (all adds latency)
       this.buffer = Buffer.concat([this.buffer, chunkBuffer]);
       this.processBuffer();
@@ -109,9 +240,68 @@ class NativeMessagingHost {
       // Read 4 bytes for message length (32-bit unsigned integer)
       const messageLength = this.buffer.readUInt32LE(0);
 
-      if (messageLength === 0 || messageLength > 1024 * 1024) {
-        // Invalid message (0 length or too large)
-        this.buffer = Buffer.alloc(0);
+      if (messageLength === 0 || messageLength > 10 * 1024 * 1024) {
+        // Invalid message (0 length or too large > 10MB)
+        // This likely means buffer corruption - check if first bytes are UTF-8 BOM or replacement chars
+        
+        // Check if buffer starts with UTF-8 BOM (EF BB BF) or replacement char (EF BF BD)
+        // If so, skip these corrupted bytes and look for real message
+        if (this.buffer.length >= 3) {
+          const first3Bytes = this.buffer.readUIntBE(0, 3);
+          // UTF-8 BOM: 0xEFBBBF, Replacement char: 0xEFBFBD
+          if (first3Bytes === 0xEFBBBF || first3Bytes === 0xEFBFBD || 
+              (first3Bytes >>> 8) === 0xEFBFBD || (first3Bytes >>> 16) === 0xEFBFBD) {
+            // Skip the 3-byte UTF-8 replacement character and any following nulls
+            // Look for the actual message start (should be 4-byte length header)
+            let skipBytes = 3;
+            // Skip any null bytes after the UTF-8 replacement
+            while (skipBytes < this.buffer.length && this.buffer[skipBytes] === 0x00) {
+              skipBytes++;
+            }
+            if (skipBytes < this.buffer.length) {
+              this.buffer = this.buffer.slice(skipBytes);
+              // Recursively try again with cleaned buffer
+              return this.processBuffer();
+            } else {
+              // All bytes are corrupted, clear buffer
+              this.buffer = Buffer.alloc(0);
+              return;
+            }
+          }
+        }
+        
+        // Try to recover by skipping bytes until we find valid length header
+        // A valid message length for native messaging is typically < 1MB
+        // Look for pattern: [valid 32-bit LE number < 1MB] followed by '{' (JSON start)
+        // AND ensure we have enough bytes for the full message
+        let foundValid = false;
+        for (let offset = 1; offset <= Math.min(this.buffer.length - 8, 10); offset++) {
+          if (this.buffer.length < offset + 4) break;
+          const testLength = this.buffer.readUInt32LE(offset);
+          if (testLength > 0 && testLength < 1024 * 1024) {
+            // Check if next byte after length is '{' (JSON object start)
+            if (this.buffer.length > offset + 4 && this.buffer[offset + 4] === 0x7B) {
+              // CRITICAL: Verify we have enough bytes for the complete message
+              const requiredBytes = 4 + testLength; // 4-byte header + message body
+              if (this.buffer.length >= offset + requiredBytes) {
+                this.buffer = this.buffer.slice(offset);
+                foundValid = true;
+                // Continue processing with corrected buffer
+                return this.processBuffer();
+              } else {
+                // Valid header found but not enough data - wait for more
+                // Shift buffer to start at this offset - we'll get more data later
+                this.buffer = this.buffer.slice(offset);
+                return; // Wait for more data
+              }
+            }
+          }
+        }
+        
+        if (!foundValid) {
+          // No valid message found, clear buffer
+          this.buffer = Buffer.alloc(0);
+        }
         return;
       }
 

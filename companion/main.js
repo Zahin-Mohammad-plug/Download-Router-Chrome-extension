@@ -47,6 +47,33 @@ logToFile(`Node version: ${process.version}`);
 logToFile(`Platform: ${process.platform}`);
 logToFile(`Log file: ${LOG_FILE}`);
 
+// CRITICAL: Force stdin to binary mode IMMEDIATELY at process start
+// NOTE: setEncoding(null) may not work reliably in Electron
+// The encoding might still report as 'utf8' but we'll handle string chunks in the data handler
+// This must happen before ANY data can arrive to prevent UTF-8 encoding corruption
+// If data arrives before encoding is null, Node.js may interpret binary as UTF-8
+// and replace invalid sequences with replacement characters (efbfbd)
+try {
+  // Set encoding to null (binary mode) - attempt multiple approaches
+  process.stdin.setEncoding(null);
+  
+  // Force internal state if available (for Node.js streams)
+  if (process.stdin._readableState) {
+    process.stdin._readableState.encoding = null;
+    process.stdin._readableState.objectMode = false;
+  }
+  
+  // Also try setting decoder to null if it exists
+  if (process.stdin._readableState && process.stdin._readableState.decoder) {
+    process.stdin._readableState.decoder = null;
+  }
+  
+  // NOTE: Even if encoding still reports as 'utf8', we'll handle it in the data handler
+  // by converting string chunks to Buffers properly
+} catch (err) {
+  logToFile(`ERROR: Failed to set stdin encoding: ${err.message}`);
+}
+
 // Defer Electron initialization - load it only when needed (for dialogs)
 let electronLoaded = false;
 let app = null;
@@ -126,9 +153,13 @@ nativeMessagingHost.onMessage(async (message) => {
       const result = await handlers.handleMessage(message, {});
       return result;
     } catch (error) {
+      logToFile('Error handling message: ' + error.message + '\nStack: ' + error.stack);
       throw error;
     }
   });
+
+// Note: stdin encoding is already set to null at the very start of main.js
+// This prevents any data from being interpreted as UTF-8 before binary mode is active
 
 // CRITICAL: Initialize native messaging host AFTER handler is registered
 // Native messaging requires immediate stdin/stdout handling - Chrome will disconnect

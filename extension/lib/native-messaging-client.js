@@ -132,7 +132,18 @@ class NativeMessagingClient {
         // port.postMessage: Sends message to native host
         //   Inputs: Message object (must be JSON-serializable)
         //   Outputs: None (sends asynchronously)
-        port.postMessage(message);
+        console.log('Sending message to native host:', JSON.stringify(message));
+        try {
+          port.postMessage(message);
+          console.log('Message posted successfully');
+        } catch (postError) {
+          console.error('Error posting message:', postError);
+          responseHandled = true;
+          clearTimeout(timeoutId);
+          this.activePorts.delete(requestId);
+          reject(postError);
+          return;
+        }
       } catch (error) {
         reject(error);
       }
@@ -245,11 +256,12 @@ class NativeMessagingClient {
   async moveFile(sourcePath, destinationPath) {
     try {
       console.log('moveFile called:', sourcePath, '->', destinationPath);
+      // Use 30 second timeout for file operations (large files may take time)
       const response = await this.sendMessage({
         type: 'moveFile',
         source: sourcePath,
         destination: destinationPath
-      });
+      }, 30000);
       console.log('moveFile response:', response);
 
       return response.success && response.moved === true;
