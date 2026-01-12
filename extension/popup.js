@@ -182,7 +182,19 @@ class PopupApp {
     // Add rule quick button
     const addRuleQuickBtn = document.getElementById('add-rule-quick');
     if (addRuleQuickBtn) {
-      addRuleQuickBtn.addEventListener('click', () => {
+      addRuleQuickBtn.addEventListener('click', async () => {
+        // Store current domain to prefill in options page
+        const currentDomain = this.extractDomain(this.currentTabUrl);
+        if (currentDomain) {
+          await chrome.storage.local.set({ 
+            pendingRuleDomain: currentDomain,
+            autoOpenAddRule: true  // Flag to auto-open add rule modal
+          });
+        } else {
+          await chrome.storage.local.set({ 
+            autoOpenAddRule: true  // Flag to auto-open add rule modal
+          });
+        }
         chrome.runtime.openOptionsPage();
       });
     }
@@ -294,13 +306,12 @@ class PopupApp {
       return priorityA - priorityB;
     });
 
-    const iconHTML = typeof getIcon !== 'undefined' ? getIcon('globe', 16) : '';
     activeRulesList.innerHTML = matchingRules.map(rule => {
+      const iconHTML = typeof getIcon !== 'undefined' ? getIcon('globe', 16) : '';
       return `
         <div class="rule-preview">
           <span class="rule-icon">${iconHTML}</span>
           <span class="rule-value" title="${rule.value}">${rule.value.length > 30 ? rule.value.substring(0, 30) + '...' : rule.value}</span>
-          <span class="rule-arrow">→</span>
           <span class="rule-folder" title="${rule.folder}">${rule.folder.length > 20 ? rule.folder.substring(0, 20) + '...' : rule.folder}</span>
         </div>
       `;
@@ -338,7 +349,6 @@ class PopupApp {
         <div class="rule-preview">
           <span class="rule-icon">${iconHTML}</span>
           <span class="rule-value" title="${rule.value}">${rule.value.length > 25 ? rule.value.substring(0, 25) + '...' : rule.value}</span>
-          <span class="rule-arrow">→</span>
           <span class="rule-folder" title="${rule.folder}">${rule.folder.length > 18 ? rule.folder.substring(0, 18) + '...' : rule.folder}</span>
         </div>
       `;

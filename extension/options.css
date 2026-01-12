@@ -1004,7 +1004,7 @@ input:checked + .toggle-slider:before {
 }
 
 .modal-body {
-  padding: 1.5rem;
+  padding: 0;
   max-height: 400px;
   overflow-y: auto;
 }
@@ -1244,15 +1244,57 @@ input:checked + .toggle-slider:before {
 
 /* Edit form in modal */
 .edit-form {
-  padding: 0;
+  padding: 20px;
 }
 
 .edit-form .form-group {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .edit-form .form-group:last-child {
   margin-bottom: 0;
+}
+
+/* Advanced section */
+.advanced-section {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.advanced-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 16px;
+  transition: color var(--transition-base);
+}
+
+.advanced-toggle:hover {
+  color: var(--text-primary);
+}
+
+.advanced-content {
+  padding-left: 20px;
+  animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Folder input group */
@@ -1270,7 +1312,7 @@ input:checked + .toggle-slider:before {
 .modal-body.edit-form {
   max-height: 60vh;
   overflow-y: auto;
-  padding: 20px;
+  padding: 24px;
 }
 
 /* Quick edit styles */

@@ -170,6 +170,11 @@ class DownloadOverlay {
       if (message.type === 'showDownloadOverlay') {
         // Show overlay with download information
         this.showDownloadOverlay(message.downloadInfo);
+      } else if (message.type === 'checkEditorState') {
+        // Check if any editor panels are currently visible
+        const hasEditor = this.rulesEditorVisible || this.locationPickerVisible;
+        sendResponse({ hasEditor, countdownPaused: this.countdownPaused });
+        return true; // Required for async sendResponse
       }
     });
   }
@@ -1362,9 +1367,13 @@ class DownloadOverlay {
           if (!editor.classList.contains('hidden')) {
             if (ruleEditor) ruleEditor.classList.add('hidden');
             if (groupSelector) groupSelector.classList.add('hidden');
-            this.pauseCountdown();
+            this.locationPickerVisible = true;  // Track visibility
+            this.rulesEditorVisible = false;
+            // Cancel timeout - download will only proceed when user clicks Save or Cancel
+            this.cancelCountdown();
           } else {
-            this.resumeCountdown();
+            // Editor closed without action - user should click Save or Cancel
+            this.locationPickerVisible = false;
           }
         }
       });
@@ -1383,10 +1392,16 @@ class DownloadOverlay {
           if (!editor.classList.contains('hidden')) {
             if (saveasEditor) saveasEditor.classList.add('hidden');
             if (groupSelector) groupSelector.classList.add('hidden');
-            this.pauseCountdown();
+            this.rulesEditorVisible = true;  // Track visibility
+            this.locationPickerVisible = false;
+            // CRITICAL: Cancel timeout completely - no auto-save while editing
+            // Download will only proceed when user clicks Apply or Cancel
+            this.cancelCountdown();
             this.initializeRuleEditor();
           } else {
-            this.resumeCountdown();
+            // Editor closed without action (toggle off) - should not happen, but handle gracefully
+            // Don't resume countdown - user should click Apply or Cancel
+            this.rulesEditorVisible = false;
           }
         }
       });
@@ -1405,9 +1420,13 @@ class DownloadOverlay {
           if (!selector.classList.contains('hidden')) {
             if (saveasEditor) saveasEditor.classList.add('hidden');
             if (ruleEditor) ruleEditor.classList.add('hidden');
-            this.pauseCountdown();
+            this.rulesEditorVisible = true;  // Track visibility
+            this.locationPickerVisible = false;
+            // Cancel timeout completely - download will only proceed when user clicks Add
+            this.cancelCountdown();
             this.populateGroupSelector();
           } else {
+            this.rulesEditorVisible = false;
             this.resumeCountdown();
           }
         }
@@ -1449,7 +1468,9 @@ class DownloadOverlay {
         const editor = root.querySelector('.saveas-editor');
         if (editor) {
           editor.classList.add('hidden');
-          this.resumeCountdown();
+          this.locationPickerVisible = false;  // Reset visibility flag
+          // User cancelled - proceed with download immediately (original settings)
+          this.saveDownload();
         }
       });
     }
@@ -1480,13 +1501,17 @@ class DownloadOverlay {
         const editor = root.querySelector('.rule-editor-inline');
         if (editor) {
           editor.classList.add('hidden');
-          this.resumeCountdown();
+          this.rulesEditorVisible = false;  // Reset visibility flag
+          // User cancelled - proceed with download immediately (original settings)
+          this.saveDownload();
         }
       });
     }
     if (ruleEditorApplyBtn) {
       ruleEditorApplyBtn.addEventListener('click', () => {
-        this.applyInlineRuleChanges();
+        this.applyInlineRuleChanges().catch((error) => {
+          console.error('Error in applyInlineRuleChanges:', error);
+        });
       });
     }
 
@@ -1515,6 +1540,7 @@ class DownloadOverlay {
         const selector = root.querySelector('.group-selector-inline');
         if (selector) {
           selector.classList.add('hidden');
+          this.rulesEditorVisible = false;  // Reset visibility flag
           this.resumeCountdown();
         }
       });
@@ -1608,6 +1634,12 @@ class DownloadOverlay {
    * Outputs: None (calls callback asynchronously)
    */
   openNativeFolderPicker(callback, startPath = null) {
+    // CRITICAL: Ensure timeout is paused before opening folder picker
+    // Chrome will lose focus, so we need to prevent timeout from firing
+    if (this.currentDownloadInfo && this.currentDownloadInfo.id) {
+      this.pauseCountdown();
+    }
+    
     chrome.runtime.sendMessage({
       type: 'pickFolderNative',
       startPath: startPath
@@ -1729,47 +1761,85 @@ class DownloadOverlay {
     const root = this.shadowRoot;
     
     // Get expected folder destination
-    const expectedFolder = this.currentDownloadInfo.finalRule?.folder || 
-                          this.currentDownloadInfo.absoluteDestination || 
-                          (this.currentDownloadInfo.resolvedPath ? 
-                            this.currentDownloadInfo.resolvedPath.split('/').slice(0, -1).join('/') : 
-                            'Downloads');
+    let expectedFolder = 'Downloads';
+    if (this.currentDownloadInfo.absoluteDestination) {
+      expectedFolder = this.currentDownloadInfo.absoluteDestination;
+    } else if (this.currentDownloadInfo.finalRule?.folder) {
+      expectedFolder = this.currentDownloadInfo.finalRule.folder;
+    } else if (this.currentDownloadInfo.resolvedPath) {
+      // Extract folder from path (remove filename)
+      const pathParts = this.currentDownloadInfo.resolvedPath.split('/');
+      if (pathParts.length > 1) {
+        expectedFolder = pathParts.slice(0, -1).join('/') || 'Downloads';
+      }
+    }
     
     // Default to filetype rule
     this.currentDownloadInfo.ruleEditorType = 'filetype';
     
-    // Set up rule type buttons
+    // Update button text with actual values
     const typeButtons = root.querySelectorAll('.rule-type-btn');
     typeButtons.forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        typeButtons.forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
-        this.currentDownloadInfo.ruleEditorType = e.target.dataset.type;
-        this.updateRuleEditorInputs();
-      });
+      // Update button labels
+      if (btn.dataset.type === 'filetype') {
+        btn.textContent = `Add .${this.currentDownloadInfo.extension || 'ext'}`;
+      } else if (btn.dataset.type === 'domain') {
+        btn.textContent = `Add ${this.getBaseDomain(this.currentDownloadInfo.domain) || 'domain'}`;
+      }
+      
+      // Only add listeners once - check if already added
+      if (!btn.dataset.listenerAdded) {
+        btn.dataset.listenerAdded = 'true';
+        btn.addEventListener('click', (e) => {
+          typeButtons.forEach(b => b.classList.remove('active'));
+          e.target.classList.add('active');
+          this.currentDownloadInfo.ruleEditorType = e.target.dataset.type;
+          this.updateRuleEditorInputs();
+        });
+      }
+    });
+    
+    // Reset button active states
+    typeButtons.forEach(btn => {
+      if (btn.dataset.type === 'filetype') {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
     });
     
     // Prefill inputs
     const valueInput = root.querySelector('#rule-value-input');
     const folderInput = root.querySelector('#rule-folder-input');
     
+    // Set folder value
     if (folderInput) {
-      // Extract folder from path (remove filename)
       folderInput.value = expectedFolder;
-    }
-    
-    // Make folder input clickable
-    if (folderInput) {
-      folderInput.addEventListener('click', () => {
-        this.openNativeFolderPicker((selectedPath) => {
-          if (selectedPath) {
-            folderInput.value = selectedPath;
+      
+      // Only add click listener once
+      if (!folderInput.dataset.listenerAdded) {
+        folderInput.dataset.listenerAdded = 'true';
+        folderInput.addEventListener('click', () => {
+          // CRITICAL: Ensure timeout stays paused when opening folder picker
+          // Chrome will lose focus, and we don't want timeout to fire
+          if (this.currentDownloadInfo && this.currentDownloadInfo.id) {
+            this.pauseCountdown();
           }
+          this.openNativeFolderPicker((selectedPath) => {
+            if (selectedPath) {
+              const input = root.querySelector('#rule-folder-input');
+              if (input) {
+                input.value = selectedPath;
+              }
+            }
+            // After folder picker closes, timeout should still be paused
+            // It will only resume when editor is closed (Cancel/Apply)
+          });
         });
-      });
+      }
     }
     
-    // Update inputs based on selected type
+    // Update value input based on selected type
     this.updateRuleEditorInputs();
   }
 
@@ -1834,13 +1904,16 @@ class DownloadOverlay {
       ruleValue = ruleValue.replace(/^\./, '').replace(/,/g, ',').split(',').map(ext => ext.trim().replace(/^\./, '')).filter(ext => ext).join(',');
     }
     
+    // Map ruleType to storage format: 'filetype' -> 'extension'
+    const storageRuleType = ruleType === 'filetype' ? 'extension' : ruleType;
+    
     // Send rule to background and wait for it to be saved
     try {
       await new Promise((resolve, reject) => {
         chrome.runtime.sendMessage({
           type: 'addRule',
           rule: {
-            type: ruleType,
+            type: storageRuleType,
             value: ruleValue,
             folder: folder,
             priority: 2.0,
@@ -1870,17 +1943,31 @@ class DownloadOverlay {
       
       // Update current download info with new rule
       this.currentDownloadInfo.finalRule = {
-        type: ruleType,
+        type: storageRuleType,
         value: ruleValue,
         folder: folder,
-        source: ruleType === 'domain' ? 'domain' : 'extension',
+        source: storageRuleType, // 'domain' or 'extension'
         priority: 2.0
       };
       this.currentDownloadInfo.matchedRule = this.currentDownloadInfo.finalRule;
       
+      
       // Update rule info display
       this.updatePathDisplay();
       this.updateRuleInfoDisplay();
+      
+      // CRITICAL FIX: Sync updated downloadInfo back to background and proceed immediately
+      // Don't wait for the countdown timer - proceed with download now using the new rule
+      // Cancel the timeout first since we're proceeding manually
+      if (this.currentDownloadInfo && this.currentDownloadInfo.id) {
+        chrome.runtime.sendMessage({
+          type: 'cancelDownloadTimeout',
+          downloadId: this.currentDownloadInfo.id
+        });
+        
+        // Now proceed with the updated path immediately
+        this.saveDownload();
+      }
       
     } catch (error) {
       console.error('Failed to create rule:', error);
@@ -1892,8 +1979,9 @@ class DownloadOverlay {
     const editor = root.querySelector('.rule-editor-inline');
     if (editor) {
       editor.classList.add('hidden');
-      this.resumeCountdown();
+      this.rulesEditorVisible = false;  // Reset visibility flag
     }
+    // Download has already proceeded with new rule - no need to resume countdown
   }
 
   /**
@@ -1920,24 +2008,87 @@ class DownloadOverlay {
   /**
    * Applies add to group action from overlay.
    */
-  applyAddToGroup() {
+  async applyAddToGroup() {
     const root = this.shadowRoot;
     const select = root.querySelector('.group-select-inline');
     const groupName = select ? select.value : '';
     
     if (!groupName) return;
     
-    chrome.runtime.sendMessage({
-      type: 'addToGroup',
-      extension: this.currentDownloadInfo.extension,
-      group: groupName
-    });
-    
-    // Hide selector
-    const selector = root.querySelector('.group-selector-inline');
-    if (selector) {
-      selector.classList.add('hidden');
-      this.resumeCountdown();
+    try {
+      // Add extension to group and get the group's folder
+      const result = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({
+          type: 'addToGroup',
+          extension: this.currentDownloadInfo.extension,
+          group: groupName
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(response);
+          }
+        });
+      });
+      
+      if (!result || !result.success) {
+        alert('Failed to add extension to file type: ' + (result?.error || 'Unknown error'));
+        return;
+      }
+      
+      // Get the group's folder - this is where the file should be saved
+      const folder = result.folder || 'Downloads';
+      const isAbsPath = /^(\/|[A-Za-z]:[\\\/])/.test(folder);
+      
+      
+      // Update download info to use the group's folder
+      if (isAbsPath) {
+        this.currentDownloadInfo.resolvedPath = this.currentDownloadInfo.filename;
+        this.currentDownloadInfo.absoluteDestination = folder;
+        this.currentDownloadInfo.useAbsolutePath = true;
+        this.currentDownloadInfo.needsMove = true;
+      } else {
+        this.currentDownloadInfo.resolvedPath = buildRelativePath(folder, this.currentDownloadInfo.filename);
+        this.currentDownloadInfo.absoluteDestination = null;
+        this.currentDownloadInfo.useAbsolutePath = false;
+        this.currentDownloadInfo.needsMove = false;
+      }
+      
+      // Create a filetype rule object for display
+      this.currentDownloadInfo.finalRule = {
+        type: 'filetype',
+        value: groupName,
+        folder: folder,
+        source: 'filetype',
+        priority: result.priority || 3.0
+      };
+      this.currentDownloadInfo.matchedRule = this.currentDownloadInfo.finalRule;
+      
+      // Update display
+      this.updatePathDisplay();
+      this.updateRuleInfoDisplay();
+      
+      // Hide selector
+      const selector = root.querySelector('.group-selector-inline');
+      if (selector) {
+        selector.classList.add('hidden');
+        this.rulesEditorVisible = false;
+      }
+      
+      // CRITICAL: Cancel timeout and proceed immediately with download using group's folder
+      if (this.currentDownloadInfo && this.currentDownloadInfo.id) {
+        chrome.runtime.sendMessage({
+          type: 'cancelDownloadTimeout',
+          downloadId: this.currentDownloadInfo.id
+        });
+        
+        // Proceed with download using the group's folder
+        this.saveDownload();
+      }
+      
+    } catch (error) {
+      console.error('Failed to add to group:', error);
+      alert('Failed to add extension to file type: ' + error.message);
     }
   }
 
@@ -2121,6 +2272,7 @@ class DownloadOverlay {
     const editor = root.querySelector('.saveas-editor');
     if (editor) {
       editor.classList.add('hidden');
+      this.locationPickerVisible = false;  // Reset visibility flag
       this.resumeCountdown();
     } else {
       this.hideLocationPicker();
@@ -2162,8 +2314,8 @@ class DownloadOverlay {
     //   Inputs: Callback function, interval in milliseconds
     //   Outputs: Interval ID (stored for cleanup)
     this.countdownTimer = setInterval(() => {
-      // Safety check - should never happen since we clear timer when paused
-      if (this.countdownPaused) {
+      // CRITICAL: Safety checks - stop immediately if paused or editor visible
+      if (this.countdownPaused || this.rulesEditorVisible || this.locationPickerVisible) {
         clearInterval(this.countdownTimer);
         this.countdownTimer = null;
         return;
@@ -2198,8 +2350,8 @@ class DownloadOverlay {
         }
       }
       
-      // Auto-save when countdown reaches zero (only if not paused)
-      if (this.timeLeft <= 0 && !this.countdownPaused) {
+      // Auto-save when countdown reaches zero (only if not paused AND no editors are visible)
+      if (this.timeLeft <= 0 && !this.countdownPaused && !this.rulesEditorVisible && !this.locationPickerVisible) {
         // clearInterval: Browser built-in function to stop interval
         //   Inputs: Interval ID
         //   Outputs: None (stops interval)
@@ -2207,6 +2359,11 @@ class DownloadOverlay {
         this.countdownTimer = null;
         // saveDownload: Proceeds with download immediately
         this.saveDownload();
+      } else if (this.timeLeft <= 0 && (this.countdownPaused || this.rulesEditorVisible || this.locationPickerVisible)) {
+        // Don't save - editor is still open or countdown is paused
+        // Just stop the timer
+        clearInterval(this.countdownTimer);
+        this.countdownTimer = null;
       }
     }, interval);
   }
@@ -2235,6 +2392,51 @@ class DownloadOverlay {
       const secondsLeft = Math.ceil(this.timeLeft / 1000);
       countdownText.innerHTML = `Paused - <span id="countdown-seconds">${secondsLeft}</span>s remaining`;
     }
+    
+    // CRITICAL: Also pause the background script's auto-save timeout
+    if (this.currentDownloadInfo && this.currentDownloadInfo.id) {
+      chrome.runtime.sendMessage({
+        type: 'pauseDownloadTimeout',
+        downloadId: this.currentDownloadInfo.id
+      }, (response) => {
+      });
+    }
+  }
+
+  /**
+   * Cancels the countdown timer completely.
+   * Used when user opens Edit Rule - download will only proceed on Apply/Cancel.
+   * 
+   * Inputs: None
+   * Outputs: None (cancels timer and notifies background)
+   */
+  cancelCountdown() {
+    this.countdownPaused = true;
+    // Clear the visual countdown timer immediately
+    if (this.countdownTimer) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+    
+    // Update UI to show cancelled state - no countdown, waiting for user action
+    const root = this.shadowRoot;
+    const countdownText = root.querySelector('.countdown-info');
+    const countdownFill = root.querySelector('#countdown-fill');
+    if (countdownText) {
+      countdownText.textContent = 'Waiting for action...';
+    }
+    if (countdownFill) {
+      countdownFill.style.width = '0%'; // Reset progress bar
+    }
+    
+    // Cancel the background script's timeout completely
+    if (this.currentDownloadInfo && this.currentDownloadInfo.id) {
+      chrome.runtime.sendMessage({
+        type: 'cancelDownloadTimeout',
+        downloadId: this.currentDownloadInfo.id
+      }, (response) => {
+      });
+    }
   }
 
   /**
@@ -2253,6 +2455,16 @@ class DownloadOverlay {
       this.countdownPaused = false;
       // startCountdown: Restarts countdown from beginning
       this.startCountdown();
+      
+      // CRITICAL: Also resume the background script's auto-save timeout
+      if (this.currentDownloadInfo && this.currentDownloadInfo.id) {
+        chrome.runtime.sendMessage({
+          type: 'resumeDownloadTimeout',
+          downloadId: this.currentDownloadInfo.id,
+          remainingTime: this.timeLeft || 5000
+        }, (response) => {
+        });
+      }
     }
   }
 

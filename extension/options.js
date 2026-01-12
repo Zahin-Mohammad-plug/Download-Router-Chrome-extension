@@ -41,6 +41,11 @@ class OptionsApp {
     this.groups = {};
     // Object containing extension settings
     this.settings = {};
+    // Pending domain to prefill when adding a rule
+    this.pendingDomain = null;
+    // Track newly added items that haven't been saved yet
+    this.newlyAddedRuleIndex = null;
+    this.newlyAddedGroupName = null;
     this.init();
   }
 
@@ -59,6 +64,14 @@ class OptionsApp {
    *   - loadFolders: Method in this class to populate folder list
    */
   async init() {
+    // Check for pending domain and auto-open flag from popup
+    const storageData = await chrome.storage.local.get(['pendingRuleDomain', 'autoOpenAddRule']);
+    if (storageData.pendingRuleDomain) {
+      this.pendingDomain = storageData.pendingRuleDomain;
+      // Clear it from storage immediately to prevent reuse
+      await chrome.storage.local.remove(['pendingRuleDomain']);
+    }
+    
     // Load configuration data from Chrome storage
     await this.loadData();
     // Attach event handlers to UI elements
@@ -69,6 +82,22 @@ class OptionsApp {
     this.renderCurrentTab();
     // Check companion app status and update UI
     this.checkCompanionAppStatus();
+    
+    // Auto-open add rule modal if flagged from popup
+    // Use setTimeout to ensure DOM is fully ready
+    if (storageData.autoOpenAddRule) {
+      // Clear flag immediately to prevent reuse
+      await chrome.storage.local.remove(['autoOpenAddRule']);
+      // Switch to rules tab if not already there
+      if (this.currentTab !== 'rules') {
+        this.switchTab('rules');
+      }
+      // Wait for UI to settle, then open add rule modal
+      setTimeout(() => {
+        // Double-check flag wasn't cleared
+        this.addRule();
+      }, 200);
+    }
   }
 
   /**
@@ -251,8 +280,8 @@ class OptionsApp {
    *   - setupModalListeners: Method in this class for modal interactions
    */
   setupEventListeners() {
-    // Save options button - saves all configuration to storage
-    document.getElementById('save-options').addEventListener('click', () => this.saveOptions());
+    // Settings are auto-saved, but keep reset button
+    // Save options button removed - auto-save on change
     
     // Reset options button - resets all settings to defaults
     document.getElementById('reset-options').addEventListener('click', () => this.resetOptions());
@@ -276,14 +305,21 @@ class OptionsApp {
     const confirmationTimeout = document.getElementById('confirmation-timeout');
     const timeoutValue = document.getElementById('timeout-value');
     
-    confirmationEnabled.addEventListener('change', (e) => {
+    confirmationEnabled.addEventListener('change', async (e) => {
       const timeoutSetting = document.getElementById('timeout-setting');
       timeoutSetting.style.opacity = e.target.checked ? '1' : '0.5';
       timeoutSetting.style.pointerEvents = e.target.checked ? 'auto' : 'none';
+      // Auto-save settings
+      await this.saveSettingsOnly();
     });
     
     confirmationTimeout.addEventListener('input', (e) => {
       timeoutValue.textContent = `${e.target.value}s`;
+    });
+    
+    // Auto-save timeout on blur
+    confirmationTimeout.addEventListener('change', async (e) => {
+      await this.saveSettingsOnly();
     });
     
     // Initialize
@@ -296,12 +332,17 @@ class OptionsApp {
     const browseDefaultFolderBtn = document.getElementById('browse-default-folder');
     if (defaultFolderInput) {
       defaultFolderInput.value = this.settings.defaultFolder || 'Downloads';
+      // Auto-save on change
+      defaultFolderInput.addEventListener('blur', async () => {
+        await this.saveSettingsOnly();
+      });
     }
     if (browseDefaultFolderBtn) {
       browseDefaultFolderBtn.addEventListener('click', () => {
-        this.openFolderPicker((folder) => {
+        this.openFolderPicker(async (folder) => {
           if (folder && defaultFolderInput) {
             defaultFolderInput.value = folder;
+            await this.saveSettingsOnly();
           }
         });
       });
@@ -313,6 +354,33 @@ class OptionsApp {
     if (conflictRadio) {
       conflictRadio.checked = true;
     }
+    
+    // Auto-save conflict resolution on change
+    document.querySelectorAll('input[name="conflict-resolution"]').forEach(radio => {
+      radio.addEventListener('change', async () => {
+        await this.saveSettingsOnly();
+      });
+    });
+  }
+  
+  /**
+   * Saves only settings (not rules/groups) - used for auto-save
+   */
+  async saveSettingsOnly() {
+    const confirmationEnabled = document.getElementById('confirmation-enabled').checked;
+    const confirmationTimeout = parseInt(document.getElementById('confirmation-timeout').value) * 1000;
+    const conflictResolution = document.querySelector('input[name="conflict-resolution"]:checked')?.value || 'auto';
+    const defaultFolderInput = document.getElementById('default-folder');
+    const defaultFolder = defaultFolderInput ? defaultFolderInput.value : 'Downloads';
+    
+    await chrome.storage.sync.set({
+      confirmationEnabled: confirmationEnabled,
+      confirmationTimeout: confirmationTimeout,
+      defaultFolder: defaultFolder,
+      conflictResolution: conflictResolution
+    });
+    
+    this.showStatus('Settings saved', 'success');
   }
 
   setupTabNavigation() {
@@ -405,14 +473,12 @@ class OptionsApp {
           </div>
           <div class="form-group quick-edit-group">
             <label class="form-label">Destination Folder</label>
-            <div class="folder-input-group">
-              <input type="text" class="form-input quick-edit-input rule-folder-quick" 
-                     value="${rule.folder || 'Downloads'}" 
-                     data-index="${index}">
-              <button class="btn secondary small browse-folder-quick" data-index="${index}">
-                ${typeof window.getIcon !== 'undefined' ? window.getIcon('folder', 14) : (typeof getIcon !== 'undefined' ? getIcon('folder', 14) : '📁')}
-              </button>
+            <div class="folder-display-clickable" style="cursor: pointer; padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-elevated); display: flex; align-items: center; gap: 8px;" data-index="${index}">
+              ${typeof window.getIcon !== 'undefined' ? window.getIcon('folder', 14) : (typeof getIcon !== 'undefined' ? getIcon('folder', 14) : '📁')}
+              <span class="rule-folder-quick-text" style="flex: 1; color: var(--text-primary);" data-index="${index}">${rule.folder || 'Downloads'}</span>
+              <span style="color: var(--text-secondary); font-size: 11px;">Click to browse</span>
             </div>
+            <input type="hidden" class="rule-folder-quick" value="${rule.folder || 'Downloads'}" data-index="${index}">
           </div>
         </div>
       </div>
@@ -480,38 +546,23 @@ class OptionsApp {
       });
     });
 
-    // Quick edit: Rule folder
-    document.querySelectorAll('.rule-folder-quick').forEach(input => {
-      input.addEventListener('blur', (e) => {
-        const index = parseInt(e.target.dataset.index);
-        if (!isNaN(index) && this.rules[index]) {
-          this.rules[index].folder = e.target.value.trim() || 'Downloads';
-          this.saveRules();
-        }
-      });
-      input.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-          e.target.blur();
-        }
-      });
-    });
-
-    // Quick browse folder for rules
-    document.querySelectorAll('.browse-folder-quick').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+    // Quick browse folder for rules - make folder display clickable
+    document.querySelectorAll('.rule-item .folder-display-clickable').forEach(display => {
+      display.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const index = parseInt(e.currentTarget.dataset.index);
-        if (!isNaN(index)) {
+        const index = parseInt(display.dataset.index);
+        if (!isNaN(index) && index >= 0) {
           const rule = this.rules[index];
           if (rule) {
             this.openFolderPicker((folder) => {
               if (folder) {
                 rule.folder = folder;
-                const input = e.currentTarget.closest('.folder-input-group').querySelector('.rule-folder-quick');
+                const input = display.querySelector('.rule-folder-quick');
+                const textSpan = display.querySelector('.rule-folder-quick-text');
                 if (input) input.value = folder;
+                if (textSpan) textSpan.textContent = folder;
                 this.saveRules();
-                this.renderRules(); // Refresh to ensure consistency
               }
             });
           }
@@ -579,14 +630,12 @@ class OptionsApp {
           </div>
           <div class="form-group quick-edit-group">
             <label class="form-label">Destination Folder</label>
-            <div class="folder-input-group">
-              <input type="text" class="form-input quick-edit-input group-folder-quick" 
-                     value="${group.folder || 'Downloads'}" 
-                     data-name="${name}">
-              <button class="btn secondary small browse-folder-quick-group" data-name="${name}">
-                ${browseIcon}
-              </button>
+            <div class="folder-display-clickable" style="cursor: pointer; padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-elevated); display: flex; align-items: center; gap: 8px;" data-name="${name}">
+              ${browseIcon}
+              <span class="group-folder-quick-text" style="flex: 1; color: var(--text-primary);" data-name="${name}">${group.folder || 'Downloads'}</span>
+              <span style="color: var(--text-secondary); font-size: 11px;">Click to browse</span>
             </div>
+            <input type="hidden" class="group-folder-quick" value="${group.folder || 'Downloads'}" data-name="${name}">
           </div>
         </div>
       </div>
@@ -655,18 +704,23 @@ class OptionsApp {
       });
     });
 
-    // Quick edit: Group folder
-    document.querySelectorAll('.group-folder-quick').forEach(input => {
-      input.addEventListener('blur', (e) => {
-        const name = e.target.dataset.name;
+    // Quick browse folder for groups - make folder display clickable
+    document.querySelectorAll('.group-item .folder-display-clickable').forEach(display => {
+      display.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const name = display.dataset.name;
         if (name && this.groups[name]) {
-          this.groups[name].folder = e.target.value.trim() || 'Downloads';
-          this.saveRules();
-        }
-      });
-      input.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-          e.target.blur();
+          this.openFolderPicker((folder) => {
+            if (folder) {
+              this.groups[name].folder = folder;
+              const input = display.querySelector('.group-folder-quick');
+              const textSpan = display.querySelector('.group-folder-quick-text');
+              if (input) input.value = folder;
+              if (textSpan) textSpan.textContent = folder;
+              this.saveRules();
+            }
+          });
         }
       });
     });
@@ -689,26 +743,6 @@ class OptionsApp {
               item.classList.add('status-disabled');
             }
           }
-        }
-      });
-    });
-
-    // Quick browse folder for groups
-    document.querySelectorAll('.browse-folder-quick-group').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const name = e.currentTarget.dataset.name;
-        if (name && this.groups[name]) {
-          this.openFolderPicker((folder) => {
-            if (folder) {
-              this.groups[name].folder = folder;
-              const input = e.currentTarget.closest('.folder-input-group').querySelector('.group-folder-quick');
-              if (input) input.value = folder;
-              this.saveRules();
-              this.renderGroups(); // Refresh to ensure consistency
-            }
-          });
         }
       });
     });
@@ -850,6 +884,21 @@ class OptionsApp {
     if (modal) {
       modal.classList.remove('active');
     }
+    
+    // If canceling a newly added rule, remove it
+    if (this.newlyAddedRuleIndex !== null && this.editingRuleIndex === this.newlyAddedRuleIndex) {
+      this.rules.splice(this.newlyAddedRuleIndex, 1);
+      this.renderRules();
+      this.newlyAddedRuleIndex = null;
+    }
+    
+    // If canceling a newly added group, remove it
+    if (this.newlyAddedGroupName !== null && this.editingGroupName === this.newlyAddedGroupName) {
+      delete this.groups[this.newlyAddedGroupName];
+      this.renderGroups();
+      this.newlyAddedGroupName = null;
+    }
+    
     this.folderSelectCallback = null;
     this.editingRuleIndex = null;
     this.editingGroupName = null;
@@ -891,26 +940,37 @@ class OptionsApp {
         </div>
         <div class="form-group">
           <label class="form-label">Destination Folder</label>
-          <div class="folder-input-group">
-            <input type="text" class="form-input" id="edit-rule-folder" value="${rule.folder || 'Downloads'}" placeholder="Downloads">
-            <button class="btn secondary" id="edit-browse-folder">Browse</button>
+          <div class="folder-display-clickable" id="edit-rule-folder-display" style="cursor: pointer; padding: 12px 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-elevated); display: flex; align-items: center; gap: 8px;">
+            ${typeof getIcon !== 'undefined' ? getIcon('folder', 16) : '📁'}
+            <span id="edit-rule-folder-text" style="flex: 1; color: var(--text-primary);">${rule.folder || 'Downloads'}</span>
+            <span style="color: var(--text-secondary); font-size: 12px;">Click to browse</span>
           </div>
+          <input type="hidden" id="edit-rule-folder" value="${rule.folder || 'Downloads'}">
         </div>
-        <div class="form-group">
-          <label class="form-label">
-            Priority
-            <span class="help-text">1 = highest priority. Use decimals for fine control (e.g., 1.5, 2.7)</span>
-          </label>
-          <input type="number" class="form-input" id="edit-rule-priority" 
-                 value="${rule.priority !== undefined ? parseFloat(rule.priority).toFixed(1) : '2.0'}"
-                 min="0.1" max="10" step="0.1" placeholder="2.0">
-          <div class="priority-hint">Default: 2.0 | Common: 1.0 (highest), 2.0 (medium), 3.0 (file types)</div>
-        </div>
-        <div class="form-group">
-          <label class="toggle-label">
-            <input type="checkbox" id="edit-rule-enabled" ${rule.enabled !== false ? 'checked' : ''}>
-            <span>Enabled</span>
-          </label>
+        
+        <div class="advanced-section" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-subtle);">
+          <button type="button" class="advanced-toggle" id="edit-rule-advanced-toggle" style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 13px; font-weight: 500; margin-bottom: 16px;">
+            <span id="edit-rule-advanced-icon" style="display: inline-flex; align-items: center; transition: transform 0.2s;">${typeof getIcon !== 'undefined' ? getIcon('chevron-down', 16) : '▼'}</span>
+            <span>Advanced</span>
+          </button>
+          <div class="advanced-content" id="edit-rule-advanced-content" style="display: none; padding-left: 20px;">
+            <div class="form-group">
+              <label class="form-label">
+                Priority
+                <span class="help-text">1 = highest priority. Use decimals for fine control (e.g., 1.5, 2.7)</span>
+              </label>
+              <input type="number" class="form-input" id="edit-rule-priority" 
+                     value="${rule.priority !== undefined ? parseFloat(rule.priority).toFixed(1) : '2.0'}"
+                     min="0.1" max="10" step="0.1" placeholder="2.0">
+              <div class="priority-hint">Default: 2.0 | Common: 1.0 (highest), 2.0 (medium), 3.0 (file types)</div>
+            </div>
+            <div class="form-group" style="margin-top: 16px;">
+              <label class="toggle-label">
+                <input type="checkbox" id="edit-rule-enabled" ${rule.enabled !== false ? 'checked' : ''}>
+                <span>Enabled</span>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -922,13 +982,36 @@ class OptionsApp {
     // Attach event listeners
     document.getElementById('close-modal').addEventListener('click', () => this.closeModal());
     document.getElementById('modal-cancel').addEventListener('click', () => this.closeModal());
-    document.getElementById('edit-browse-folder').addEventListener('click', () => {
-      this.openFolderPicker((folder) => {
-        if (folder) {
-          document.getElementById('edit-rule-folder').value = folder;
-        }
+    
+    // Make folder display clickable
+    const folderDisplay = document.getElementById('edit-rule-folder-display');
+    const folderText = document.getElementById('edit-rule-folder-text');
+    const folderInput = document.getElementById('edit-rule-folder');
+    
+    if (folderDisplay) {
+      folderDisplay.addEventListener('click', () => {
+        this.openFolderPicker((folder) => {
+          if (folder) {
+            folderInput.value = folder;
+            folderText.textContent = folder;
+          }
+        });
       });
-    });
+    }
+    
+    // Advanced section toggle
+    const advancedToggle = document.getElementById('edit-rule-advanced-toggle');
+    const advancedContent = document.getElementById('edit-rule-advanced-content');
+    const advancedIcon = document.getElementById('edit-rule-advanced-icon');
+    
+    if (advancedToggle && advancedContent) {
+      advancedToggle.addEventListener('click', () => {
+        const isVisible = advancedContent.style.display !== 'none';
+        advancedContent.style.display = isVisible ? 'none' : 'block';
+        advancedIcon.style.transform = isVisible ? 'rotate(0deg)' : 'rotate(-90deg)';
+      });
+    }
+    
     document.getElementById('modal-save').addEventListener('click', () => this.saveEditedRule());
     
     modal.classList.add('active');
@@ -955,10 +1038,15 @@ class OptionsApp {
       enabled
     };
     
+    // Clear newly added flag since it's been saved
+    if (this.newlyAddedRuleIndex === this.editingRuleIndex) {
+      this.newlyAddedRuleIndex = null;
+    }
+    
     this.saveRules();
     this.renderRules();
     this.closeModal();
-    this.showStatus('Rule updated', 'success');
+    this.showStatus('Rule saved', 'success');
   }
 
   /**
@@ -994,33 +1082,44 @@ class OptionsApp {
         </div>
         <div class="form-group">
           <label class="form-label">Destination Folder</label>
-          <div class="folder-input-group">
-            <input type="text" class="form-input" id="edit-group-folder" value="${group.folder || 'Downloads'}" placeholder="Downloads">
-            <button class="btn secondary" id="edit-browse-folder">Browse</button>
+          <div class="folder-display-clickable" id="edit-group-folder-display" style="cursor: pointer; padding: 12px 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-elevated); display: flex; align-items: center; gap: 8px;">
+            ${typeof getIcon !== 'undefined' ? getIcon('folder', 16) : '📁'}
+            <span id="edit-group-folder-text" style="flex: 1; color: var(--text-primary);">${group.folder || 'Downloads'}</span>
+            <span style="color: var(--text-secondary); font-size: 12px;">Click to browse</span>
           </div>
+          <input type="hidden" id="edit-group-folder" value="${group.folder || 'Downloads'}">
         </div>
-        <div class="form-group">
-          <label class="form-label">
-            Priority
-            <span class="help-text">1 = highest priority. Use decimals for fine control (e.g., 2.5, 3.2)</span>
-          </label>
-          <input type="number" class="form-input" id="edit-group-priority" 
-                 value="${group.priority !== undefined ? parseFloat(group.priority).toFixed(1) : '3.0'}"
-                 min="0.1" max="10" step="0.1" placeholder="3.0">
-          <div class="priority-hint">Default: 3.0 | File types typically use 2.5-4.0 range</div>
-        </div>
-        <div class="form-group">
-          <label class="toggle-label">
-            <input type="checkbox" id="edit-group-override" ${group.overrideDomainRules ? 'checked' : ''}>
-            <span>Override Domain Rules</span>
-          </label>
-          <div class="help-text">Forces file type match even if a domain rule exists</div>
-        </div>
-        <div class="form-group">
-          <label class="toggle-label">
-            <input type="checkbox" id="edit-group-enabled" ${group.enabled !== false ? 'checked' : ''}>
-            <span>Enabled</span>
-          </label>
+        
+        <div class="advanced-section" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-subtle);">
+          <button type="button" class="advanced-toggle" id="edit-group-advanced-toggle" style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 13px; font-weight: 500; margin-bottom: 16px;">
+            <span id="edit-group-advanced-icon" style="display: inline-flex; align-items: center; transition: transform 0.2s;">${typeof getIcon !== 'undefined' ? getIcon('chevron-down', 16) : '▼'}</span>
+            <span>Advanced</span>
+          </button>
+          <div class="advanced-content" id="edit-group-advanced-content" style="display: none; padding-left: 20px;">
+            <div class="form-group">
+              <label class="form-label">
+                Priority
+                <span class="help-text">1 = highest priority. Use decimals for fine control (e.g., 2.5, 3.2)</span>
+              </label>
+              <input type="number" class="form-input" id="edit-group-priority" 
+                     value="${group.priority !== undefined ? parseFloat(group.priority).toFixed(1) : '3.0'}"
+                     min="0.1" max="10" step="0.1" placeholder="3.0">
+              <div class="priority-hint">Default: 3.0 | File types typically use 2.5-4.0 range</div>
+            </div>
+            <div class="form-group" style="margin-top: 16px;">
+              <label class="toggle-label">
+                <input type="checkbox" id="edit-group-override" ${group.overrideDomainRules ? 'checked' : ''}>
+                <span>Override Domain Rules</span>
+              </label>
+              <div class="help-text">Forces file type match even if a domain rule exists</div>
+            </div>
+            <div class="form-group" style="margin-top: 16px;">
+              <label class="toggle-label">
+                <input type="checkbox" id="edit-group-enabled" ${group.enabled !== false ? 'checked' : ''}>
+                <span>Enabled</span>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -1032,13 +1131,38 @@ class OptionsApp {
     // Attach event listeners
     document.getElementById('close-modal').addEventListener('click', () => this.closeModal());
     document.getElementById('modal-cancel').addEventListener('click', () => this.closeModal());
-    document.getElementById('edit-browse-folder').addEventListener('click', () => {
-      this.openFolderPicker((folder) => {
-        if (folder) {
-          document.getElementById('edit-group-folder').value = folder;
+    
+    // Make folder display clickable
+    const folderDisplay = document.getElementById('edit-group-folder-display');
+    const folderText = document.getElementById('edit-group-folder-text');
+    const folderInput = document.getElementById('edit-group-folder');
+    
+    if (folderDisplay) {
+      folderDisplay.addEventListener('click', () => {
+        this.openFolderPicker((folder) => {
+          if (folder) {
+            folderInput.value = folder;
+            folderText.textContent = folder;
+          }
+        });
+      });
+    }
+    
+    // Advanced section toggle
+    const advancedToggle = document.getElementById('edit-group-advanced-toggle');
+    const advancedContent = document.getElementById('edit-group-advanced-content');
+    const advancedIcon = document.getElementById('edit-group-advanced-icon');
+    
+    if (advancedToggle && advancedContent) {
+      advancedToggle.addEventListener('click', () => {
+        const isVisible = advancedContent.style.display !== 'none';
+        advancedContent.style.display = isVisible ? 'none' : 'block';
+        if (advancedIcon) {
+          advancedIcon.style.transform = isVisible ? 'rotate(0deg)' : 'rotate(-90deg)';
         }
       });
-    });
+    }
+    
     document.getElementById('modal-save').addEventListener('click', () => this.saveEditedGroup());
     
     modal.classList.add('active');
@@ -1061,6 +1185,10 @@ class OptionsApp {
     // Handle rename
     if (newName && newName !== this.editingGroupName) {
       delete this.groups[this.editingGroupName];
+      // Update newly added flag if renamed
+      if (this.newlyAddedGroupName === this.editingGroupName) {
+        this.newlyAddedGroupName = newName;
+      }
     }
     
     const saveName = newName || this.editingGroupName;
@@ -1072,21 +1200,33 @@ class OptionsApp {
       enabled
     };
     
+    // Clear newly added flag since it's been saved
+    if (this.newlyAddedGroupName === saveName) {
+      this.newlyAddedGroupName = null;
+    }
+    
     this.saveRules();
     this.renderGroups();
     this.closeModal();
-    this.showStatus('File type updated', 'success');
+    this.showStatus('File type saved', 'success');
   }
 
   addRule() {
+    // Use pending domain if available, otherwise empty
+    const domainValue = this.pendingDomain || '';
+    
     this.rules.push({
       type: 'domain',
-      value: '',
+      value: domainValue,
       folder: 'Downloads',
       priority: 2.0,  // Default priority for rules
       enabled: true
     });
     this.renderRules();
+    // Track this as a newly added rule
+    this.newlyAddedRuleIndex = this.rules.length - 1;
+    // Clear pending domain after using it
+    this.pendingDomain = null;
     // Open edit modal for the new rule
     this.openEditRuleModal(this.rules.length - 1);
   }
@@ -1110,6 +1250,8 @@ class OptionsApp {
         enabled: true
       };
       this.renderGroups();
+      // Track this as a newly added group
+      this.newlyAddedGroupName = name;
       // Open edit modal for the new group
       this.openEditGroupModal(name);
     }
@@ -1258,7 +1400,16 @@ class OptionsApp {
         conflictResolution: 'auto'
       };
       
-      await this.saveOptions();
+      // Save everything
+      await chrome.storage.sync.set({
+        rules: this.rules,
+        groups: this.groups,
+        confirmationEnabled: true,
+        confirmationTimeout: 5000,
+        defaultFolder: 'Downloads',
+        conflictResolution: 'auto'
+      });
+      
       this.setupSettingsListeners();
       this.renderCurrentTab();
       this.showStatus('Settings reset to defaults', 'success');

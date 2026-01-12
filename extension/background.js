@@ -489,15 +489,40 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
       });
       
       // Set up auto-save timeout if user doesn't interact with overlay
-      // setTimeout: Browser built-in function to execute code after delay
-      //   Inputs: callback function, delay in milliseconds
-      //   Outputs: timeout ID (not stored here as we don't need to cancel)
-      setTimeout(() => {
+      // Store timeout ID so it can be cancelled when user interacts with overlay
+      const timeoutId = setTimeout(() => {
         // Only proceed if download is still pending (not already handled)
         if (pendingDownloads.has(downloadItem.id)) {
-          proceedWithDownload(downloadItem.id);
+          const pendingInfo = pendingDownloads.get(downloadItem.id);
+          // CRITICAL: Check if timeout was paused by overlay - don't proceed if paused
+          // This prevents auto-save when user is editing (even if Chrome loses focus)
+          if (!pendingInfo.timeoutPaused) {
+            // Double-check by querying content script to ensure no editor is visible
+            // Send message to check editor state before proceeding
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+              if (tabs && tabs[0]) {
+                chrome.tabs.sendMessage(tabs[0].id, {
+                  type: 'checkEditorState'
+                }, (response) => {
+                  // Only proceed if no editor is visible and timeout not paused
+                  if (response && !response.hasEditor && !pendingInfo.timeoutPaused) {
+                    proceedWithDownload(downloadItem.id);
+                  }
+                });
+              } else {
+                // No active tab - safe to proceed (user closed tab?)
+                if (!pendingInfo.timeoutPaused) {
+                  proceedWithDownload(downloadItem.id);
+                }
+              }
+            });
+          }
         }
       }, confirmationTimeout);
+      
+      // Store the timeout ID in the download info so it can be cancelled
+      downloadInfo.timeoutId = timeoutId;
+      downloadInfo.timeoutPaused = false;
       
     } else {
       // Proceed immediately without confirmation if disabled
@@ -526,12 +551,203 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'proceedWithDownload') {
     // Merge updated downloadInfo from content script into pendingDownloads
     // This ensures flags like useAbsolutePath are preserved
-    const downloadInfo = pendingDownloads.get(message.downloadInfo.id);
-    if (downloadInfo) {
+    let downloadInfo = pendingDownloads.get(message.downloadInfo.id);
+    if (downloadInfo && downloadInfo.originalSuggest) {
+      // Update existing downloadInfo with new values from content script
       Object.assign(downloadInfo, message.downloadInfo);
+      // Cancel the auto-save timeout since user is taking action
+      if (downloadInfo.timeoutId) {
+        clearTimeout(downloadInfo.timeoutId);
+        downloadInfo.timeoutId = null;
+      }
+      // proceedWithDownload: Processes and saves the download with specified path
+      // Only call if originalSuggest is available (download hasn't started yet)
+      proceedWithDownload(message.downloadInfo.id, message.downloadInfo.resolvedPath);
+    } else {
+      // DownloadInfo not in pendingDownloads - might have been removed or download completed
+      // Check if download is still in progress by querying Chrome
+      chrome.downloads.search({ id: message.downloadInfo.id }, (downloads) => {
+        if (downloads && downloads.length > 0) {
+          const download = downloads[0];
+          if (download.state === 'complete') {
+            // Download already completed - can't change path via originalSuggest, but can move file
+            // Check if file needs to be moved to a different location
+            if (message.downloadInfo.absoluteDestination) {
+              // Normalize paths for comparison
+              let currentPath = download.filename || '';
+              const destPath = message.downloadInfo.absoluteDestination;
+              
+              // CRITICAL: Chrome's download.filename may be stale if file was already moved
+              // We need to check if file actually exists at the reported location
+              // If not, try common locations where it might have been moved
+              // First, try to verify the file exists at the reported location
+              // We'll use the companion app's verifyFolder functionality or just try the move
+              // The moveFileNative function will handle file not found errors
+              
+              // Normalize destination path (ensure it ends with / if it's a folder)
+              let finalDestPath = destPath;
+              if (!destPath.endsWith('/') && !destPath.match(/\.[a-zA-Z0-9]+$/)) {
+                // Looks like a folder path without trailing slash
+                finalDestPath = destPath + '/';
+              }
+              
+              // Extract folder paths for comparison
+              const currentDir = currentPath.substring(0, currentPath.lastIndexOf('/') + 1);
+              const destDir = finalDestPath.endsWith('/') ? finalDestPath : finalDestPath.substring(0, finalDestPath.lastIndexOf('/') + 1);
+              
+              // Check if file is already in the destination folder
+              if (currentDir === destDir || currentPath.startsWith(finalDestPath)) {
+                // File is already in the correct location - show success notification
+                const destParts = finalDestPath.split(/[/\\]/).filter(p => p);
+                const destFolder = destParts[destParts.length - 1] || 'Downloads';
+                chrome.notifications.create({
+                  type: 'basic',
+                  iconUrl: 'icons/icon128.png',
+                  title: 'File Already Routed',
+                  message: `${message.downloadInfo.filename} is already in ${destFolder}`
+                });
+                return;
+              }
+              
+              // File needs to be moved - restore downloadInfo and move it
+              pendingDownloads.set(message.downloadInfo.id, message.downloadInfo);
+              
+              // CRITICAL: Check if file already exists at destination before trying to move
+              // Chrome's download.filename may be stale if file was already moved
+              const filename = message.downloadInfo.filename;
+              const possibleDestFile = finalDestPath.endsWith('/') ? 
+                finalDestPath + filename : 
+                finalDestPath;
+              
+              // Try to move - if source doesn't exist, check if file is already at destination
+              moveFileNative(currentPath, finalDestPath).then((success) => {
+                if (success) {
+                  // Move succeeded
+                  const destParts = finalDestPath.split(/[/\\]/).filter(p => p);
+                  const destFolder = destParts[destParts.length - 1] || 'Downloads';
+                  chrome.notifications.create({
+                    type: 'basic',
+                    iconUrl: 'icons/icon128.png',
+                    title: 'File Routed Successfully',
+                    message: `${message.downloadInfo.filename} moved to ${destFolder}`
+                  });
+                  pendingDownloads.delete(message.downloadInfo.id);
+                } else {
+                  // Move failed - file might not exist at source (already moved elsewhere)
+                  // Check if file already exists at destination
+                  // File doesn't exist at reported source - check if it's already at destination
+                  // Use listFolders to check if file exists in destination folder
+                  if (self.nativeMessagingClient && self.nativeMessagingClient.listFolders) {
+                    self.nativeMessagingClient.listFolders(finalDestPath).then((items) => {
+                      const fileExists = items && items.some(item => item.name === filename && item.type === 'file');
+                      if (fileExists) {
+                        // File is already at destination - success!
+                        const destParts = finalDestPath.split(/[/\\]/).filter(p => p);
+                        const destFolder = destParts[destParts.length - 1] || 'Downloads';
+                        chrome.notifications.create({
+                          type: 'basic',
+                          iconUrl: 'icons/icon128.png',
+                          title: 'File Already Routed',
+                          message: `${filename} is already in ${destFolder}`
+                        });
+                      } else {
+                        // File doesn't exist at source or destination - show error
+                        chrome.notifications.create({
+                          type: 'basic',
+                          iconUrl: 'icons/icon128.png',
+                          title: 'Routing Failed',
+                          message: `Could not find ${filename}. File may have been deleted or moved.`
+                        });
+                      }
+                      pendingDownloads.delete(message.downloadInfo.id);
+                    }).catch((error) => {
+                      // Check failed - show error
+                      chrome.notifications.create({
+                        type: 'basic',
+                        iconUrl: 'icons/icon128.png',
+                        title: 'Routing Failed',
+                        message: `Could not verify file location for ${filename}`
+                      });
+                      pendingDownloads.delete(message.downloadInfo.id);
+                    });
+                  } else {
+                    // Can't check - show error
+                    chrome.notifications.create({
+                      type: 'basic',
+                      iconUrl: 'icons/icon128.png',
+                      title: 'Routing Failed',
+                      message: `Could not verify file location. Native messaging unavailable.`
+                    });
+                    pendingDownloads.delete(message.downloadInfo.id);
+                  }
+                }
+              }).catch((error) => {
+                console.error('Error moving file:', error);
+                chrome.notifications.create({
+                  type: 'basic',
+                  iconUrl: 'icons/icon128.png',
+                  title: 'Routing Failed',
+                  message: `Error: ${error.message}`
+                });
+                pendingDownloads.delete(message.downloadInfo.id);
+              });
+            }
+            return; // Download already completed, can't use originalSuggest
+          } else {
+            // Download still in progress but downloadInfo was lost
+            // Restore it to pendingDownloads - but we've lost originalSuggest so can't change path
+            // Best we can do is store it for post-download move
+            // Note: originalSuggest is lost, so we can't change the download path now
+            // Just restore downloadInfo so post-download move can work when download completes
+            pendingDownloads.set(message.downloadInfo.id, message.downloadInfo);
+          }
+        }
+      });
     }
-    // proceedWithDownload: Processes and saves the download with specified path
-    proceedWithDownload(message.downloadInfo.id, message.downloadInfo.resolvedPath);
+  } else if (message.type === 'pauseDownloadTimeout') {
+    // pauseDownloadTimeout: Pause auto-save timeout when user opens editor or folder picker
+    const downloadInfo = pendingDownloads.get(message.downloadId);
+    if (downloadInfo) {
+      downloadInfo.timeoutPaused = true;
+      // CRITICAL: Cancel the existing timeout immediately
+      // This prevents it from firing even if Chrome loses focus
+      if (downloadInfo.timeoutId) {
+        clearTimeout(downloadInfo.timeoutId);
+        downloadInfo.timeoutId = null;
+      }
+      console.log('Download timeout paused for:', message.downloadId);
+    }
+    sendResponse({ success: true });
+  } else if (message.type === 'resumeDownloadTimeout') {
+    // resumeDownloadTimeout: Resume auto-save timeout when user closes editor
+    const downloadInfo = pendingDownloads.get(message.downloadId);
+    if (downloadInfo) {
+      downloadInfo.timeoutPaused = false;
+      // Create a new timeout with remaining time or full timeout
+      const timeoutMs = message.remainingTime || 5000;
+      downloadInfo.timeoutId = setTimeout(() => {
+        if (pendingDownloads.has(message.downloadId)) {
+          const info = pendingDownloads.get(message.downloadId);
+          if (!info.timeoutPaused) {
+            proceedWithDownload(message.downloadId);
+          }
+        }
+      }, timeoutMs);
+      console.log('Download timeout resumed for:', message.downloadId, 'with', timeoutMs, 'ms');
+    }
+    sendResponse({ success: true });
+  } else if (message.type === 'cancelDownloadTimeout') {
+    // cancelDownloadTimeout: Cancel auto-save timeout entirely - no auto-save while editing
+    const downloadInfo = pendingDownloads.get(message.downloadId);
+    if (downloadInfo) {
+      downloadInfo.timeoutPaused = true;
+      if (downloadInfo.timeoutId) {
+        clearTimeout(downloadInfo.timeoutId);
+        downloadInfo.timeoutId = null;
+      }
+      console.log('Download timeout cancelled for:', message.downloadId);
+    }
+    sendResponse({ success: true });
   } else if (message.type === 'addRule') {
     // addRule: Adds or updates a routing rule in storage
     addRule(message.rule).then(() => {
@@ -543,7 +759,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Required for async sendResponse
   } else if (message.type === 'addToGroup') {
     // addToGroup: Adds an extension to an existing file type group
-    addToGroup(message.extension, message.group);
+    // Returns the group's folder so content script can update download destination
+    addToGroup(message.extension, message.group).then((result) => {
+      sendResponse(result);
+    }).catch((error) => {
+      console.error('addToGroup error:', error);
+      sendResponse({ success: false, error: error.message });
+    });
+    return true; // Required for async sendResponse
   } else if (message.type === 'showFallbackNotification') {
     // showFallbackNotification: Displays Chrome notification when overlay fails
     showFallbackNotification(message.downloadInfo);
@@ -908,7 +1131,9 @@ function updateDownloadStats(downloadId) {
 function proceedWithDownload(downloadId, customPath = null) {
   // Retrieve download info from tracking map
   const downloadInfo = pendingDownloads.get(downloadId);
-  if (!downloadInfo) return; // Exit if download info not found
+  if (!downloadInfo) {
+    return; // Exit if download info not found
+  }
   
   // Check if download already has absolute destination set (from rule matching or location change)
   // or if a custom path is being provided that's absolute
@@ -958,10 +1183,39 @@ function proceedWithDownload(downloadId, customPath = null) {
   // originalSuggest: Function passed from Chrome's onDeterminingFilename event
   //   Inputs: Object with filename and conflictAction
   //   Outputs: None (triggers download with specified path)
-  downloadInfo.originalSuggest({ 
-    filename: finalPath, 
-    conflictAction: 'uniquify' // Automatically rename if file already exists
-  });
+  // Only call if originalSuggest is available (download is still in determining filename phase)
+  if (!downloadInfo.originalSuggest) {
+    // Can't change download path - download already started or completed
+    // If we need to move the file, check download state and move if complete
+    if (absoluteDestinationPath && downloadInfo.needsMove) {
+      chrome.downloads.search({ id: downloadId }, (downloads) => {
+        if (downloads && downloads.length > 0 && downloads[0].state === 'complete') {
+          // Download complete - move file now
+          moveFileNative(downloads[0].filename, absoluteDestinationPath).then((success) => {
+            if (success) {
+              const destParts = absoluteDestinationPath.split(/[/\\]/).filter(p => p);
+              const destFolder = destParts[destParts.length - 1] || 'Downloads';
+              chrome.notifications.create({
+                type: 'basic',
+                iconUrl: 'icons/icon128.png',
+                title: 'File Routed Successfully',
+                message: `${downloadInfo.filename} moved to ${destFolder}`
+              });
+            }
+          });
+        }
+      });
+    }
+    return;
+  }
+  try {
+    downloadInfo.originalSuggest({ 
+      filename: finalPath, 
+      conflictAction: 'uniquify' // Automatically rename if file already exists
+    });
+  } catch (error) {
+    console.error('Error calling originalSuggest:', error);
+  }
   
   // Display confirmation notification with formatted path
   // chrome.notifications.create: Creates system notification
@@ -1073,14 +1327,24 @@ function addToGroup(extension, groupName) {
   // Retrieve groups and rules from sync storage
   // chrome.storage.sync.get: Retrieves data from sync storage
   //   Inputs: Array of keys ['groups', 'rules']
-  //   Outputs: Calls callback with data object
-  chrome.storage.sync.get(['groups', 'rules'], (data) => {
-    // Load groups (use defaults if none exist) and rules
-    const groups = data.groups || getDefaultGroups();
-    const rules = data.rules || [];
-    
-    // Only proceed if group exists
-    if (groups[groupName]) {
+  //   Outputs: Promise resolving to data object
+  return new Promise((resolve, reject) => {
+    chrome.storage.sync.get(['groups', 'rules'], (data) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      
+      // Load groups (use defaults if none exist) and rules
+      const groups = data.groups || getDefaultGroups();
+      const rules = data.rules || [];
+      
+      // Only proceed if group exists
+      if (!groups[groupName]) {
+        reject(new Error(`Group '${groupName}' not found`));
+        return;
+      }
+      
       // Add extension to group's extension list if not already present
       // split: String method to split by delimiter into array
       //   Inputs: Delimiter string (',')
@@ -1114,16 +1378,28 @@ function addToGroup(extension, groupName) {
         rules.push({
           type: 'extension',
           value: groups[groupName].extensions,
-          folder: groups[groupName].folder
+          folder: groups[groupName].folder,
+          priority: groups[groupName].priority || 3.0
         });
       }
       
       // Save updated groups and rules to sync storage
       // chrome.storage.sync.set: Stores data in sync storage
       //   Inputs: Object with key-value pairs
-      //   Outputs: None (stores asynchronously)
-      chrome.storage.sync.set({ groups, rules });
-    }
+      //   Outputs: Promise resolving when saved
+      chrome.storage.sync.set({ groups, rules }, () => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else {
+          // Return the group's folder so content script can use it for download
+          resolve({
+            success: true,
+            folder: groups[groupName].folder,
+            priority: groups[groupName].priority || 3.0
+          });
+        }
+      });
+    });
   });
 }
 
@@ -1302,7 +1578,8 @@ async function moveFileNative(sourcePath, destinationPath) {
   }
   
   try {
-    return await self.nativeMessagingClient.moveFile(sourcePath, destinationPath);
+    const result = await self.nativeMessagingClient.moveFile(sourcePath, destinationPath);
+    return result;
   } catch (error) {
     console.error('Failed to move file:', error);
     return false;
