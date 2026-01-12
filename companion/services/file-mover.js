@@ -34,7 +34,10 @@ const folderOperations = require('./folder-operations');
  *   - folderOperations: Service for folder verification and creation
  */
 async function moveFile(sourcePath, destinationPath) {
+  console.error('moveFile called:', { sourcePath, destinationPath });
+  
   if (!sourcePath || !destinationPath) {
+    console.error('moveFile: Invalid paths');
     return {
       success: false,
       error: 'Source and destination paths required',
@@ -108,8 +111,10 @@ async function moveFile(sourcePath, destinationPath) {
     // fs.rename: Moves/renames file or directory
     //   Inputs: Source path, destination path
     //   Outputs: Promise (rejects if move fails)
+    console.error('moveFile: Moving', sourcePath, 'to', finalDestination);
     await fs.rename(sourcePath, finalDestination);
 
+    console.error('moveFile: Success');
     return {
       success: true,
       moved: true,
@@ -117,6 +122,7 @@ async function moveFile(sourcePath, destinationPath) {
       destination: finalDestination
     };
   } catch (error) {
+    console.error('moveFile: Error:', error.message, error.code);
     return {
       success: false,
       moved: false,

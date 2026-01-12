@@ -13,6 +13,7 @@
 const folderPicker = require('../services/folder-picker');
 const folderOperations = require('../services/folder-operations');
 const fileMover = require('../services/file-mover');
+const fileSaveDialog = require('../services/file-save-dialog');
 
 /**
  * Main message handler router.
@@ -55,6 +56,12 @@ async function handleMessage(message, context) {
     
     case 'moveFile':
       return await fileMover.moveFile(message.source, message.destination);
+    
+    case 'showSaveAsDialog':
+      console.error('Handling showSaveAsDialog message, filename:', message.filename, 'defaultDirectory:', message.defaultDirectory);
+      const saveAsResult = await fileSaveDialog.showSaveAsDialog(message.filename, message.defaultDirectory || null);
+      console.error('showSaveAsDialog result:', JSON.stringify(saveAsResult));
+      return saveAsResult;
     
     default:
       return null; // Let host send unknown type error

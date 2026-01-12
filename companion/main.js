@@ -77,6 +77,7 @@ let dialogWindow = null;
 // CRITICAL: Register message handler BEFORE init() - otherwise messages can arrive
 // before the handler is registered, causing "no handler" errors or delays
 nativeMessagingHost.onMessage(async (message) => {
+    logToFile('Received message: ' + JSON.stringify(message));
     try {
       // ULTRA-FAST path for getVersion - handle completely synchronously without any overhead
       if (message.type === 'getVersion') {
@@ -91,12 +92,30 @@ nativeMessagingHost.onMessage(async (message) => {
         return result;
       }
       
-      // For messages that need native dialogs (pickFolder)
+      // For messages that need native dialogs (pickFolder, showSaveAsDialog)
       // Use native OS commands instead of Electron for instant response
       if (message.type === 'pickFolder') {
         // Use native OS folder picker (no Electron needed)
         const nativeFolderPicker = require('./services/folder-picker-native');
         const result = await nativeFolderPicker.pickFolder(message.startPath || null);
+        return result;
+      }
+      
+      if (message.type === 'showSaveAsDialog') {
+        // Use native OS Save As dialog (no Electron needed)
+        logToFile('Received showSaveAsDialog message: ' + JSON.stringify({ filename: message.filename, defaultDirectory: message.defaultDirectory }));
+        const fileSaveDialog = require('./services/file-save-dialog');
+        const result = await fileSaveDialog.showSaveAsDialog(message.filename, message.defaultDirectory || null);
+        logToFile('showSaveAsDialog result: ' + JSON.stringify(result));
+        return result;
+      }
+      
+      if (message.type === 'moveFile') {
+        // Log moveFile requests for debugging
+        logToFile('Received moveFile message: ' + JSON.stringify({ source: message.source, destination: message.destination }));
+        const fileMover = require('./services/file-mover');
+        const result = await fileMover.moveFile(message.source, message.destination);
+        logToFile('moveFile result: ' + JSON.stringify(result));
         return result;
       }
       

@@ -175,6 +175,48 @@ class DownloadOverlay {
         const hasEditor = this.rulesEditorVisible || this.locationPickerVisible;
         sendResponse({ hasEditor, countdownPaused: this.countdownPaused });
         return true; // Required for async sendResponse
+      } else if (message.type === 'saveAsDialogOpening') {
+        // Background script is opening Save As dialog
+        if (this.currentDownloadInfo && this.currentDownloadInfo.id === message.downloadId) {
+          this.updateOverlayMessage('Choose save location...');
+        }
+        sendResponse({ success: true });
+        return true;
+      } else if (message.type === 'saveAsComplete') {
+        // Save As dialog completed (success or failure)
+        if (this.currentDownloadInfo && this.currentDownloadInfo.id === message.downloadId) {
+          if (message.success) {
+            // Show success message
+            const overlayHeader = this.shadowRoot?.querySelector('.overlay-header');
+            if (overlayHeader) {
+              overlayHeader.innerHTML = `
+                <div class="overlay-title" style="color: var(--success); display: flex; align-items: center; gap: 8px;">
+                  ${this.getSVGIcon('check')}
+                  <span>File saved successfully!</span>
+                </div>
+              `;
+            }
+            // Close overlay after brief delay
+            setTimeout(() => {
+              this.cleanup();
+            }, 1000);
+          } else {
+            // Show error message
+            this.updateOverlayMessage('Save failed. File saved to default location.');
+            setTimeout(() => {
+              this.cleanup();
+            }, 2000);
+          }
+        }
+        sendResponse({ success: true });
+        return true;
+      } else if (message.type === 'closeOverlay') {
+        // Close overlay
+        if (this.currentDownloadInfo && this.currentDownloadInfo.id === message.downloadId) {
+          this.cleanup();
+        }
+        sendResponse({ success: true });
+        return true;
       }
     });
   }
@@ -1354,28 +1396,46 @@ class DownloadOverlay {
       this.saveDownload();
     });
     
-    // Save As button - show inline editor
+    // Save As button - use native Save As dialog
     const saveasBtn = root.querySelector('.saveas-btn');
     if (saveasBtn) {
       saveasBtn.addEventListener('click', () => {
+        // Cancel countdown timer
+        this.cancelCountdown();
+        
+        // Hide any open editors
         const editor = root.querySelector('.saveas-editor');
         const ruleEditor = root.querySelector('.rule-editor-inline');
         const groupSelector = root.querySelector('.group-selector-inline');
+        if (editor) editor.classList.add('hidden');
+        if (ruleEditor) ruleEditor.classList.add('hidden');
+        if (groupSelector) groupSelector.classList.add('hidden');
         
-        if (editor) {
-          editor.classList.toggle('hidden');
-          if (!editor.classList.contains('hidden')) {
-            if (ruleEditor) ruleEditor.classList.add('hidden');
-            if (groupSelector) groupSelector.classList.add('hidden');
-            this.locationPickerVisible = true;  // Track visibility
-            this.rulesEditorVisible = false;
-            // Cancel timeout - download will only proceed when user clicks Save or Cancel
-            this.cancelCountdown();
-          } else {
-            // Editor closed without action - user should click Save or Cancel
-            this.locationPickerVisible = false;
+        // Update UI to show "Preparing Save As dialog..."
+        this.updateOverlayMessage('Preparing Save As dialog...');
+        
+        // Send message to background to handle Save As dialog
+        chrome.runtime.sendMessage({
+          type: 'useNativeSaveAs',
+          downloadId: this.currentDownloadInfo.id
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('Error sending useNativeSaveAs message:', chrome.runtime.lastError);
+            // Fallback: show inline editor if native dialog fails
+            this.updateOverlayMessage('Using manual save...');
+            if (editor) {
+              editor.classList.remove('hidden');
+              this.locationPickerVisible = true;
+            }
+          } else if (!response || !response.success) {
+            // Fallback: show inline editor if background script reports failure
+            this.updateOverlayMessage('Using manual save...');
+            if (editor) {
+              editor.classList.remove('hidden');
+              this.locationPickerVisible = true;
+            }
           }
-        }
+        });
       });
     }
 
@@ -2513,6 +2573,21 @@ class DownloadOverlay {
       // Remove overlay from page after sending message
       this.cleanup();
     }, 600); // Brief delay to show success message
+  }
+
+  /**
+   * Updates the overlay message to show feedback to user.
+   * 
+   * Inputs:
+   *   - message: String message to display
+   * 
+   * Outputs: None (updates overlay UI)
+   */
+  updateOverlayMessage(message) {
+    const overlayPath = this.shadowRoot?.querySelector('.overlay-path span');
+    if (overlayPath) {
+      overlayPath.textContent = message;
+    }
   }
 
   /**

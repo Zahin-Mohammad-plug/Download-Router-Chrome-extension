@@ -268,6 +268,56 @@ function buildRelativePath(folder, filename) {
 }
 
 /**
+ * Gets the default directory for Save As dialog based on download routing rules.
+ * Returns the path to the directory where the file should be saved.
+ * Can return absolute path or relative path (relative to Downloads).
+ * Companion app will resolve relative paths appropriately.
+ * 
+ * Inputs:
+ *   - downloadInfo: Object containing download metadata with resolvedPath, absoluteDestination, etc.
+ * 
+ * Outputs: String path to default directory (absolute if absoluteDestination, relative to Downloads otherwise)
+ */
+async function getDefaultSaveAsDirectory(downloadInfo) {
+  // Get platform-specific Downloads directory
+  // Note: We can't use Node.js os.homedir() in extension context,
+  // so we'll return paths that companion app can resolve
+  // The companion app will handle platform-specific path resolution
+  
+  if (downloadInfo.absoluteDestination) {
+    // Absolute path was selected - extract parent directory (file path -> directory)
+    // Remove filename and get directory
+    const absPath = downloadInfo.absoluteDestination.replace(/\\/g, '/');
+    // Check if it ends with a filename (has extension or doesn't look like directory)
+    // If absoluteDestination is a directory, use it directly; if file path, extract directory
+    if (absPath.match(/\.[a-zA-Z0-9]+$/)) {
+      // Looks like a file path - extract directory
+      const lastSlash = absPath.lastIndexOf('/');
+      if (lastSlash > 0) {
+        return absPath.substring(0, lastSlash);
+      }
+    }
+    // Already a directory path, return as-is
+    return absPath;
+  }
+  
+  if (downloadInfo.resolvedPath && downloadInfo.resolvedPath.includes('/')) {
+    // Relative path with subfolder (e.g., "3DPrinting/file.stl")
+    // Extract folder part - companion app will resolve relative to Downloads
+    const pathParts = downloadInfo.resolvedPath.split('/');
+    if (pathParts.length > 1) {
+      const folderPath = pathParts.slice(0, -1).join('/');
+      // Return as relative path - companion app will resolve to Downloads subfolder
+      return folderPath;
+    }
+  }
+  
+  // Default to Downloads root (empty string or null means Downloads root)
+  // Companion app will use platform-specific Downloads directory
+  return null;
+}
+
+/**
  * Main download interception listener.
  * Called by Chrome when a download is initiated to determine the filename/path.
  * 
@@ -819,6 +869,56 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: false, error: error.message });
     });
     return true; // Required for async sendResponse
+  } else if (message.type === 'useNativeSaveAs') {
+    // useNativeSaveAs: User clicked Save As button - proceed download and show native Save As dialog
+    console.log('useNativeSaveAs received for downloadId:', message.downloadId);
+    const downloadInfo = pendingDownloads.get(message.downloadId);
+    if (!downloadInfo) {
+      console.error('Download info not found for useNativeSaveAs');
+      sendResponse({ success: false, error: 'Download info not found' });
+      return true;
+    }
+    
+    // Cancel timeout since user has taken action
+    if (downloadInfo.timeoutId) {
+      clearTimeout(downloadInfo.timeoutId);
+      downloadInfo.timeoutId = null;
+    }
+    downloadInfo.timeoutPaused = true;
+    
+    // Mark that Save As was requested - prevents auto-move if download completes
+    downloadInfo.saveAsRequested = true;
+    
+    // Check if download is already complete
+    chrome.downloads.search({ id: message.downloadId }, (downloads) => {
+      console.log('Download search result:', downloads?.[0]?.state, downloads?.[0]?.filename);
+      if (downloads && downloads.length > 0 && downloads[0].state === 'complete') {
+        // File already complete - determine correct source path
+        let sourcePath = downloads[0].filename;
+        
+        // Check if file was already moved to absolute destination
+        if (downloadInfo.fileMoved && downloadInfo.absoluteDestination) {
+          console.log('File already moved, using absoluteDestination as source');
+          sourcePath = downloadInfo.absoluteDestination;
+        } else if (downloadInfo.actualDownloadPath) {
+          // Use the actual path Chrome assigned (in case of rename)
+          sourcePath = downloadInfo.actualDownloadPath;
+        }
+        
+        console.log('Download complete, calling handleSaveAsDialog with source:', sourcePath);
+        handleSaveAsDialog(message.downloadId, sourcePath).catch((err) => {
+          console.error('handleSaveAsDialog error:', err);
+        });
+      } else {
+        // File still downloading - proceed download first, then show dialog when complete
+        console.log('Download not complete, setting pendingSaveAsDialog and proceeding');
+        downloadInfo.pendingSaveAsDialog = true;
+        proceedWithDownload(message.downloadId);
+      }
+    });
+    
+    sendResponse({ success: true });
+    return true; // Required for async sendResponse
   }
 });
 
@@ -986,6 +1086,35 @@ chrome.downloads.onChanged.addListener(async (downloadDelta) => {
     const downloadId = downloadDelta.id;
     const downloadInfo = pendingDownloads.get(downloadId);
     
+    // Check if Save As dialog is pending
+    if (downloadInfo && downloadInfo.pendingSaveAsDialog) {
+      console.log('Download complete with pendingSaveAsDialog flag, showing Save As dialog');
+      // Get the file path from the download
+      const downloads = await chrome.downloads.search({ id: downloadId });
+      if (downloads && downloads.length > 0 && downloads[0].filename) {
+        // Store the actual download path for Save As (Chrome may have renamed file)
+        downloadInfo.actualDownloadPath = downloads[0].filename;
+        // Show Save As dialog now that download is complete
+        handleSaveAsDialog(downloadId, downloads[0].filename).catch((err) => {
+          console.error('handleSaveAsDialog error (from onChanged):', err);
+        });
+      }
+      // Don't proceed with normal move logic - Save As dialog will handle it
+      return;
+    }
+    
+    // Check if user is waiting to use Save As - don't auto-move
+    if (downloadInfo && downloadInfo.saveAsRequested) {
+      console.log('Save As requested, skipping auto-move');
+      // Store the actual download path
+      const downloads = await chrome.downloads.search({ id: downloadId });
+      if (downloads && downloads.length > 0 && downloads[0].filename) {
+        downloadInfo.actualDownloadPath = downloads[0].filename;
+        downloadInfo.downloadComplete = true;
+      }
+      return;
+    }
+    
     // Check if file needs to be moved to absolute path
     if (downloadInfo && downloadInfo.needsMove && downloadInfo.absoluteDestination) {
       try {
@@ -998,11 +1127,18 @@ chrome.downloads.onChanged.addListener(async (downloadDelta) => {
           const downloadItem = downloads[0];
           const sourcePath = downloadItem.filename; // Full absolute path to downloaded file
           
+          // Store actual download path before moving
+          downloadInfo.actualDownloadPath = sourcePath;
+          
           // Move file using companion app
           const moveSuccess = await moveFileNative(sourcePath, downloadInfo.absoluteDestination);
           
           if (moveSuccess) {
             console.log(`File moved: ${sourcePath} -> ${downloadInfo.absoluteDestination}`);
+            // Mark that file was moved so Save As knows correct source
+            downloadInfo.fileMoved = true;
+            downloadInfo.downloadComplete = true;
+            
             const destParts = downloadInfo.absoluteDestination.split(/[/\\]/).filter(p => p);
             const destFolder = destParts[destParts.length - 1] || 'Downloads';
             // Update notification
@@ -1583,6 +1719,236 @@ async function moveFileNative(sourcePath, destinationPath) {
   } catch (error) {
     console.error('Failed to move file:', error);
     return false;
+  }
+}
+
+/**
+ * Handles showing Save As dialog and moving file to selected location.
+ * 
+ * Inputs:
+ *   - downloadId: Number ID of the download
+ *   - sourceFilePath: String absolute path to source file (if already downloaded)
+ * 
+ * Outputs: Promise that resolves when dialog handling is complete
+ */
+async function handleSaveAsDialog(downloadId, sourceFilePath = null) {
+  console.log('handleSaveAsDialog called:', downloadId, sourceFilePath);
+  const downloadInfo = pendingDownloads.get(downloadId);
+  if (!downloadInfo) {
+    console.error('Download info not found for Save As dialog');
+    return;
+  }
+  
+  // Determine the correct source file path
+  // Priority: 1) Moved file location, 2) Provided path, 3) Actual download path, 4) Chrome search
+  let sourcePath = sourceFilePath;
+  
+  // If file was already moved by auto-routing, use the destination as source
+  if (downloadInfo.fileMoved && downloadInfo.absoluteDestination) {
+    console.log('File was already moved, using absoluteDestination as source:', downloadInfo.absoluteDestination);
+    sourcePath = downloadInfo.absoluteDestination;
+  } else if (downloadInfo.actualDownloadPath) {
+    // Use the actual path Chrome assigned (handles renames like file (1).app)
+    console.log('Using actualDownloadPath as source:', downloadInfo.actualDownloadPath);
+    sourcePath = downloadInfo.actualDownloadPath;
+  } else if (!sourcePath) {
+    // Fall back to Chrome search
+    const downloads = await chrome.downloads.search({ id: downloadId });
+    if (!downloads || downloads.length === 0 || !downloads[0].filename) {
+      console.error('Could not find download file path');
+      // Notify user of error
+      chrome.notifications.create({
+        type: 'basic',
+        iconUrl: 'icons/icon128.png',
+        title: 'Save As Failed',
+        message: 'Could not find downloaded file'
+      });
+      return;
+    }
+    sourcePath = downloads[0].filename;
+    console.log('Got source path from Chrome search:', sourcePath);
+  }
+  
+  // Get default directory from routing rules
+  const defaultDirectory = await getDefaultSaveAsDirectory(downloadInfo);
+  
+  // Show Save As dialog via companion app
+  // Pass null for defaultDirectory if empty (companion app will use Downloads)
+  if (!self.nativeMessagingClient || !self.nativeMessagingClient.showSaveAsDialog) {
+    console.error('Native messaging client not available for Save As dialog');
+    // Fallback: show notification that file was saved to default location
+    const formattedPath = formatPathDisplay(downloadInfo.resolvedPath, downloadInfo.absoluteDestination);
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: 'File Saved',
+      message: `${downloadInfo.filename} saved to ${formattedPath}`
+    });
+    // Clean up
+    pendingDownloads.delete(downloadId);
+    return;
+  }
+  
+  try {
+    // Update overlay to show "Choose save location..."
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs && tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          type: 'saveAsDialogOpening',
+          downloadId: downloadId
+        }).catch(() => {
+          // Ignore errors if tab doesn't have content script
+        });
+      }
+    });
+    
+    console.log('Calling showSaveAsDialog with:', downloadInfo.filename, defaultDirectory);
+    console.log('nativeMessagingClient available:', !!self.nativeMessagingClient, 'showSaveAsDialog method:', !!self.nativeMessagingClient?.showSaveAsDialog);
+    
+    let selectedFilePath;
+    try {
+      selectedFilePath = await self.nativeMessagingClient.showSaveAsDialog(
+        downloadInfo.filename,
+        defaultDirectory || null
+      );
+      console.log('showSaveAsDialog returned:', selectedFilePath);
+    } catch (dialogError) {
+      console.error('showSaveAsDialog threw error:', dialogError.message);
+      // If the error is connection-related, show notification and clean up
+      chrome.notifications.create({
+        type: 'basic',
+        iconUrl: 'icons/icon128.png',
+        title: 'Save As Failed',
+        message: 'Could not open Save As dialog. File saved to default location.'
+      });
+      // Close overlay
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs && tabs[0]) {
+          chrome.tabs.sendMessage(tabs[0].id, {
+            type: 'closeOverlay',
+            downloadId: downloadId
+          }).catch(() => {});
+        }
+      });
+      pendingDownloads.delete(downloadId);
+      return;
+    }
+    
+    if (!selectedFilePath) {
+      // User cancelled - file stays in default location
+      const formattedPath = formatPathDisplay(downloadInfo.resolvedPath, downloadInfo.absoluteDestination);
+      chrome.notifications.create({
+        type: 'basic',
+        iconUrl: 'icons/icon128.png',
+        title: 'File Saved to Default Location',
+        message: `${downloadInfo.filename} saved to ${formattedPath}`
+      });
+      
+      // Close overlay
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs && tabs[0]) {
+          chrome.tabs.sendMessage(tabs[0].id, {
+            type: 'closeOverlay',
+            downloadId: downloadId
+          }).catch(() => {});
+        }
+      });
+      
+      // Clean up
+      pendingDownloads.delete(downloadId);
+      return;
+    }
+    
+    // Move file to selected location
+    console.log('Moving file from:', sourcePath, 'to:', selectedFilePath);
+    
+    // Verify download is complete (or was already moved)
+    const downloads = await chrome.downloads.search({ id: downloadId });
+    const downloadComplete = downloadInfo.downloadComplete || 
+                             downloadInfo.fileMoved || 
+                             (downloads && downloads.length > 0 && downloads[0].state === 'complete');
+    
+    if (downloadComplete) {
+      const moveSuccess = await moveFileNative(sourcePath, selectedFilePath);
+      console.log('moveFileNative result:', moveSuccess);
+      
+      if (moveSuccess) {
+        // Show success notification
+        const destParts = selectedFilePath.replace(/\\/g, '/').split('/').filter(p => p);
+        const destFolder = destParts.length > 1 ? destParts[destParts.length - 2] : 'selected location';
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'icons/icon128.png',
+          title: 'File Saved Successfully',
+          message: `${downloadInfo.filename} saved to ${destFolder}`
+        });
+        
+        // Close overlay with success message
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs && tabs[0]) {
+            chrome.tabs.sendMessage(tabs[0].id, {
+              type: 'saveAsComplete',
+              downloadId: downloadId,
+              success: true,
+              filePath: selectedFilePath
+            }).catch(() => {});
+          }
+        });
+      } else {
+        // Move failed - show error
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'icons/icon128.png',
+          title: 'Save Failed',
+          message: `Could not move ${downloadInfo.filename}. File saved in default location.`
+        });
+        
+        // Close overlay with error message
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs && tabs[0]) {
+            chrome.tabs.sendMessage(tabs[0].id, {
+              type: 'saveAsComplete',
+              downloadId: downloadId,
+              success: false
+            }).catch(() => {});
+          }
+        });
+      }
+    } else {
+      // Download not complete - this shouldn't happen, but handle gracefully
+      console.error('Download not complete when trying to move file');
+      chrome.notifications.create({
+        type: 'basic',
+        iconUrl: 'icons/icon128.png',
+        title: 'Save As Failed',
+        message: 'Download is still in progress. Please try again when it completes.'
+      });
+    }
+    
+    // Clean up
+    pendingDownloads.delete(downloadId);
+  } catch (error) {
+    console.error('Error in Save As dialog flow:', error);
+    // Show error notification
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: 'Save As Failed',
+      message: error.message || 'An error occurred while showing Save As dialog'
+    });
+    
+    // Close overlay
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs && tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          type: 'closeOverlay',
+          downloadId: downloadId
+        }).catch(() => {});
+      }
+    });
+    
+    // Clean up
+    pendingDownloads.delete(downloadId);
   }
 }
 

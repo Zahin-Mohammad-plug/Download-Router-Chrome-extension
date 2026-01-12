@@ -244,15 +244,53 @@ class NativeMessagingClient {
    */
   async moveFile(sourcePath, destinationPath) {
     try {
+      console.log('moveFile called:', sourcePath, '->', destinationPath);
       const response = await this.sendMessage({
         type: 'moveFile',
         source: sourcePath,
         destination: destinationPath
       });
-      
+      console.log('moveFile response:', response);
+
       return response.success && response.moved === true;
     } catch (error) {
+      console.error('moveFile error:', error);
       return false;
+    }
+  }
+
+  /**
+   * Shows a native OS Save As dialog with pre-filled filename.
+   * 
+   * Inputs:
+   *   - filename: String filename to pre-fill in dialog
+   *   - defaultDirectory: Optional string absolute path to default directory
+   * 
+   * Outputs: Promise resolving to selected file path string or null if cancelled
+   */
+  async showSaveAsDialog(filename, defaultDirectory = null) {
+    try {
+      // Use longer timeout (60 seconds) since user needs time to interact with dialog
+      const response = await this.sendMessage({
+        type: 'showSaveAsDialog',
+        filename: filename,
+        defaultDirectory: defaultDirectory
+      }, 60000);
+      
+      if (response.success && response.filePath) {
+        return response.filePath;
+      } else {
+        // User cancelled or error
+        if (response.code === 'CANCELLED' || response.error?.includes('cancelled')) {
+          return null; // User cancelled - return null instead of throwing
+        }
+        throw new Error(response.error || 'Failed to show Save As dialog');
+      }
+    } catch (error) {
+      if (error.message.includes('cancelled') || error.message.includes('CANCELLED')) {
+        return null; // User cancelled - return null instead of throwing
+      }
+      throw error;
     }
   }
 
