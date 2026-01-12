@@ -55,8 +55,28 @@ let companionAppStatus = {
 /**
  * Helper function to format path display in breadcrumb format.
  * Converts relative paths like "3DPrinting/file.stl" to "Downloads > 3DPrinting"
+ * Handles absolute paths by showing the folder name.
+ * 
+ * Inputs:
+ *   - relativePath: String path (relative or absolute)
+ *   - absoluteDestination: Optional string absolute destination path
+ * 
+ * Outputs: String formatted for display
  */
-function formatPathDisplay(relativePath) {
+function formatPathDisplay(relativePath, absoluteDestination = null) {
+  // Handle absolute destination path
+  if (absoluteDestination) {
+    // Extract just the folder name from absolute path
+    const parts = absoluteDestination.replace(/\\/g, '/').split('/').filter(p => p);
+    return parts[parts.length - 1] || 'Custom Folder';
+  }
+  
+  // Check if relativePath is actually an absolute path
+  if (relativePath && /^(\/|[A-Za-z]:[\\\/])/.test(relativePath)) {
+    const parts = relativePath.replace(/\\/g, '/').split('/').filter(p => p);
+    return parts[parts.length - 1] || 'Custom Folder';
+  }
+  
   if (!relativePath || relativePath === '') return 'Downloads';
   const parts = relativePath.split('/');
   const filename = parts[parts.length - 1];
@@ -156,6 +176,53 @@ function sanitizeFolderName(folder) {
 }
 
 /**
+ * Checks if a path is an absolute path (starts with / on Unix or C:\ on Windows).
+ * 
+ * Inputs:
+ *   - path: String path to check
+ * 
+ * Outputs: Boolean true if absolute path
+ */
+function isAbsolutePath(path) {
+  if (!path) return false;
+  return /^(\/|[A-Za-z]:[\\\/])/.test(path);
+}
+
+/**
+ * Normalizes a domain value for rule matching.
+ * Strips protocol, trailing slashes, paths, and www prefix.
+ * 
+ * Inputs:
+ *   - domain: String domain value (may include protocol, path, etc.)
+ * 
+ * Outputs: String normalized domain (just hostname)
+ * 
+ * Examples:
+ *   - "https://github.com/" → "github.com"
+ *   - "http://www.example.com/path" → "example.com"
+ *   - "github.com" → "github.com"
+ *   - "www.github.com" → "github.com"
+ */
+function normalizeDomain(domain) {
+  if (!domain) return '';
+  let normalized = domain.trim();
+  
+  // Remove protocol (http://, https://)
+  normalized = normalized.replace(/^https?:\/\//i, '');
+  
+  // Remove trailing slashes and paths
+  normalized = normalized.split('/')[0];
+  
+  // Remove www. prefix
+  normalized = normalized.replace(/^www\./i, '');
+  
+  // Remove port if present
+  normalized = normalized.split(':')[0];
+  
+  return normalized.toLowerCase();
+}
+
+/**
  * Builds a valid relative path for Chrome downloads API.
  * Returns folder/filename or just filename if folder is empty.
  * 
@@ -245,8 +312,17 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
     //   Outputs: URL object with hostname property
     try {
       domain = new URL(url).hostname;
-      // Filter rules where type is 'domain' and domain contains the rule value
-      domainMatches = rules.filter(rule => rule.type === 'domain' && domain.includes(rule.value));
+      // Normalize domain for matching (remove www. prefix)
+      const normalizedDomain = normalizeDomain(domain);
+      // Filter rules where type is 'domain' and normalized domain contains normalized rule value
+      domainMatches = rules.filter(rule => {
+        if (rule.type !== 'domain') return false;
+        // Normalize the rule value (handles https://github.com/, www.github.com, etc.)
+        const normalizedRuleValue = normalizeDomain(rule.value);
+        // Match if domain contains the rule value (supports subdomain matching)
+        return normalizedDomain.includes(normalizedRuleValue) || 
+               normalizedRuleValue.includes(normalizedDomain);
+      });
     } catch (e) {
       console.error("Invalid URL, cannot determine domain:", url);
     }
@@ -278,10 +354,25 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
     }
 
     // Construct final file path using utility function to handle path normalization
-    // Pass original downloadItem.filename to extractFilename inside buildRelativePath
-    const resolvedPath = finalRule 
-      ? buildRelativePath(finalRule.folder, downloadItem.filename)  // Pass original for proper extraction
-      : extractFilename(downloadItem.filename);  // Just filename if no rule matches
+    // Check if rule folder is an absolute path (requires post-download move via companion app)
+    let resolvedPath;
+    let needsAbsoluteMove = false;
+    let absoluteDestination = null;
+    
+    if (finalRule) {
+      if (isAbsolutePath(finalRule.folder)) {
+        // Absolute path from native picker - download to Downloads root, then move
+        resolvedPath = filename;  // Just filename for initial download
+        needsAbsoluteMove = true;
+        absoluteDestination = finalRule.folder;
+      } else {
+        // Relative path - build relative path for Chrome downloads API
+        resolvedPath = buildRelativePath(finalRule.folder, downloadItem.filename);
+      }
+    } else {
+      // No rule matches - just use filename
+      resolvedPath = extractFilename(downloadItem.filename);
+    }
     
     // Store download information for potential confirmation or later processing
     const downloadInfo = {
@@ -292,7 +383,11 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
       url: url,
       resolvedPath: resolvedPath,
       originalSuggest: suggest, // Store the suggest callback for later use
-      finalRule: finalRule
+      finalRule: finalRule,
+      // Absolute path handling for post-download move
+      needsMove: needsAbsoluteMove,
+      absoluteDestination: absoluteDestination,
+      useAbsolutePath: needsAbsoluteMove
     };
     
     // Track this download in the pending downloads map
@@ -732,10 +827,10 @@ function proceedWithDownload(downloadId, customPath = null) {
   const downloadInfo = pendingDownloads.get(downloadId);
   if (!downloadInfo) return; // Exit if download info not found
   
-  // Check if this is an absolute path that requires post-download move
-  const isAbsolutePath = downloadInfo.useAbsolutePath || 
-    (customPath && /^(\/|[A-Za-z]:\\)/.test(customPath)) ||
-    (downloadInfo.resolvedPath && /^(\/|[A-Za-z]:\\)/.test(downloadInfo.resolvedPath));
+  // Check if download already has absolute destination set (from rule matching or location change)
+  // or if a custom path is being provided that's absolute
+  const hasAbsoluteDestination = downloadInfo.absoluteDestination && downloadInfo.needsMove;
+  const customPathIsAbsolute = customPath && /^(\/|[A-Za-z]:[\\\/])/.test(customPath);
   
   let absoluteDestinationPath = null;
   let finalPath;
@@ -743,29 +838,31 @@ function proceedWithDownload(downloadId, customPath = null) {
   // Normalize and construct final path
   if (customPath) {
     // User provided a custom path - could be a folder name or full path
-    // Check if it contains path separators (full path) or is just a folder name
-    const normalizedCustomPath = normalizePath(customPath);
-    if (/^(\/|[A-Za-z]:\\)/.test(customPath)) {
+    if (customPathIsAbsolute) {
       // User provided an absolute path - download to Downloads, then move
       absoluteDestinationPath = customPath;
       finalPath = downloadInfo.filename; // Download to Downloads root
-    } else if (normalizedCustomPath.includes('/')) {
-      // User provided a relative path - normalize it
-      finalPath = normalizedCustomPath;
     } else {
-      // User provided just a folder name - build relative path
-      finalPath = buildRelativePath(normalizedCustomPath, downloadInfo.filename);
+      // Check if it contains path separators (relative path) or is just a folder name
+      const normalizedCustomPath = normalizePath(customPath);
+      if (normalizedCustomPath.includes('/')) {
+        // User provided a relative path - normalize it
+        finalPath = normalizedCustomPath;
+      } else if (normalizedCustomPath && normalizedCustomPath !== downloadInfo.filename) {
+        // User provided just a folder name - build relative path
+        finalPath = buildRelativePath(normalizedCustomPath, downloadInfo.filename);
+      } else {
+        // Just filename - use as-is
+        finalPath = downloadInfo.filename;
+      }
     }
+  } else if (hasAbsoluteDestination) {
+    // Use the pre-set absolute destination (from rule matching or location change)
+    absoluteDestinationPath = downloadInfo.absoluteDestination;
+    finalPath = downloadInfo.filename; // Download to Downloads root
   } else {
-    // Use resolved path from rules
-    if (isAbsolutePath && downloadInfo.resolvedPath) {
-      // Absolute path from native picker - download to Downloads, then move
-      absoluteDestinationPath = downloadInfo.resolvedPath;
-      finalPath = downloadInfo.filename; // Download to Downloads root
-    } else {
-      // Relative path - use as-is
-      finalPath = downloadInfo.resolvedPath;
-    }
+    // Use resolved path from rules (relative path)
+    finalPath = downloadInfo.resolvedPath || downloadInfo.filename;
   }
   
   // Store absolute destination for post-download move

@@ -29,8 +29,22 @@
 /**
  * Helper function to format path display in breadcrumb format.
  * Converts relative paths like "3DPrinting/file.stl" to "Downloads > 3DPrinting"
+ * Handles absolute paths by showing the folder name.
  */
-function formatPathDisplay(relativePath) {
+function formatPathDisplay(relativePath, absoluteDestination = null) {
+  // Handle absolute destination path
+  if (absoluteDestination) {
+    // Extract just the folder name from absolute path
+    const parts = absoluteDestination.replace(/\\/g, '/').split('/').filter(p => p);
+    return parts[parts.length - 1] || 'Custom Folder';
+  }
+  
+  // Check if relativePath is actually an absolute path
+  if (relativePath && /^(\/|[A-Za-z]:[\\\/])/.test(relativePath)) {
+    const parts = relativePath.replace(/\\/g, '/').split('/').filter(p => p);
+    return parts[parts.length - 1] || 'Custom Folder';
+  }
+  
   if (!relativePath || relativePath === '') return 'Downloads';
   const parts = relativePath.split('/');
   const filename = parts[parts.length - 1];
@@ -712,6 +726,20 @@ class DownloadOverlay {
         transform: translateX(0);
       }
 
+      .form-group {
+        margin-bottom: 16px;
+      }
+
+      .form-label {
+        display: block;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--text-secondary);
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
       .hidden {
         display: none !important;
       }
@@ -859,7 +887,11 @@ class DownloadOverlay {
       'exe': 'package', 'msi': 'package', 'dmg': 'package', 'deb': 'package'
     };
     const fileIcon = iconMap[fileExt.toLowerCase()] || 'file';
-    const formattedPath = formatPathDisplay(this.currentDownloadInfo.resolvedPath);
+    // Format path display - handle absolute destinations
+    const formattedPath = formatPathDisplay(
+      this.currentDownloadInfo.resolvedPath, 
+      this.currentDownloadInfo.absoluteDestination
+    );
 
     const overlayHTML = `
       <div class="overlay-container">
@@ -962,17 +994,24 @@ class DownloadOverlay {
 
           <div class="location-picker">
             <div class="rules-header">
-              <div class="rules-title">Change Download Location</div>
-              <div class="rules-info">Select a new folder for this download</div>
+              <div class="rules-title">Save As</div>
+              <div class="rules-info">Choose filename and destination folder</div>
             </div>
             <div class="rules-content">
-              <div class="rule-row">
-                <input type="text" class="folder-input" placeholder="Enter folder path" value="${this.currentDownloadInfo.resolvedPath}">
-                <button class="browse-btn">Browse</button>
+              <div class="form-group">
+                <label class="form-label">Filename</label>
+                <input type="text" class="filename-input folder-input" placeholder="Enter filename" value="${this.currentDownloadInfo.filename}">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Save to folder</label>
+                <div class="rule-row">
+                  <input type="text" class="folder-path-input folder-input" placeholder="Enter folder path" value="${this.currentDownloadInfo.absoluteDestination || (this.currentDownloadInfo.resolvedPath ? this.currentDownloadInfo.resolvedPath.split('/').slice(0, -1).join('/') : '') || 'Downloads'}">
+                  <button class="browse-btn">Browse</button>
+                </div>
               </div>
               <div class="rules-actions">
                 <button class="cancel-btn">Cancel</button>
-                <button class="apply-btn">Update Location</button>
+                <button class="apply-btn">Save Here</button>
               </div>
             </div>
           </div>
@@ -1146,8 +1185,8 @@ class DownloadOverlay {
     root.querySelector('.location-picker .browse-btn').addEventListener('click', () => {
       this.openNativeFolderPicker((selectedPath) => {
         if (selectedPath) {
-          // Update the input field with selected path
-          const input = root.querySelector('.location-picker .folder-input');
+          // Update the folder path input field with selected path
+          const input = root.querySelector('.location-picker .folder-path-input');
           input.value = selectedPath;
         }
       });
@@ -1281,6 +1320,9 @@ class DownloadOverlay {
     const root = this.shadowRoot;
     const ruleType = root.querySelector('input[name="ruleType"]:checked').value;
     
+    // Helper to check if path is absolute
+    const isAbsolutePath = (path) => /^(\/|[A-Za-z]:[\\\/])/.test(path);
+    
     if (ruleType === 'domain') {
       const folder = root.querySelector('.domain-rule-config .folder-input').value;
       if (folder) {
@@ -1295,8 +1337,20 @@ class DownloadOverlay {
             folder: folder
           }
         });
-        // Update resolved path with new folder using path normalization
-        this.currentDownloadInfo.resolvedPath = buildRelativePath(folder, this.currentDownloadInfo.filename);
+        
+        // Check if this is an absolute path (requires post-download move)
+        if (isAbsolutePath(folder)) {
+          this.currentDownloadInfo.resolvedPath = this.currentDownloadInfo.filename;
+          this.currentDownloadInfo.absoluteDestination = folder;
+          this.currentDownloadInfo.useAbsolutePath = true;
+          this.currentDownloadInfo.needsMove = true;
+        } else {
+          // Update resolved path with new folder using path normalization
+          this.currentDownloadInfo.resolvedPath = buildRelativePath(folder, this.currentDownloadInfo.filename);
+          this.currentDownloadInfo.absoluteDestination = null;
+          this.currentDownloadInfo.useAbsolutePath = false;
+          this.currentDownloadInfo.needsMove = false;
+        }
       }
     } else {
       // Extension rule configuration
@@ -1312,7 +1366,19 @@ class DownloadOverlay {
               folder: folder
             }
           });
-          this.currentDownloadInfo.resolvedPath = buildRelativePath(folder, this.currentDownloadInfo.filename);
+          
+          // Check if this is an absolute path
+          if (isAbsolutePath(folder)) {
+            this.currentDownloadInfo.resolvedPath = this.currentDownloadInfo.filename;
+            this.currentDownloadInfo.absoluteDestination = folder;
+            this.currentDownloadInfo.useAbsolutePath = true;
+            this.currentDownloadInfo.needsMove = true;
+          } else {
+            this.currentDownloadInfo.resolvedPath = buildRelativePath(folder, this.currentDownloadInfo.filename);
+            this.currentDownloadInfo.absoluteDestination = null;
+            this.currentDownloadInfo.useAbsolutePath = false;
+            this.currentDownloadInfo.needsMove = false;
+          }
         }
       } else {
         // Add to existing group
@@ -1327,11 +1393,20 @@ class DownloadOverlay {
       }
     }
     
-    // Update overlay display with new resolved path
-    // textContent: Sets element's text content
-    //   Inputs: String text content
-    //   Outputs: None (modifies element)
-    root.querySelector('.overlay-path').textContent = this.currentDownloadInfo.resolvedPath;
+    // Update overlay display with new path (formatted for display)
+    const displayPath = formatPathDisplay(
+      this.currentDownloadInfo.resolvedPath,
+      this.currentDownloadInfo.absoluteDestination
+    );
+    const pathSpan = root.querySelector('.overlay-path span');
+    if (pathSpan) {
+      pathSpan.textContent = 'Saving to: ' + displayPath;
+    } else {
+      root.querySelector('.overlay-path').innerHTML = `
+        ${this.getSVGIcon('folder')}
+        <span>Saving to: ${displayPath}</span>
+      `;
+    }
     // Close rules editor panel
     this.hideRulesEditor();
   }
@@ -1347,27 +1422,73 @@ class DownloadOverlay {
    */
   applyLocationChange() {
     const root = this.shadowRoot;
-    const newLocation = root.querySelector('.location-picker .folder-input').value;
+    
+    // Get filename (may have been edited by user)
+    const filenameInput = root.querySelector('.location-picker .filename-input');
+    const newFilename = filenameInput ? filenameInput.value.trim() : this.currentDownloadInfo.filename;
+    
+    // Get folder path
+    const folderInput = root.querySelector('.location-picker .folder-path-input');
+    const newLocation = folderInput ? folderInput.value.trim() : '';
+    
+    // Update filename if changed
+    if (newFilename && newFilename !== this.currentDownloadInfo.filename) {
+      this.currentDownloadInfo.filename = newFilename;
+    }
+    
     if (newLocation) {
       // Check if it's an absolute path (starts with / on Unix or C:\ on Windows)
-      const isAbsolutePath = /^(\/|[A-Za-z]:\\)/.test(newLocation);
+      const isAbsPath = /^(\/|[A-Za-z]:[\\\/])/.test(newLocation);
       
-      if (isAbsolutePath) {
+      if (isAbsPath) {
         // Absolute path from native picker - store as-is (will need post-download move)
-      this.currentDownloadInfo.resolvedPath = newLocation;
-        this.currentDownloadInfo.useAbsolutePath = true; // Flag for post-download move
+        this.currentDownloadInfo.resolvedPath = this.currentDownloadInfo.filename;
+        this.currentDownloadInfo.absoluteDestination = newLocation;
+        this.currentDownloadInfo.useAbsolutePath = true;
+        this.currentDownloadInfo.needsMove = true;
+      } else if (newLocation.toLowerCase() === 'downloads') {
+        // Downloads root - just use filename
+        this.currentDownloadInfo.resolvedPath = this.currentDownloadInfo.filename;
+        this.currentDownloadInfo.absoluteDestination = null;
+        this.currentDownloadInfo.useAbsolutePath = false;
+        this.currentDownloadInfo.needsMove = false;
       } else {
         // Relative path - normalize and build relative path
         const normalizedPath = normalizePath(newLocation);
-        if (normalizedPath.includes('/')) {
-          this.currentDownloadInfo.resolvedPath = normalizedPath;
-        } else {
-          this.currentDownloadInfo.resolvedPath = buildRelativePath(normalizedPath, this.currentDownloadInfo.filename);
-        }
+        this.currentDownloadInfo.resolvedPath = buildRelativePath(normalizedPath, this.currentDownloadInfo.filename);
+        this.currentDownloadInfo.absoluteDestination = null;
         this.currentDownloadInfo.useAbsolutePath = false;
+        this.currentDownloadInfo.needsMove = false;
       }
-      root.querySelector('.overlay-path').textContent = this.currentDownloadInfo.resolvedPath;
+    } else {
+      // No folder specified - save to Downloads root with updated filename
+      this.currentDownloadInfo.resolvedPath = this.currentDownloadInfo.filename;
+      this.currentDownloadInfo.absoluteDestination = null;
+      this.currentDownloadInfo.useAbsolutePath = false;
+      this.currentDownloadInfo.needsMove = false;
     }
+    
+    // Update overlay header with new filename
+    const filenameSpan = root.querySelector('.overlay-filename span');
+    if (filenameSpan) {
+      filenameSpan.textContent = this.currentDownloadInfo.filename;
+    }
+    
+    // Update overlay display with formatted path
+    const displayPath = formatPathDisplay(
+      this.currentDownloadInfo.resolvedPath,
+      this.currentDownloadInfo.absoluteDestination
+    );
+    const pathSpan = root.querySelector('.overlay-path span');
+    if (pathSpan) {
+      pathSpan.textContent = 'Saving to: ' + displayPath;
+    } else {
+      root.querySelector('.overlay-path').innerHTML = `
+        ${this.getSVGIcon('folder')}
+        <span>Saving to: ${displayPath}</span>
+      `;
+    }
+    
     this.hideLocationPicker();
   }
 
