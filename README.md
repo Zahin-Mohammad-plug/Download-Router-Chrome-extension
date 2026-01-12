@@ -194,6 +194,12 @@ Contributions welcome. Some areas that could use help:
 
 Follow the existing code style and test your changes before submitting a PR.
 
+## Privacy
+
+This extension does not collect, store, or transmit any personal data. All routing rules and settings are stored locally on your device. No analytics, no tracking, no external servers.
+
+See [PRIVACY.md](PRIVACY.md) for full details.
+
 ## License
 
 MIT License
