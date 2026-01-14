@@ -1,5 +1,5 @@
 /**
- * options.js
+ * options.js aka settings page
  * 
  * Purpose: Options page for the Download Router Chrome extension.
  * Role: Provides comprehensive interface for managing routing rules, file type groups,
@@ -460,7 +460,7 @@ class OptionsApp {
   }
 
   createRuleHTML(rule, index) {
-    const iconName = rule.type === 'domain' ? 'globe' : 'file-type';
+    const iconName = rule.type === 'domain' ? 'globe' : 'search';
     const iconHTML = typeof window.getIcon !== 'undefined' ? window.getIcon(iconName, 16) : (typeof getIcon !== 'undefined' ? getIcon(iconName, 16) : '');
     const enabled = rule.enabled !== false;
     const statusClass = enabled ? 'status-enabled' : 'status-disabled';
@@ -472,7 +472,7 @@ class OptionsApp {
             <span class="item-icon">${iconHTML}</span>
             <select class="quick-edit rule-type-quick" data-index="${index}">
               <option value="domain" ${rule.type === 'domain' ? 'selected' : ''}>Site Rule</option>
-              <option value="extension" ${rule.type === 'extension' ? 'selected' : ''}>Extension Rule</option>
+              <option value="contains" ${rule.type === 'contains' ? 'selected' : ''}>Contains Rule</option>
             </select>
           </div>
           <div class="item-actions">
@@ -486,11 +486,11 @@ class OptionsApp {
         </div>
         <div class="item-content quick-edit-content">
           <div class="form-group quick-edit-group">
-            <label class="form-label">${rule.type === 'domain' ? 'Site' : 'Extensions'}</label>
+            <label class="form-label">${rule.type === 'domain' ? 'Site' : 'Filename contains phrase'}</label>
             <input type="text" class="form-input quick-edit-input rule-value-quick" 
                    value="${rule.value || ''}" 
                    data-index="${index}"
-                   placeholder="${rule.type === 'domain' ? 'e.g., github.com' : 'e.g., stl,obj,3mf'}">
+                   placeholder="${rule.type === 'domain' ? 'e.g., github.com' : 'e.g., invoice, receipt, report'}">
           </div>
           <div class="form-group quick-edit-group">
             <label class="form-label">Destination Folder</label>
@@ -541,10 +541,10 @@ class OptionsApp {
           const valueInput = e.target.closest('.rule-item').querySelector('.rule-value-quick');
           const label = valueInput?.closest('.form-group').querySelector('.form-label');
           if (label) {
-            label.textContent = e.target.value === 'domain' ? 'Site' : 'Extensions';
+            label.textContent = e.target.value === 'domain' ? 'Site' : 'Filename contains phrase';
           }
           if (valueInput) {
-            valueInput.placeholder = e.target.value === 'domain' ? 'e.g., github.com' : 'e.g., stl,obj,3mf';
+            valueInput.placeholder = e.target.value === 'domain' ? 'e.g., github.com' : 'e.g., invoice, receipt, report';
           }
           this.saveRules();
         }
@@ -995,12 +995,12 @@ class OptionsApp {
           <label class="form-label">Rule Type</label>
           <select class="form-select" id="edit-rule-type">
             <option value="domain" ${rule.type === 'domain' ? 'selected' : ''}>Site</option>
-            <option value="extension" ${rule.type === 'extension' ? 'selected' : ''}>Extension</option>
+            <option value="contains" ${rule.type === 'contains' ? 'selected' : ''}>Contains</option>
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">${rule.type === 'domain' ? 'Site' : 'Extensions'}</label>
-          <input type="text" class="form-input" id="edit-rule-value" value="${rule.value || ''}" placeholder="${rule.type === 'domain' ? 'e.g., github.com' : 'e.g., stl,obj,3mf'}">
+          <label class="form-label">${rule.type === 'domain' ? 'Site' : 'Filename contains phrase'}</label>
+          <input type="text" class="form-input" id="edit-rule-value" value="${rule.value || ''}" placeholder="${rule.type === 'domain' ? 'e.g., github.com' : 'e.g., invoice, receipt, report'}">
         </div>
         <div class="form-group">
           <label class="form-label">Destination Folder</label>
@@ -1060,6 +1060,21 @@ class OptionsApp {
             folderText.textContent = folder;
           }
         });
+      });
+    }
+    
+    // Update label and placeholder when rule type changes
+    const editRuleType = document.getElementById('edit-rule-type');
+    const editRuleValue = document.getElementById('edit-rule-value');
+    const editRuleLabel = editRuleValue?.closest('.form-group')?.querySelector('.form-label');
+    
+    if (editRuleType && editRuleValue) {
+      editRuleType.addEventListener('change', (e) => {
+        const isDomain = e.target.value === 'domain';
+        if (editRuleLabel) {
+          editRuleLabel.textContent = isDomain ? 'Site' : 'Contains phrase';
+        }
+        editRuleValue.placeholder = isDomain ? 'e.g., github.com' : 'e.g., invoice, receipt, report';
       });
     }
     

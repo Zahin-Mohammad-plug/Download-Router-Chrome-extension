@@ -7,7 +7,7 @@
  * 
  * Key Responsibilities:
  * - Intercept downloads and determine target folders based on rules
- * - Match downloads against domain and file extension rules
+ * - Match downloads against domain, contains (filename pattern), and file type rules
  * - Manage download confirmation overlays and fallback notifications
  * - Track download statistics and activity history
  * - Handle rule and group management operations
@@ -442,7 +442,7 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
 
     // Initialize rule matching arrays
     let domainMatches = [];
-    let extensionMatches = [];
+    let containsMatches = [];
     let fileTypeMatches = [];
     let domain = 'unknown';
 
@@ -494,11 +494,12 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
       console.error("Invalid URL, cannot determine domain:", url);
     }
     
-    // Find matching extension rules
-    extensionMatches = rules.filter(rule => {
-      if (rule.type !== 'extension' || rule.enabled === false) return false;
-      return rule.value.split(',').map(ext => ext.trim().toLowerCase()).includes(extension);
-    }).map(r => ({...r, source: 'extension'}));
+    // Find matching contains rules (filename contains phrase)
+    containsMatches = rules.filter(rule => {
+      if (rule.type !== 'contains' || rule.enabled === false) return false;
+      const searchPhrases = rule.value.split(',').map(p => p.trim().toLowerCase());
+      return searchPhrases.some(phrase => filename.toLowerCase().includes(phrase));
+    }).map(r => ({...r, source: 'contains'}));
 
     // Find matching file types (groups)
     for (const [name, group] of Object.entries(groups)) {
@@ -529,18 +530,19 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
       }
     }
 
-    // 1. Collect ALL matching rules (domain + extension + file types)
+    // 1. Collect ALL matching rules (domain + contains + file types)
     const allMatches = [
       ...domainMatches,
-      ...extensionMatches,
+      ...containsMatches,
       ...fileTypeMatches
     ];
 
     // Log matching rules from background.js
     console.log('[BACKGROUND] Download URL:', url);
+    console.log('[BACKGROUND] Download filename:', filename);
     console.log('[BACKGROUND] Download extension:', extension);
     console.log('[BACKGROUND] Domain matches:', domainMatches);
-    console.log('[BACKGROUND] Extension matches:', extensionMatches);
+    console.log('[BACKGROUND] Contains matches:', containsMatches);
     console.log('[BACKGROUND] File type matches:', fileTypeMatches);
     console.log('[BACKGROUND] All matches (before sort):', allMatches);
 
@@ -1738,6 +1740,11 @@ function proceedWithDownload(downloadId, customPath = null) {
         console.log('[proceedWithDownload] Download already complete, moving file now');
         moveFileNative(sourcePath, destPath).then((result) => {
           if (result && result.moved) {
+            const actualDestination = result.destination || destPath;
+            // Store actual final destination for stats and popup display
+            downloadInfo.actualFinalDestination = actualDestination;
+            downloadInfo.fileMoved = true;
+            
             const destParts = destPath.split(/[/\\]/).filter(p => p);
             const destFolder = destParts[destParts.length - 1] || 'Downloads';
             chrome.notifications.create({
@@ -1746,6 +1753,8 @@ function proceedWithDownload(downloadId, customPath = null) {
               title: 'File Routed Successfully',
               message: `${downloadInfo.filename} moved to ${destFolder}`
             });
+            // Update stats with correct final destination
+            updateDownloadStats(downloadId);
           }
         });
       } else {
@@ -1756,6 +1765,11 @@ function proceedWithDownload(downloadId, customPath = null) {
             console.log('[proceedWithDownload] Found complete download, moving file');
             moveFileNative(downloads[0].filename, destPath).then((result) => {
               if (result && result.moved) {
+                const actualDestination = result.destination || destPath;
+                // Store actual final destination for stats and popup display
+                downloadInfo.actualFinalDestination = actualDestination;
+                downloadInfo.fileMoved = true;
+                
                 const destParts = destPath.split(/[/\\]/).filter(p => p);
                 const destFolder = destParts[destParts.length - 1] || 'Downloads';
                 chrome.notifications.create({
@@ -1764,6 +1778,8 @@ function proceedWithDownload(downloadId, customPath = null) {
                   title: 'File Routed Successfully',
                   message: `${downloadInfo.filename} moved to ${destFolder}`
                 });
+                // Update stats with correct final destination
+                updateDownloadStats(downloadId);
               }
             });
           }
@@ -1782,18 +1798,21 @@ function proceedWithDownload(downloadId, customPath = null) {
   }
   
   // Display confirmation notification with formatted path
-  // chrome.notifications.create: Creates system notification
-  //   Inputs: Notification options object (creates with auto-generated ID if none provided)
-  //   Outputs: Creates notification in Chrome's notification center
-  const displayPath = absoluteDestinationPath || finalPath;
+  // Use actualFinalDestination if file was moved, otherwise use the path we set
+  const displayPath = downloadInfo.actualFinalDestination || absoluteDestinationPath || finalPath;
   // Check if absolute path (contains drive letter or starts with /)
   const isAbsolute = /^(\/|[A-Za-z]:\\)/.test(displayPath);
   let formattedPath;
   
   if (isAbsolute) {
-    // For absolute paths, just show the folder name
-    const parts = displayPath.split(/[/\\]/).filter(p => p);
-    formattedPath = parts[parts.length - 1] || 'Downloads';
+    // For absolute paths, extract folder name (remove filename if present)
+    const parts = displayPath.replace(/\\/g, '/').split('/').filter(p => p);
+    // If last part looks like a filename (has extension), use second-to-last as folder
+    if (parts.length > 1 && parts[parts.length - 1].includes('.')) {
+      formattedPath = parts[parts.length - 2] || parts[parts.length - 1] || 'Downloads';
+    } else {
+      formattedPath = parts[parts.length - 1] || 'Downloads';
+    }
   } else {
     // For relative paths, format as breadcrumb
     formattedPath = formatPathDisplay(finalPath);
@@ -1816,8 +1835,8 @@ function proceedWithDownload(downloadId, customPath = null) {
  * 
  * Inputs:
  *   - rule: Object containing rule properties:
- *     - type: String ('domain' or 'extension')
- *     - value: String (domain name or comma-separated extensions)
+ *     - type: String ('domain' or 'contains')
+ *     - value: String (domain name or comma-separated phrases for contains rules)
  *     - folder: String (target folder path)
  * 
  * Outputs: None (updates Chrome storage)

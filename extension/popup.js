@@ -392,7 +392,7 @@ class PopupApp {
     });
 
     allRulesList.innerHTML = enabledRules.slice(0, 5).map(rule => {
-      const iconName = rule.type === 'domain' ? 'globe' : 'file-type';
+      const iconName = rule.type === 'domain' ? 'globe' : 'search';
       const iconHTML = typeof getIcon !== 'undefined' ? getIcon(iconName, 16) : '';
       return `
         <div class="rule-preview">

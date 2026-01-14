@@ -1,6 +1,6 @@
 # Download Router
 
-A Chrome extension that automatically saves your downloads to different folders based on rules you set. Instead of everything landing in Downloads, route files by website domain or file type.
+A Chrome extension that automatically saves your downloads to different folders based on rules you set. Instead of everything landing in Downloads, route files by website domain, filename patterns, or file type.
 
 ## What it does
 
@@ -73,7 +73,7 @@ If the overlay can't be injected (some sites block it), you'll get a Chrome noti
 
 Access settings by right-clicking the extension icon → Options.
 
-- **Rules tab**: Add/edit domain and extension routing rules, set priorities
+- **Rules tab**: Add/edit domain and contains (filename pattern) routing rules, set priorities
 - **Groups tab**: Organize file extensions into groups (videos, images, documents, etc.), configure group priorities and override options
 - **Settings tab**: Configure confirmation timeout, conflict resolution behavior, companion app status
 - **Folders tab**: Browse and manage your download destinations

@@ -569,13 +569,13 @@ class DownloadOverlay {
         border-color: #1976d2;
       }
 
-      .rule-action-btn.extension-rule {
+      .rule-action-btn.contains-rule {
         background: #f3e5f5;
         border-color: #ce93d8;
         color: #7b1fa2;
       }
 
-      .rule-action-btn.extension-rule:hover {
+      .rule-action-btn.contains-rule:hover {
         background: #e1bee7;
         border-color: #7b1fa2;
       }
@@ -1490,10 +1490,10 @@ class DownloadOverlay {
     const ruleSource = rule ? (rule.source || 'default') : 'default';
     const isFileTypeRule = ruleSource === 'filetype';
     const isDomainRule = ruleSource === 'domain';
-    const isExtensionRule = ruleSource === 'extension';
+    const isContainsRule = ruleSource === 'contains';
     
-    // Build the first action button - Site or Extension rule, or Add Site
-    // Check if domain/extension rules exist even if not active
+    // Build the first action button - Site or Contains rule, or Add Site
+    // Check if domain/contains rules exist even if not active
     // (already fetched above, reuse the data)
     const domain = this.currentDownloadInfo.domain;
     const downloadUrl = this.currentDownloadInfo.url || '';
@@ -1572,42 +1572,43 @@ class DownloadOverlay {
     matchingDomainRules.sort((a, b) => (b.value?.length || 0) - (a.value?.length || 0));
     const existingDomainRule = matchingDomainRules[0] || null;
     
-    // Find matching extension rule (even if not active)
-    const existingExtensionRule = allRules.find(r => 
-      r.type === 'extension' && 
+    // Find matching contains rule (even if not active)
+    const filename = this.currentDownloadInfo.filename || '';
+    const existingContainsRule = allRules.find(r => 
+      r.type === 'contains' && 
       r.enabled !== false &&
-      r.value.split(',').map(ext => ext.trim().toLowerCase()).includes(currentExt)
+      r.value.split(',').map(p => p.trim().toLowerCase()).some(phrase => filename.toLowerCase().includes(phrase))
     );
     
     let ruleButtonText = 'Add Site';
     let ruleButtonClass = 'create-rule';
     let ruleButtonIcon = 'plus';
-    let hasExistingDomainOrExtensionRule = false;
+    let hasExistingDomainOrContainsRule = false;
     
     if (isDomainRule) {
       // Domain rule is ACTIVE
       ruleButtonText = `Site: ${rule.value || this.getBaseDomain(domain)}`;
       ruleButtonClass = 'domain-rule';
       ruleButtonIcon = 'check';
-      hasExistingDomainOrExtensionRule = true;
-    } else if (isExtensionRule) {
-      // Extension rule is ACTIVE
-      ruleButtonText = `Extension: .${currentExt}`;
-      ruleButtonClass = 'extension-rule';
+      hasExistingDomainOrContainsRule = true;
+    } else if (isContainsRule) {
+      // Contains rule is ACTIVE
+      ruleButtonText = `Contains: ${rule.value || 'phrase'}`;
+      ruleButtonClass = 'contains-rule';
       ruleButtonIcon = 'check';
-      hasExistingDomainOrExtensionRule = true;
+      hasExistingDomainOrContainsRule = true;
     } else if (existingDomainRule) {
       // Domain rule EXISTS but not active
       ruleButtonText = `Site: ${existingDomainRule.value || this.getBaseDomain(domain)}`;
       ruleButtonClass = 'domain-rule';
       ruleButtonIcon = 'settings';
-      hasExistingDomainOrExtensionRule = true;
-    } else if (existingExtensionRule) {
-      // Extension rule EXISTS but not active
-      ruleButtonText = `Extension: .${currentExt}`;
-      ruleButtonClass = 'extension-rule';
+      hasExistingDomainOrContainsRule = true;
+    } else if (existingContainsRule) {
+      // Contains rule EXISTS but not active
+      ruleButtonText = `Contains: ${existingContainsRule.value || 'phrase'}`;
+      ruleButtonClass = 'contains-rule';
       ruleButtonIcon = 'settings';
-      hasExistingDomainOrExtensionRule = true;
+      hasExistingDomainOrContainsRule = true;
     }
     
     // Build the second action button - File Type
@@ -1641,7 +1642,7 @@ class DownloadOverlay {
     
     // Store these for use in event handlers
     this.existingDomainRule = existingDomainRule;
-    this.existingExtensionRule = existingExtensionRule;
+    this.existingContainsRule = existingContainsRule;
     this.fileTypeGroupName = fileTypeGroupName;
 
     const overlayHTML = `
@@ -1669,7 +1670,7 @@ class DownloadOverlay {
             </div>
             
             <div class="rule-actions-row">
-              <button class="rule-action-btn ${ruleButtonClass} ${isDomainRule || isExtensionRule ? 'active' : ''} edit-rule-btn" title="${isDomainRule || isExtensionRule ? 'Change rule' : 'Add a site rule'}">
+              <button class="rule-action-btn ${ruleButtonClass} ${isDomainRule || isContainsRule ? 'active' : ''} edit-rule-btn" title="${isDomainRule || isContainsRule ? 'Change rule' : 'Add a site rule'}">
                 ${this.getSVGIcon(ruleButtonIcon)}
                 <span>${ruleButtonText}</span>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 4px;"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -1684,9 +1685,9 @@ class DownloadOverlay {
             <!-- Rule selector dropdown -->
             <div class="rule-dropdown hidden">
               <div class="dropdown-option" data-action="create-domain">Add Site Rule</div>
-              <div class="dropdown-option" data-action="create-extension">Add Extension Rule</div>
+              <div class="dropdown-option" data-action="create-contains">Add Contains Rule</div>
               ${isDomainRule ? `<div class="dropdown-option" data-action="edit-rule">Edit Current Rule</div>` : ''}
-              ${isExtensionRule ? `<div class="dropdown-option" data-action="edit-rule">Edit Current Rule</div>` : ''}
+              ${isContainsRule ? `<div class="dropdown-option" data-action="edit-rule">Edit Current Rule</div>` : ''}
             </div>
             
             <!-- File type selector dropdown -->
@@ -1750,21 +1751,21 @@ class DownloadOverlay {
             </div>
             <div class="rules-content">
               <div class="rule-type-buttons">
-                <button class="rule-type-btn active" data-type="filetype">
-                  Add ${this.currentDownloadInfo.extension || 'file type'}
-                </button>
-                <button class="rule-type-btn" data-type="domain">
+                <button class="rule-type-btn active" data-type="domain">
                   Add ${this.getBaseDomain(this.currentDownloadInfo.domain) || 'site'}
+                </button>
+                <button class="rule-type-btn" data-type="contains">
+                  Add Contains Rule
                 </button>
               </div>
               
               <div class="rule-editor-form">
                 <div class="form-group">
-                  <label class="form-label">${this.currentDownloadInfo.ruleEditorType === 'domain' ? 'Site' : 'Extension'}</label>
+                  <label class="form-label">${this.currentDownloadInfo.ruleEditorType === 'domain' ? 'Site' : 'Filename contains phrase'}</label>
                   <input type="text" 
                          class="folder-input rule-value-input" 
                          id="rule-value-input"
-                         placeholder="${this.currentDownloadInfo.ruleEditorType === 'domain' ? 'e.g., github.com' : 'e.g., .svg,.png,.jpg'}">
+                         placeholder="${this.currentDownloadInfo.ruleEditorType === 'domain' ? 'e.g., github.com' : 'e.g., invoice, receipt, report'}">
                 </div>
                 <div class="form-group">
                   <label class="form-label">Destination Folder</label>
@@ -1922,15 +1923,15 @@ class DownloadOverlay {
             }
           }
         } else {
-          // Click on button itself - SELECT this domain/extension rule if it exists
+          // Click on button itself - SELECT this domain/contains rule if it exists
           // Hide any dropdowns
           root.querySelector('.rule-dropdown')?.classList.add('hidden');
           root.querySelector('.filetype-dropdown')?.classList.add('hidden');
           
-          // Check if there's a domain or extension rule (use stored values)
+          // Check if there's a domain or contains rule (use stored values)
           const domainRule = this.existingDomainRule;
-          const extensionRule = this.existingExtensionRule;
-          const ruleToApply = domainRule || extensionRule;
+          const containsRule = this.existingContainsRule;
+          const ruleToApply = domainRule || containsRule;
           
           if (ruleToApply) {
             // Apply this rule's folder to the download
@@ -1952,7 +1953,7 @@ class DownloadOverlay {
             // Update the rule info
             this.currentDownloadInfo.finalRule = {
               ...ruleToApply,
-              source: domainRule ? 'domain' : 'extension'
+              source: domainRule ? 'domain' : 'contains'
             };
             this.currentDownloadInfo.matchedRule = this.currentDownloadInfo.finalRule;
             
@@ -1966,7 +1967,7 @@ class DownloadOverlay {
             this.updatePathDisplay();
             await this.refreshRuleButtons();
           } else {
-            // No domain/extension rule exists - show the rule editor to create one
+            // No domain/contains rule exists - show the rule editor to create one
             const editor = root.querySelector('.rule-editor-inline');
             const saveasEditor = root.querySelector('.saveas-editor');
             const groupSelector = root.querySelector('.group-selector-inline');
@@ -1996,7 +1997,7 @@ class DownloadOverlay {
           // Open the options page to edit the current rule
           chrome.runtime.sendMessage({ type: 'openOptions', section: 'rules' });
           if (dropdown) dropdown.classList.add('hidden');
-        } else if (action === 'create-domain' || action === 'create-extension') {
+        } else if (action === 'create-domain' || action === 'create-contains') {
           // Open the full rule editor to create a new rule
           const editor = root.querySelector('.rule-editor-inline');
           const saveasEditor = root.querySelector('.saveas-editor');
@@ -2006,6 +2007,13 @@ class DownloadOverlay {
             if (saveasEditor) saveasEditor.classList.add('hidden');
             if (groupSelector) groupSelector.classList.add('hidden');
             if (dropdown) dropdown.classList.add('hidden');
+            
+            // Set rule editor type based on action
+            if (action === 'create-contains') {
+              this.currentDownloadInfo.ruleEditorType = 'contains';
+            } else if (action === 'create-domain') {
+              this.currentDownloadInfo.ruleEditorType = 'domain';
+            }
             
             editor.classList.remove('hidden');
             this.rulesEditorVisible = true;
@@ -2440,7 +2448,7 @@ class DownloadOverlay {
         ${rules.map((rule, index) => {
           const priority = rule.priority !== undefined ? parseFloat(rule.priority).toFixed(1) : '2.0';
           const sourceLabel = rule.source === 'domain' ? 'DOMAIN' : 
-                             rule.source === 'extension' ? 'EXTENSION' : 
+                             rule.source === 'contains' ? 'CONTAINS' : 
                              rule.source === 'filetype' ? 'FILE TYPE' : 'RULE';
           return `
             <label class="conflict-option">
@@ -2484,7 +2492,7 @@ class DownloadOverlay {
     const ruleSource = rule ? (rule.source || 'default') : 'default';
     const isFileTypeRule = ruleSource === 'filetype';
     const isDomainRule = ruleSource === 'domain';
-    const isExtensionRule = ruleSource === 'extension';
+    const isContainsRule = ruleSource === 'contains';
     
     const capitalizeFirst = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
     
@@ -2496,6 +2504,7 @@ class DownloadOverlay {
     const downloadUrl = this.currentDownloadInfo.url || '';
     const pageUrl = window.location.href || '';
     const currentExt = this.currentDownloadInfo.extension.toLowerCase();
+    const filename = this.currentDownloadInfo.filename || '';
     
     // Normalize domain for comparison (remove protocol, www, etc.)
     const normalizeDomainForMatch = (d) => {
@@ -2569,16 +2578,16 @@ class DownloadOverlay {
     matchingDomainRules.sort((a, b) => (b.value?.length || 0) - (a.value?.length || 0));
     const existingDomainRule = matchingDomainRules[0] || null;
     
-    // Find existing extension rule
-    const existingExtensionRule = allRules.find(r => 
-      r.type === 'extension' && 
+    // Find existing contains rule
+    const existingContainsRule = allRules.find(r => 
+      r.type === 'contains' && 
       r.enabled !== false &&
-      r.value.split(',').map(ext => ext.trim().toLowerCase()).includes(currentExt)
+      r.value.split(',').map(p => p.trim().toLowerCase()).some(phrase => filename.toLowerCase().includes(phrase))
     );
     
     // Update stored values
     this.existingDomainRule = existingDomainRule;
-    this.existingExtensionRule = existingExtensionRule;
+    this.existingContainsRule = existingContainsRule;
     
     // Update the rule button (first button)
     const ruleBtn = root.querySelector('.edit-rule-btn');
@@ -2588,31 +2597,31 @@ class DownloadOverlay {
       
       if (isDomainRule) {
         // Domain rule is ACTIVE
-        ruleBtn.classList.remove('create-rule', 'extension-rule');
+        ruleBtn.classList.remove('create-rule', 'contains-rule');
         ruleBtn.classList.add('active', 'domain-rule');
         if (iconSvg) iconSvg.outerHTML = this.getSVGIcon('check');
         if (textSpan) textSpan.textContent = `Site: ${rule.value || this.getBaseDomain(domain)}`;
-      } else if (isExtensionRule) {
-        // Extension rule is ACTIVE
+      } else if (isContainsRule) {
+        // Contains rule is ACTIVE
         ruleBtn.classList.remove('create-rule', 'domain-rule');
-        ruleBtn.classList.add('active', 'extension-rule');
+        ruleBtn.classList.add('active', 'contains-rule');
         if (iconSvg) iconSvg.outerHTML = this.getSVGIcon('check');
-        if (textSpan) textSpan.textContent = `Extension: .${currentExt}`;
+        if (textSpan) textSpan.textContent = `Contains: ${rule.value || 'phrase'}`;
       } else if (existingDomainRule) {
         // Domain rule EXISTS but not active
-        ruleBtn.classList.remove('create-rule', 'active', 'extension-rule');
+        ruleBtn.classList.remove('create-rule', 'active', 'contains-rule');
         ruleBtn.classList.add('domain-rule');
         if (iconSvg) iconSvg.outerHTML = this.getSVGIcon('settings');
         if (textSpan) textSpan.textContent = `Site: ${existingDomainRule.value || this.getBaseDomain(domain)}`;
-      } else if (existingExtensionRule) {
-        // Extension rule EXISTS but not active
+      } else if (existingContainsRule) {
+        // Contains rule EXISTS but not active
         ruleBtn.classList.remove('create-rule', 'active', 'domain-rule');
-        ruleBtn.classList.add('extension-rule');
+        ruleBtn.classList.add('contains-rule');
         if (iconSvg) iconSvg.outerHTML = this.getSVGIcon('settings');
-        if (textSpan) textSpan.textContent = `Extension: .${currentExt}`;
+        if (textSpan) textSpan.textContent = `Contains: ${existingContainsRule.value || 'phrase'}`;
       } else {
         // No rule exists
-        ruleBtn.classList.remove('active', 'domain-rule', 'extension-rule');
+        ruleBtn.classList.remove('active', 'domain-rule', 'contains-rule');
         ruleBtn.classList.add('create-rule');
         if (iconSvg) iconSvg.outerHTML = this.getSVGIcon('plus');
         if (textSpan) textSpan.textContent = 'Add Site';
@@ -2672,8 +2681,8 @@ class DownloadOverlay {
     const rule = this.currentDownloadInfo.finalRule;
     const source = rule.source || 'rule';
     const priority = rule.priority !== undefined ? parseFloat(rule.priority).toFixed(1) : '2.0';
-    const sourceLabel = source === 'domain' ? 'DOMAIN' : 
-                       source === 'extension' ? 'EXTENSION' : 
+    const sourceLabel = source === 'domain' ? 'DOMAIN' :
+                       source === 'contains' ? 'CONTAINS' :
                        source === 'filetype' ? 'FILE TYPE' : 'RULE';
     
     ruleInfo.innerHTML = `
@@ -2712,17 +2721,17 @@ class DownloadOverlay {
       }
     }
     
-    // Default to filetype rule
-    this.currentDownloadInfo.ruleEditorType = 'filetype';
+    // Default to domain rule
+    this.currentDownloadInfo.ruleEditorType = 'domain';
     
     // Update button text with actual values
     const typeButtons = root.querySelectorAll('.rule-type-btn');
     typeButtons.forEach(btn => {
       // Update button labels
-      if (btn.dataset.type === 'filetype') {
-        btn.textContent = `Add .${this.currentDownloadInfo.extension || 'ext'}`;
-      } else if (btn.dataset.type === 'domain') {
+      if (btn.dataset.type === 'domain') {
         btn.textContent = `Add ${this.getBaseDomain(this.currentDownloadInfo.domain) || 'site'}`;
+      } else if (btn.dataset.type === 'contains') {
+        btn.textContent = 'Add Contains Rule';
       }
       
       // Only add listeners once - check if already added
@@ -2737,9 +2746,10 @@ class DownloadOverlay {
       }
     });
     
-    // Reset button active states
+    // Reset button active states based on ruleEditorType
+    const activeType = this.currentDownloadInfo.ruleEditorType || 'domain';
     typeButtons.forEach(btn => {
-      if (btn.dataset.type === 'filetype') {
+      if (btn.dataset.type === activeType) {
         btn.classList.add('active');
       } else {
         btn.classList.remove('active');
@@ -2794,7 +2804,19 @@ class DownloadOverlay {
     const type = this.currentDownloadInfo.ruleEditorType || 'filetype';
     
     if (label) {
-      label.textContent = type === 'domain' ? 'Site' : 'Extension';
+      if (type === 'domain') {
+        label.textContent = 'Site';
+      } else if (type === 'contains') {
+        label.textContent = 'Filename contains phrase';
+      }
+    }
+    
+    if (valueInput) {
+      if (type === 'domain') {
+        valueInput.placeholder = 'e.g., github.com';
+      } else if (type === 'contains') {
+        valueInput.placeholder = 'e.g., invoice, receipt, report';
+      }
     }
     
     if (type === 'domain') {
@@ -2818,9 +2840,10 @@ class DownloadOverlay {
       
       valueInput.value = domainToUse;
       valueInput.placeholder = 'e.g., github.com';
-    } else {
-      valueInput.value = this.currentDownloadInfo.extension || '';
-      valueInput.placeholder = 'e.g., .svg,.png,.jpg';
+    } else if (type === 'contains') {
+      // For contains rules, leave empty for user to enter phrase
+      valueInput.value = '';
+      valueInput.placeholder = 'e.g., invoice, receipt, report';
     }
   }
 
@@ -2829,7 +2852,7 @@ class DownloadOverlay {
    */
   async applyInlineRuleChanges() {
     const root = this.shadowRoot;
-    const ruleType = this.currentDownloadInfo.ruleEditorType || 'filetype';
+    const ruleType = this.currentDownloadInfo.ruleEditorType || 'domain';
     
     const valueInput = root.querySelector('#rule-value-input');
     const folderInput = root.querySelector('#rule-folder-input');
@@ -2860,8 +2883,9 @@ class DownloadOverlay {
       ruleValue = ruleValue.replace(/^\./, '').replace(/,/g, ',').split(',').map(ext => ext.trim().replace(/^\./, '')).filter(ext => ext).join(',');
     }
     
-    // Map ruleType to storage format: 'filetype' -> 'extension'
-    const storageRuleType = ruleType === 'filetype' ? 'extension' : ruleType;
+    // Map ruleType to storage format
+    // 'contains' stays as 'contains', 'domain' stays as 'domain'
+    const storageRuleType = ruleType;
     
     // Send rule to background and wait for it to be saved
     try {
@@ -2902,7 +2926,7 @@ class DownloadOverlay {
         type: storageRuleType,
         value: ruleValue,
         folder: folder,
-        source: storageRuleType, // 'domain' or 'extension'
+        source: storageRuleType, // 'domain' or 'contains'
         priority: 2.0
       };
       this.currentDownloadInfo.matchedRule = this.currentDownloadInfo.finalRule;
@@ -3100,16 +3124,17 @@ class DownloadOverlay {
         }
       }
     } else {
-      // Extension rule configuration
-      const targetType = root.querySelector('.extension-rule-config .target-select').value;
+      // Contains rule configuration
+      const targetType = root.querySelector('.contains-rule-config .target-select').value;
       if (targetType === 'folder') {
         const folder = root.querySelector('.folder-target .folder-input').value;
-        if (folder) {
+        const containsPhrase = root.querySelector('#rule-value-input')?.value || '';
+        if (folder && containsPhrase) {
           chrome.runtime.sendMessage({
             type: 'addRule',
             rule: {
-              type: 'extension',
-              value: this.currentDownloadInfo.extension,
+              type: 'contains',
+              value: containsPhrase,
               folder: folder
             }
           });

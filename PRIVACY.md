@@ -20,7 +20,7 @@ This extension does not collect, store, or transmit any personal data to externa
 
 All extension data is stored locally on your device using Chrome's storage API:
 
-- **Routing rules**: Domain and file type rules you create
+- **Routing rules**: Domain, contains (filename pattern), and file type rules you create
 - **Settings**: Confirmation timeout, conflict resolution preferences
 - **Statistics**: Local download counts (never transmitted)
 - **Recent activity**: Last few downloads for the popup display
