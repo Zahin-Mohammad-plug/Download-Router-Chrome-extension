@@ -114,14 +114,24 @@ async function moveFile(sourcePath, destinationPath) {
     //   Outputs: Extension string (including dot)
     finalDestination = await resolveDestinationPath(finalDestination);
 
-    // Move file
-    // fs.rename: Moves/renames file or directory
-    //   Inputs: Source path, destination path
-    //   Outputs: Promise (rejects if move fails)
+    // Move file - handle cross-device moves (EXDEV error)
+    // fs.rename doesn't work across different drives/volumes
     console.error('moveFile: Moving', sourcePath, 'to', finalDestination);
-    await fs.rename(sourcePath, finalDestination);
+    try {
+      await fs.rename(sourcePath, finalDestination);
+      console.error('moveFile: Success (rename)');
+    } catch (error) {
+      if (error.code === 'EXDEV') {
+        // Cross-device link error - copy then delete
+        console.error('moveFile: Cross-device detected, using copy+delete');
+        await fs.copyFile(sourcePath, finalDestination);
+        await fs.unlink(sourcePath);
+        console.error('moveFile: Success (copy+delete)');
+      } else {
+        throw error;
+      }
+    }
 
-    console.error('moveFile: Success');
     return {
       success: true,
       moved: true,

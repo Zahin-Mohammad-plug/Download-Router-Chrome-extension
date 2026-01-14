@@ -22,3 +22,4 @@ companion/build/
 # Debug logs
 logs/debug/*.log
 logs/debug/*-latest.log
+CASE_STUDY.md

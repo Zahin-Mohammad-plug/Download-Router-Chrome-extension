@@ -129,28 +129,48 @@ async function showSaveAsDialog(filename, defaultDirectory = null) {
         };
       }
     } else if (platform === 'win32') {
-      // Windows: Use PowerShell to show Save As dialog
-      // Use SaveFileDialog for Save As functionality
-      const escapedFilename = filename.replace(/"/g, '""');
-      const escapedDir = defaultDirectory ? defaultDirectory.replace(/"/g, '""') : '';
+      // Windows: Use modern IFileSaveDialog COM interop (same as Chrome's Save As dialog)
+      const escapedFilename = filename.replace(/'/g, "''");
+      const resolvedDir = defaultDirectory || path.join(homedir(), 'Downloads');
+      const escapedDir = resolvedDir.replace(/'/g, "''");
       
+      // Generate PowerShell script file with COM interop code
+      const scriptPath = path.join(require('os').tmpdir(), `file-save-${Date.now()}.ps1`);
       const script = `
-        Add-Type -AssemblyName System.Windows.Forms
-        $saveDialog = New-Object System.Windows.Forms.SaveFileDialog
-        $saveDialog.FileName = "${escapedFilename}"
-        $saveDialog.Title = "Save As"
-        $saveDialog.Filter = "All Files (*.*)|*.*"
-        ${escapedDir ? `$saveDialog.InitialDirectory = "${escapedDir}"` : ''}
-        if ($saveDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-          Write-Output $saveDialog.FileName
-        }
-      `;
+$ErrorActionPreference = 'Stop'
+[void] [System.Reflection.Assembly]::LoadWithPartialName("System.windows.forms")
+
+$FileSave = New-Object System.Windows.Forms.SaveFileDialog
+$FileSave.Filter = "All Files (*.*)|*.*"
+$FileSave.FileName = '${escapedFilename}'
+$FileSave.InitialDirectory = '${escapedDir}'
+$FileSave.Title = "Save As"
+$FileSave.RestoreDirectory = $true
+
+$Result = $FileSave.ShowDialog()
+
+if ($Result -eq [System.Windows.Forms.DialogResult]::OK) {
+    Write-Output $FileSave.FileName
+} else {
+    exit 1
+}
+`.trim();
       
       try {
-        const selectedPath = execSync(`powershell -Command "${script}"`, {
+        fs.writeFileSync(scriptPath, script, 'utf8');
+        
+        const selectedPath = execSync(`powershell -ExecutionPolicy Bypass -File "${scriptPath}"`, {
           encoding: 'utf8',
-          timeout: 60000
+          timeout: 120000,
+          windowsHide: false
         }).trim();
+        
+        // Clean up script file
+        try {
+          fs.unlinkSync(scriptPath);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
         
         if (selectedPath) {
           return {
@@ -167,6 +187,21 @@ async function showSaveAsDialog(filename, defaultDirectory = null) {
           };
         }
       } catch (error) {
+        // Clean up script file
+        try {
+          fs.unlinkSync(scriptPath);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+        
+        console.error('showSaveAsDialog PowerShell error:', {
+          message: error.message,
+          status: error.status,
+          code: error.code,
+          stderr: error.stderr ? error.stderr.toString().substring(0, 500) : 'none',
+          stdout: error.stdout ? error.stdout.toString().substring(0, 500) : 'none'
+        });
+        
         return {
           success: false,
           error: 'User cancelled file save dialog',

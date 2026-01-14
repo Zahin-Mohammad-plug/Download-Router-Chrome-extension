@@ -160,10 +160,11 @@ class NativeMessagingClient {
    */
   async pickFolder(startPath = null) {
     try {
+      // Use longer timeout for folder picker (2 minutes) - user may take time browsing
       const response = await this.sendMessage({
         type: 'pickFolder',
         startPath: startPath
-      });
+      }, 120000); // 2 minute timeout
       
       if (response.success && response.path) {
         return response.path;

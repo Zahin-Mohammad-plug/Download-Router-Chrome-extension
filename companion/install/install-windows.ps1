@@ -39,11 +39,23 @@ if (-not $ExecutablePath) {
     }
 }
 
-# Development mode
+# Development mode - use batch file wrapper
 if (-not $ExecutablePath) {
-    if (Test-Path "$CompanionDir\node_modules\.bin\electron.cmd") {
-        $ExecutablePath = "node"
-        $NodeArgs = "$CompanionDir\main.js"
+    $BatWrapper = Join-Path $CompanionDir "run-companion.bat"
+    if ((Test-Path "$CompanionDir\node_modules") -and (Test-Path "$CompanionDir\main.js")) {
+        # Create batch wrapper if it doesn't exist
+        if (-not (Test-Path $BatWrapper)) {
+            $BatContent = @"
+@echo off
+:: Windows batch file wrapper for Download Router Companion
+:: This is needed for Chrome Native Messaging in development mode
+cd /d "%~dp0"
+node "%~dp0main.js" %*
+"@
+            $BatContent | Out-File -FilePath $BatWrapper -Encoding ascii
+            Write-Host "✓ Created batch wrapper for development mode" -ForegroundColor Green
+        }
+        $ExecutablePath = $BatWrapper
     } else {
         Write-Host "Error: Could not find companion executable" -ForegroundColor Red
         Write-Host ""
@@ -117,13 +129,17 @@ $ManifestContent = $ManifestContent -replace "YOUR_EXTENSION_ID", $ExtensionId
 # Parse JSON
 $Manifest = $ManifestContent | ConvertFrom-Json
 
+# Write manifest to file (Windows expects registry to point to a JSON file path)
+$ManifestOutput = Join-Path $CompanionDir "manifests\com.downloadrouter.host.windows.json"
+$Manifest | ConvertTo-Json -Depth 8 | Set-Content -Path $ManifestOutput -Encoding utf8
+
 # Create registry key
 if (-not (Test-Path $RegistryPath)) {
     New-Item -Path $RegistryPath -Force | Out-Null
 }
 
-# Write manifest to registry
-Set-ItemProperty -Path $RegistryPath -Name "(default)" -Value ($Manifest | ConvertTo-Json -Compress) -Type String
+# Point registry to manifest file path (not the JSON itself)
+Set-ItemProperty -Path $RegistryPath -Name "(default)" -Value $ManifestOutput -Type String
 
 Write-Host "✅ Native messaging host manifest installed successfully!" -ForegroundColor Green
 Write-Host "   Registry location: $RegistryPath" -ForegroundColor Cyan

@@ -1506,13 +1506,14 @@ function addToGroup(extension, groupName) {
         groups[groupName].extensions = extensions.join(',');
       }
       
-      // Find existing extension rule that includes this extension
+      // Find existing extension rule for this group (by folder match)
+      // Search by folder instead of extension to find the group's existing rule
       const existingRuleIndex = rules.findIndex(r => 
-        r.type === 'extension' && r.value.includes(extension)
+        r.type === 'extension' && r.folder === groups[groupName].folder
       );
       
       if (existingRuleIndex >= 0) {
-        // Update existing rule with new extension list and folder
+        // Update existing rule with new extension list
         rules[existingRuleIndex].value = groups[groupName].extensions;
         rules[existingRuleIndex].folder = groups[groupName].folder;
       } else {

@@ -342,6 +342,11 @@ class OptionsApp {
         this.openFolderPicker(async (folder) => {
           if (folder && defaultFolderInput) {
             defaultFolderInput.value = folder;
+            // Trigger change event to update any listeners
+            defaultFolderInput.dispatchEvent(new Event('change', { bubbles: true }));
+            // Force UI update
+            defaultFolderInput.blur();
+            defaultFolderInput.focus();
             await this.saveSettingsOnly();
           }
         });
@@ -560,7 +565,10 @@ class OptionsApp {
                 rule.folder = folder;
                 const input = display.querySelector('.rule-folder-quick');
                 const textSpan = display.querySelector('.rule-folder-quick-text');
-                if (input) input.value = folder;
+                if (input) {
+                  input.value = folder;
+                  input.dispatchEvent(new Event('change', { bubbles: true }));
+                }
                 if (textSpan) textSpan.textContent = folder;
                 this.saveRules();
               }
@@ -716,7 +724,10 @@ class OptionsApp {
               this.groups[name].folder = folder;
               const input = display.querySelector('.group-folder-quick');
               const textSpan = display.querySelector('.group-folder-quick-text');
-              if (input) input.value = folder;
+              if (input) {
+                input.value = folder;
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+              }
               if (textSpan) textSpan.textContent = folder;
               this.saveRules();
             }
@@ -824,7 +835,6 @@ class OptionsApp {
             if (response.path) {
               // User selected a folder via native picker
               console.log('Folder selected:', response.path);
-              this.folderPickerOpen = false;
               if (callback) {
                 callback(response.path);
               }
@@ -832,7 +842,6 @@ class OptionsApp {
             } else {
               // User cancelled (path is null)
               console.log('User cancelled folder selection');
-              this.folderPickerOpen = false;
               if (callback) callback(null);
               return;
             }
@@ -840,42 +849,39 @@ class OptionsApp {
             if (response.error.includes('cancelled') || response.error.includes('CANCELLED')) {
               // User cancelled - don't show modal
               console.log('User cancelled folder selection (error)');
-              this.folderPickerOpen = false;
               if (callback) callback(null);
               return;
             } else {
-              // Error (but not cancellation) - fall through to modal
+              // Error (but not cancellation)
               console.error('Native folder picker error:', response.error);
-              this.folderPickerOpen = false;
               if (callback) callback(null);
               return;
             }
           } else {
             // No response or unexpected format - show error
             console.error('Unexpected native folder picker response:', response);
-            this.folderPickerOpen = false;
             if (callback) callback(null);
             return;
           }
         } catch (error) {
           // Native picker failed
           console.error('Native picker failed:', error.message);
-          this.folderPickerOpen = false;
           if (callback) callback(null);
           return;
         }
       } else {
         // Companion app not installed - show error
         console.log('Companion app not available for folder picking');
-        this.folderPickerOpen = false;
         if (callback) callback(null);
         return;
       }
     } catch (error) {
       // Companion app check failed - show error
       console.log('Companion app check failed:', error);
-      this.folderPickerOpen = false;
       if (callback) callback(null);
+    } finally {
+      // CRITICAL: Always clear the flag, no matter what happens
+      this.folderPickerOpen = false;
     }
   }
 

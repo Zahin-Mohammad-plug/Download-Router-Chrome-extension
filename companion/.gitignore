@@ -4,3 +4,5 @@ dist/
 .DS_Store
 .extension-id
 *.pem
+run-companion.bat
+scripts/

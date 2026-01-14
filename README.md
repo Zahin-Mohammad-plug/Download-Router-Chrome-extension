@@ -156,6 +156,25 @@ npm run build:win  # Build Windows installer (from macOS, but test on Windows)
 
 The same codebase builds for both platforms. Platform detection happens at runtime.
 
+**Development logs:**
+
+When running the companion app in development mode (via `npm start` or the batch/shell scripts), logs are written to:
+- **macOS**: `~/Library/Logs/Download Router Companion/`
+- **Windows**: `%APPDATA%\Download Router Companion\logs\`
+
+View logs in real-time:
+```bash
+# macOS/Linux
+tail -f ~/Library/Logs/Download\ Router\ Companion/companion-main-latest.log
+
+# Windows (PowerShell)
+Get-Content "$env:APPDATA\Download Router Companion\logs\companion-main-latest.log" -Wait -Tail 20
+```
+
+**Production logs:**
+
+When installed via the DMG/MSI installer, logs are in the same locations as development. The companion app always logs to the user's application data directory regardless of how it was installed.
+
 ## Known issues and limitations
 
 - Companion app installer needs work (documented in progress)
@@ -175,7 +194,13 @@ The same codebase builds for both platforms. Platform detection happens at runti
 - Check the native messaging host manifest exists (see `companion/INSTALL.md`)
 - Verify the extension ID in the manifest matches your actual extension ID
 - Restart Chrome completely (not just reload)
-- Check logs at `~/Library/Logs/Download Router Companion/` (macOS)
+- Check companion app logs (see below)
+
+**Companion app logs location:**
+- **macOS**: `~/Library/Logs/Download Router Companion/`
+- **Windows**: `%APPDATA%\Download Router Companion\logs\`
+
+The logs contain detailed information about native messaging communication, folder picker operations, and any errors. The `companion-main-latest.log` file always contains the most recent activity.
 
 **Overlay not appearing:**
 - Some sites block content script injection

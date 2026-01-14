@@ -1,0 +1,9 @@
+{
+  "name": "com.downloadrouter.host",
+  "description": "Download Router Companion - Native Messaging Host",
+  "path": "C:\\Users\\Moi\\Desktop\\GitHub\\Download-Router-Chrome-extension\\companion\\run-companion.bat",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://fglfabjjmmejgdnllgidbdamemgjneif/"
+  ]
+}

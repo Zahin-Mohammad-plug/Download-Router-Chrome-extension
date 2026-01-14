@@ -155,9 +155,21 @@ nativeMessagingHost.onMessage(async (message) => {
       // Use native OS commands instead of Electron for instant response
       if (message.type === 'pickFolder') {
         // Use native OS folder picker (no Electron needed)
+        logToFile('Received pickFolder message, startPath: ' + JSON.stringify(message.startPath));
         const nativeFolderPicker = require('./services/folder-picker-native');
-        const result = await nativeFolderPicker.pickFolder(message.startPath || null);
-        return result;
+        try {
+          const result = await nativeFolderPicker.pickFolder(message.startPath || null);
+          logToFile('pickFolder result: ' + JSON.stringify(result));
+          return result;
+        } catch (pickError) {
+          logToFile('pickFolder error: ' + pickError.message + '\nStack: ' + pickError.stack);
+          return {
+            success: false,
+            error: pickError.message,
+            code: 'PICKER_ERROR',
+            type: 'folderPicked'
+          };
+        }
       }
       
       if (message.type === 'showSaveAsDialog') {
