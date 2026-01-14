@@ -253,6 +253,20 @@ class DownloadOverlay {
         }
         sendResponse({ success: true });
         return true;
+      } else if (message.type === 'settingsChanged') {
+        // Settings have been updated - update live timer if overlay is showing
+        if (this.currentDownloadInfo && this.countdownInterval) {
+          const newTimeout = message.confirmationTimeout || 5000;
+          const newTimeoutSeconds = Math.floor(newTimeout / 1000);
+
+          // Restart countdown with new duration
+          this.stopCountdown();
+          this.startCountdown(newTimeoutSeconds);
+
+          console.log(`Timer updated to ${newTimeoutSeconds}s due to settings change`);
+        }
+        sendResponse({ success: true });
+        return true;
       }
     });
   }

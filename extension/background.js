@@ -43,6 +43,9 @@ try {
 // Map to track pending downloads that are awaiting user confirmation or processing
 let pendingDownloads = new Map();
 
+// Map to track completed downloads for notification clicks
+let completedDownloads = new Map();
+
 // Companion app status cache
 let companionAppStatus = {
   installed: false,
@@ -616,6 +619,75 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
 });
 
 /**
+ * Listen for rule/group changes and reload rules for pending downloads
+ * Fixes timing bug where rules added during download don't apply
+ */
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  // Only respond to sync storage changes (where rules are stored)
+  if (areaName !== 'sync') return;
+
+  // Check if rules or groups changed
+  if (changes.rules || changes.groups) {
+    console.log('Rules/groups changed, checking pending downloads');
+
+    // For each pending download, reload rules and recalculate destination
+    pendingDownloads.forEach((downloadInfo, downloadId) => {
+      // Only reprocess if download hasn't been confirmed yet and countdown is not paused
+      if (!downloadInfo.confirmed && !downloadInfo.timeoutPaused) {
+        console.log(`Reprocessing rules for download ${downloadId}`);
+
+        // Reload rules from storage
+        chrome.storage.sync.get(['rules', 'groups', 'conflictResolution'], (data) => {
+          const rules = data.rules || [];
+          const groups = data.groups || {};
+          const conflictResolution = data.conflictResolution || 'auto';
+
+          // Get download item info
+          const filename = downloadInfo.filename;
+          const url = downloadInfo.url;
+          const extension = filename.split('.').pop().toLowerCase();
+
+          // Re-calculate matching rules (simplified version of matching logic)
+          let domainMatches = [];
+          try {
+            const domain = new URL(url).hostname;
+            domainMatches = rules.filter(rule => {
+              if (rule.type !== 'domain' || rule.enabled === false) return false;
+              // Use basic matching - proper matching is in main download handler
+              const normRule = rule.value.replace(/^www\./, '').toLowerCase();
+              const normDomain = domain.replace(/^www\./, '').toLowerCase();
+              return normDomain === normRule || normDomain.endsWith('.' + normRule);
+            });
+          } catch (e) {
+            console.error('Error parsing URL for rule update:', e);
+          }
+
+          if (domainMatches.length > 0) {
+            // Update the download info with new matching rules
+            downloadInfo.newRulesMatched = true;
+            downloadInfo.updatedRules = domainMatches;
+
+            // Notify the content script to update the overlay
+            chrome.tabs.query({}, (tabs) => {
+              tabs.forEach(tab => {
+                chrome.tabs.sendMessage(tab.id, {
+                  type: 'rulesUpdated',
+                  downloadId: downloadId,
+                  matchingRules: domainMatches,
+                  message: `New rule available for ${domainMatches[0].value}`
+                }).catch(() => {
+                  // Ignore errors for tabs without content script
+                });
+              });
+            });
+          }
+        });
+      }
+    });
+  }
+});
+
+/**
  * Message listener for communication with content scripts and popup.
  * Handles various operations requested by UI components.
  * 
@@ -1132,15 +1204,64 @@ chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) =
  * External Dependencies:
  *   - chrome.notifications API: For notification click events
  */
+/**
+ * Opens folder containing downloaded file
+ * Works with or without companion app using fallback strategy
+ */
+async function openDownloadFolder(filePath, downloadId) {
+  // Try companion app first for best UX (highlights file)
+  try {
+    const companionStatus = await self.nativeMessagingClient.checkCompanionApp();
+
+    if (companionStatus && companionStatus.installed) {
+      const result = await self.nativeMessagingClient.openFolder(filePath);
+      if (result && result.success) {
+        return; // Success - file opened with companion app
+      }
+    }
+  } catch (error) {
+    console.log('Companion app not available or failed:', error.message);
+  }
+
+  // Fallback: Use Chrome's built-in downloads API
+  if (downloadId) {
+    try {
+      await chrome.downloads.show(downloadId);
+      return;
+    } catch (error) {
+      console.error('Failed to show download with Chrome API:', error);
+    }
+  }
+
+  // Last resort: Open default downloads folder
+  try {
+    chrome.downloads.showDefaultFolder();
+  } catch (error) {
+    console.error('Failed to show downloads folder:', error);
+  }
+}
+
 chrome.notifications.onClicked.addListener((notificationId) => {
-  // Retrieve download info and proceed if found
-  const downloadInfo = pendingDownloads.get(notificationId);
-  if (downloadInfo) {
-    // Proceed with download immediately on notification body click
-    proceedWithDownload(downloadInfo.id);
-    // Clean up notification and tracking
+  // Check if this is a completed download notification
+  const completedData = completedDownloads.get(notificationId);
+
+  if (completedData && completedData.filePath) {
+    // Open folder containing the completed file
+    openDownloadFolder(completedData.filePath, completedData.downloadId);
+
+    // Clean up
     chrome.notifications.clear(notificationId);
-    pendingDownloads.delete(notificationId);
+    completedDownloads.delete(notificationId);
+  } else {
+    // Fallback to pending downloads (confirmation overlay)
+    const downloadInfo = pendingDownloads.get(notificationId);
+    if (downloadInfo) {
+      // Proceed with download immediately on notification body click
+      proceedWithDownload(downloadInfo.id);
+      // Clean up notification and tracking
+      chrome.notifications.clear(notificationId);
+      pendingDownloads.delete(notificationId);
+    }
   }
 });
 
@@ -1255,11 +1376,18 @@ chrome.downloads.onChanged.addListener(async (downloadDelta) => {
             const destParts = downloadInfo.absoluteDestination.split(/[/\\]/).filter(p => p);
             const destFolder = destParts[destParts.length - 1] || 'Downloads';
             // Update notification
-            chrome.notifications.create({
+            const notificationId = `download_${downloadInfo.id}_${Date.now()}`;
+            chrome.notifications.create(notificationId, {
               type: 'basic',
               iconUrl: 'icons/icon128.png',
               title: 'File Routed Successfully',
               message: `${downloadInfo.filename} moved to ${destFolder}`
+            });
+            // Store download info for click handler
+            completedDownloads.set(notificationId, {
+              downloadId: downloadInfo.id,
+              filePath: downloadInfo.absoluteDestination,
+              filename: downloadInfo.filename
             });
           } else {
             console.error('Failed to move file to absolute destination');

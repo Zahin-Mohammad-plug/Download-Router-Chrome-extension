@@ -377,14 +377,26 @@ class OptionsApp {
     const conflictResolution = document.querySelector('input[name="conflict-resolution"]:checked')?.value || 'auto';
     const defaultFolderInput = document.getElementById('default-folder');
     const defaultFolder = defaultFolderInput ? defaultFolderInput.value : 'Downloads';
-    
+
     await chrome.storage.sync.set({
       confirmationEnabled: confirmationEnabled,
       confirmationTimeout: confirmationTimeout,
       defaultFolder: defaultFolder,
       conflictResolution: conflictResolution
     });
-    
+
+    // Notify all tabs of settings change so overlays can update in real-time
+    const tabs = await chrome.tabs.query({});
+    tabs.forEach(tab => {
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'settingsChanged',
+        confirmationTimeout: confirmationTimeout,
+        confirmationEnabled: confirmationEnabled
+      }).catch(() => {
+        // Ignore errors for tabs without content script
+      });
+    });
+
     this.showStatus('Settings saved', 'success');
   }
 
