@@ -85,6 +85,9 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   position: relative;
   overflow: hidden;
+  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
 }
 
 .app-header::before {
@@ -1047,6 +1050,41 @@ input:checked + .toggle-slider:before {
   .app-footer {
     flex-direction: column;
     text-align: center;
+  }
+}
+
+/* Companion App Status Banner */
+#companion-status {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 12px 24px;
+  border-radius: 0;
+}
+
+/* Responsive Settings - Make Save button visible on small screens */
+.settings-grid {
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+  padding-bottom: 80px;
+}
+
+.section-actions {
+  position: sticky;
+  bottom: 0;
+  background: var(--background);
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+@media (max-height: 600px) {
+  .settings-grid {
+    max-height: calc(100vh - 150px);
   }
 }
 

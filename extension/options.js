@@ -459,7 +459,7 @@ class OptionsApp {
           <div class="item-type">
             <span class="item-icon">${iconHTML}</span>
             <select class="quick-edit rule-type-quick" data-index="${index}">
-              <option value="domain" ${rule.type === 'domain' ? 'selected' : ''}>Domain Rule</option>
+              <option value="domain" ${rule.type === 'domain' ? 'selected' : ''}>Site Rule</option>
               <option value="extension" ${rule.type === 'extension' ? 'selected' : ''}>Extension Rule</option>
             </select>
           </div>
@@ -470,7 +470,7 @@ class OptionsApp {
         </div>
         <div class="item-content quick-edit-content">
           <div class="form-group quick-edit-group">
-            <label class="form-label">${rule.type === 'domain' ? 'Domain' : 'Extensions'}</label>
+            <label class="form-label">${rule.type === 'domain' ? 'Site' : 'Extensions'}</label>
             <input type="text" class="form-input quick-edit-input rule-value-quick" 
                    value="${rule.value || ''}" 
                    data-index="${index}"
@@ -525,7 +525,7 @@ class OptionsApp {
           const valueInput = e.target.closest('.rule-item').querySelector('.rule-value-quick');
           const label = valueInput?.closest('.form-group').querySelector('.form-label');
           if (label) {
-            label.textContent = e.target.value === 'domain' ? 'Domain' : 'Extensions';
+            label.textContent = e.target.value === 'domain' ? 'Site' : 'Extensions';
           }
           if (valueInput) {
             valueInput.placeholder = e.target.value === 'domain' ? 'e.g., github.com' : 'e.g., stl,obj,3mf';
@@ -763,22 +763,42 @@ class OptionsApp {
   setupModalListeners() {
     const overlay = document.getElementById('modal-overlay');
     if (!overlay) return;
-    
+
     const closeBtn = document.getElementById('close-modal');
     const cancelBtn = document.getElementById('modal-cancel');
     const selectBtn = document.getElementById('modal-select');
-    
+
     if (closeBtn) {
       closeBtn.addEventListener('click', () => this.closeModal());
     }
     if (cancelBtn) {
       cancelBtn.addEventListener('click', () => this.closeModal());
     }
-    
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) this.closeModal();
+
+    // Track if user is selecting text to prevent closing modal during selection
+    let isSelecting = false;
+
+    overlay.addEventListener('mousedown', (e) => {
+      if (e.target === overlay) {
+        isSelecting = false;
+      }
     });
-    
+
+    overlay.addEventListener('mousemove', (e) => {
+      // If mouse moves during mousedown, user is selecting
+      if (e.buttons === 1 && e.target !== overlay) {
+        isSelecting = true;
+      }
+    });
+
+    overlay.addEventListener('click', (e) => {
+      // Only close if clicking overlay directly AND not selecting text
+      if (e.target === overlay && !isSelecting) {
+        this.closeModal();
+      }
+      isSelecting = false;
+    });
+
     if (selectBtn) {
       selectBtn.addEventListener('click', () => {
         // Modal selection handled by native picker now
@@ -936,12 +956,12 @@ class OptionsApp {
         <div class="form-group">
           <label class="form-label">Rule Type</label>
           <select class="form-select" id="edit-rule-type">
-            <option value="domain" ${rule.type === 'domain' ? 'selected' : ''}>Domain</option>
+            <option value="domain" ${rule.type === 'domain' ? 'selected' : ''}>Site</option>
             <option value="extension" ${rule.type === 'extension' ? 'selected' : ''}>Extension</option>
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">${rule.type === 'domain' ? 'Domain' : 'Extensions'}</label>
+          <label class="form-label">${rule.type === 'domain' ? 'Site' : 'Extensions'}</label>
           <input type="text" class="form-input" id="edit-rule-value" value="${rule.value || ''}" placeholder="${rule.type === 'domain' ? 'e.g., github.com' : 'e.g., stl,obj,3mf'}">
         </div>
         <div class="form-group">
@@ -1115,7 +1135,7 @@ class OptionsApp {
             <div class="form-group" style="margin-top: 16px;">
               <label class="toggle-label">
                 <input type="checkbox" id="edit-group-override" ${group.overrideDomainRules ? 'checked' : ''}>
-                <span>Override Domain Rules</span>
+                <span>Override Site Rules</span>
               </label>
               <div class="help-text">Forces file type match even if a domain rule exists</div>
             </div>

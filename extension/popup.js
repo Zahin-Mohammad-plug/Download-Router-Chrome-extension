@@ -63,6 +63,8 @@ class PopupApp {
     this.updateDisplay();
     // Populate recent activity list
     this.loadRecentActivity();
+    // Update "+ Add" button with current site
+    this.updateAddRuleButton();
   }
 
   /**
@@ -341,12 +343,37 @@ class PopupApp {
    */
   renderAllRules() {
     const allRulesList = document.getElementById('all-rules-list');
+    const allRulesSection = document.getElementById('all-rules-preview');
+    const activeRulesSection = document.getElementById('rules-preview');
+    const addRuleQuickBtn = document.getElementById('add-rule-quick');
     if (!allRulesList) return;
 
     const enabledRules = this.rules.filter(r => r.enabled !== false);
+    const currentDomain = this.extractDomain(this.currentTabUrl);
+
     if (enabledRules.length === 0) {
+      // No rules - hide active rules section, show condensed message
+      if (activeRulesSection) {
+        activeRulesSection.style.display = 'none';
+      }
+      if (allRulesSection && allRulesSection.querySelector('h3')) {
+        allRulesSection.querySelector('h3').textContent = 'Rules';
+      }
       allRulesList.innerHTML = '<p class="empty-text">No rules configured</p>';
+
+      // Update + Add button to show current site
+      if (addRuleQuickBtn && currentDomain) {
+        addRuleQuickBtn.textContent = `+ Add ${currentDomain}`;
+      }
       return;
+    }
+
+    // Has rules - show both sections normally
+    if (activeRulesSection) {
+      activeRulesSection.style.display = 'block';
+    }
+    if (allRulesSection && allRulesSection.querySelector('h3')) {
+      allRulesSection.querySelector('h3').textContent = 'All Rules';
     }
 
     // Sort by priority then by type
@@ -371,9 +398,27 @@ class PopupApp {
         </div>
       `;
     }).join('');
-    
+
     if (enabledRules.length > 5) {
       allRulesList.innerHTML += `<p class="more-rules">+${enabledRules.length - 5} more</p>`;
+    }
+  }
+
+  /**
+   * Updates the "+ Add" button text to show the current site domain
+   */
+  updateAddRuleButton() {
+    const addRuleQuickBtn = document.getElementById('add-rule-quick');
+    if (!addRuleQuickBtn) return;
+
+    const currentDomain = this.extractDomain(this.currentTabUrl);
+
+    if (currentDomain) {
+      addRuleQuickBtn.textContent = `+ Add ${currentDomain}`;
+      addRuleQuickBtn.title = `Add rule for ${currentDomain}`;
+    } else {
+      addRuleQuickBtn.textContent = '+ Add Rule';
+      addRuleQuickBtn.title = 'Add a new rule';
     }
   }
 
@@ -395,22 +440,21 @@ class PopupApp {
    */
   loadRecentActivity() {
     const activityList = document.getElementById('activity-list');
+    const recentActivitySection = document.getElementById('recent-activity');
     const activities = this.stats.recentActivity || [];
-    
+
     // Show empty state if no activities
     if (activities.length === 0) {
-      // innerHTML: Sets element's HTML content
-      //   Inputs: HTML string
-      //   Outputs: None (replaces element content)
-      const emptyIconHTML = typeof getIcon !== 'undefined' ? getIcon('list', 48) : '';
-      activityList.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-icon">${emptyIconHTML}</div>
-          <p>No recent downloads</p>
-          <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Start downloading files to see them routed here</p>
-        </div>
-      `;
+      // Hide entire "Recent Downloads" section when empty
+      if (recentActivitySection) {
+        recentActivitySection.style.display = 'none';
+      }
       return;
+    }
+
+    // Show section and populate activities
+    if (recentActivitySection) {
+      recentActivitySection.style.display = 'block';
     }
 
     // Generate HTML for activity items

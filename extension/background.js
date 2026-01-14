@@ -337,7 +337,16 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
   // chrome.storage.sync.get: Retrieves stored extension settings
   //   Inputs: Array of keys to retrieve ['rules', 'tieBreaker', 'confirmationEnabled', 'confirmationTimeout']
   //   Outputs: Calls callback with data object containing stored values
-  chrome.storage.sync.get(['rules', 'groups', 'confirmationEnabled', 'confirmationTimeout', 'defaultFolder', 'conflictResolution'], (data) => {
+  chrome.storage.sync.get(['rules', 'groups', 'confirmationEnabled', 'confirmationTimeout', 'defaultFolder', 'conflictResolution', 'extensionEnabled'], (data) => {
+    // Check if extension is paused
+    const extensionEnabled = data.extensionEnabled !== false;
+
+    if (!extensionEnabled) {
+      // Extension is paused - let Chrome handle the download normally
+      suggest({ filename: downloadItem.filename });
+      return;
+    }
+
     // Load configuration with sensible defaults
     const rules = data.rules || [];
     const groups = data.groups || {};

@@ -1449,7 +1449,7 @@ class DownloadOverlay {
     const isDomainRule = ruleSource === 'domain';
     const isExtensionRule = ruleSource === 'extension';
     
-    // Build the first action button - Domain or Extension rule, or Add Domain
+    // Build the first action button - Site or Extension rule, or Add Site
     // Check if domain/extension rules exist even if not active
     const data = await chrome.storage.sync.get(['rules', 'groups']);
     const allRules = data.rules || [];
@@ -1493,14 +1493,14 @@ class DownloadOverlay {
       r.value.split(',').map(ext => ext.trim().toLowerCase()).includes(currentExt)
     );
     
-    let ruleButtonText = 'Add Domain';
+    let ruleButtonText = 'Add Site';
     let ruleButtonClass = 'create-rule';
     let ruleButtonIcon = 'plus';
     let hasExistingDomainOrExtensionRule = false;
     
     if (isDomainRule) {
       // Domain rule is ACTIVE
-      ruleButtonText = `Domain: ${rule.value || this.getBaseDomain(domain)}`;
+      ruleButtonText = `Site: ${rule.value || this.getBaseDomain(domain)}`;
       ruleButtonClass = 'domain-rule';
       ruleButtonIcon = 'check';
       hasExistingDomainOrExtensionRule = true;
@@ -1512,7 +1512,7 @@ class DownloadOverlay {
       hasExistingDomainOrExtensionRule = true;
     } else if (existingDomainRule) {
       // Domain rule EXISTS but not active
-      ruleButtonText = `Domain: ${existingDomainRule.value || this.getBaseDomain(domain)}`;
+      ruleButtonText = `Site: ${existingDomainRule.value || this.getBaseDomain(domain)}`;
       ruleButtonClass = 'domain-rule';
       ruleButtonIcon = 'settings';
       hasExistingDomainOrExtensionRule = true;
@@ -1597,7 +1597,7 @@ class DownloadOverlay {
             
             <!-- Rule selector dropdown -->
             <div class="rule-dropdown hidden">
-              <div class="dropdown-option" data-action="create-domain">Add Domain Rule</div>
+              <div class="dropdown-option" data-action="create-domain">Add Site Rule</div>
               <div class="dropdown-option" data-action="create-extension">Add Extension Rule</div>
               ${isDomainRule ? `<div class="dropdown-option" data-action="edit-rule">Edit Current Rule</div>` : ''}
               ${isExtensionRule ? `<div class="dropdown-option" data-action="edit-rule">Edit Current Rule</div>` : ''}
@@ -1674,7 +1674,7 @@ class DownloadOverlay {
               
               <div class="rule-editor-form">
                 <div class="form-group">
-                  <label class="form-label">${this.currentDownloadInfo.ruleEditorType === 'domain' ? 'Domain' : 'Extension'}</label>
+                  <label class="form-label">${this.currentDownloadInfo.ruleEditorType === 'domain' ? 'Site' : 'Extension'}</label>
                   <input type="text" 
                          class="folder-input rule-value-input" 
                          id="rule-value-input"
@@ -2460,7 +2460,7 @@ class DownloadOverlay {
         ruleBtn.classList.remove('create-rule', 'extension-rule');
         ruleBtn.classList.add('active', 'domain-rule');
         if (iconSvg) iconSvg.outerHTML = this.getSVGIcon('check');
-        if (textSpan) textSpan.textContent = `Domain: ${rule.value || this.getBaseDomain(domain)}`;
+        if (textSpan) textSpan.textContent = `Site: ${rule.value || this.getBaseDomain(domain)}`;
       } else if (isExtensionRule) {
         // Extension rule is ACTIVE
         ruleBtn.classList.remove('create-rule', 'domain-rule');
@@ -2472,7 +2472,7 @@ class DownloadOverlay {
         ruleBtn.classList.remove('create-rule', 'active', 'extension-rule');
         ruleBtn.classList.add('domain-rule');
         if (iconSvg) iconSvg.outerHTML = this.getSVGIcon('settings');
-        if (textSpan) textSpan.textContent = `Domain: ${existingDomainRule.value || this.getBaseDomain(domain)}`;
+        if (textSpan) textSpan.textContent = `Site: ${existingDomainRule.value || this.getBaseDomain(domain)}`;
       } else if (existingExtensionRule) {
         // Extension rule EXISTS but not active
         ruleBtn.classList.remove('create-rule', 'active', 'domain-rule');
@@ -2484,7 +2484,7 @@ class DownloadOverlay {
         ruleBtn.classList.remove('active', 'domain-rule', 'extension-rule');
         ruleBtn.classList.add('create-rule');
         if (iconSvg) iconSvg.outerHTML = this.getSVGIcon('plus');
-        if (textSpan) textSpan.textContent = 'Add Domain';
+        if (textSpan) textSpan.textContent = 'Add Site';
       }
     }
     
