@@ -1471,16 +1471,22 @@ class DownloadOverlay {
     
     // Find BEST matching domain rule (most specific - longest match wins)
     // Check against domain, download URL, and page URL to support path-based rules
+    // Helper function to match domain with proper subdomain support
+    const matchesDomain = (checkDomain, ruleDomain) => {
+      const norm = {
+        domain: normalizeDomainForMatch(checkDomain),
+        rule: normalizeDomainForMatch(ruleDomain)
+      };
+      // Exact match OR subdomain match
+      return norm.domain === norm.rule || norm.domain.endsWith('.' + norm.rule);
+    };
+
     const matchingDomainRules = allRules.filter(r => {
       if (r.type !== 'domain' || r.enabled === false) return false;
-      const normalizedRuleValue = normalizeDomainForMatch(r.value);
-      // Check if any of our URL sources match the rule value
-      return normalizedDomain.includes(normalizedRuleValue) || 
-             normalizedRuleValue.includes(normalizedDomain) ||
-             normalizedDownloadUrl.includes(normalizedRuleValue) ||
-             normalizedRuleValue.includes(normalizedDownloadUrl) ||
-             normalizedPageUrl.includes(normalizedRuleValue) ||
-             normalizedRuleValue.includes(normalizedPageUrl);
+      // Check if any of our URL sources match the rule value with proper subdomain logic
+      return matchesDomain(normalizedDomain, r.value) ||
+             matchesDomain(normalizedDownloadUrl, r.value) ||
+             matchesDomain(normalizedPageUrl, r.value);
     });
     // Sort by value length (longest first = most specific)
     matchingDomainRules.sort((a, b) => (b.value?.length || 0) - (a.value?.length || 0));
@@ -2423,16 +2429,22 @@ class DownloadOverlay {
     
     // Find BEST matching domain rule (most specific - longest match wins)
     // Check against domain, download URL, and page URL to support path-based rules
+    // Helper function to match domain with proper subdomain support
+    const matchesDomain = (checkDomain, ruleDomain) => {
+      const norm = {
+        domain: normalizeDomainForMatch(checkDomain),
+        rule: normalizeDomainForMatch(ruleDomain)
+      };
+      // Exact match OR subdomain match
+      return norm.domain === norm.rule || norm.domain.endsWith('.' + norm.rule);
+    };
+
     const matchingDomainRules = allRules.filter(r => {
       if (r.type !== 'domain' || r.enabled === false) return false;
-      const normalizedRuleValue = normalizeDomainForMatch(r.value);
-      // Check if any of our URL sources match the rule value
-      return normalizedDomain.includes(normalizedRuleValue) || 
-             normalizedRuleValue.includes(normalizedDomain) ||
-             normalizedDownloadUrl.includes(normalizedRuleValue) ||
-             normalizedRuleValue.includes(normalizedDownloadUrl) ||
-             normalizedPageUrl.includes(normalizedRuleValue) ||
-             normalizedRuleValue.includes(normalizedPageUrl);
+      // Check if any of our URL sources match the rule value with proper subdomain logic
+      return matchesDomain(normalizedDomain, r.value) ||
+             matchesDomain(normalizedDownloadUrl, r.value) ||
+             matchesDomain(normalizedPageUrl, r.value);
     });
     // Sort by value length (longest first = most specific)
     matchingDomainRules.sort((a, b) => (b.value?.length || 0) - (a.value?.length || 0));

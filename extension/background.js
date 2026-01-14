@@ -206,20 +206,47 @@ function isAbsolutePath(path) {
 function normalizeDomain(domain) {
   if (!domain) return '';
   let normalized = domain.trim();
-  
+
   // Remove protocol (http://, https://)
   normalized = normalized.replace(/^https?:\/\//i, '');
-  
+
   // Remove trailing slashes and paths
   normalized = normalized.split('/')[0];
-  
+
   // Remove www. prefix
   normalized = normalized.replace(/^www\./i, '');
-  
+
   // Remove port if present
   normalized = normalized.split(':')[0];
-  
+
   return normalized.toLowerCase();
+}
+
+/**
+ * Matches a domain against a rule with proper subdomain support
+ * Rule "github.com" matches "github.com" and "api.github.com" but NOT "hub.com"
+ *
+ * Inputs:
+ *   - downloadDomain: String domain from download URL
+ *   - ruleValue: String domain from rule
+ *
+ * Outputs: Boolean true if domain matches rule
+ */
+function matchesDomainRule(downloadDomain, ruleValue) {
+  const normalized = {
+    domain: normalizeDomain(downloadDomain),
+    rule: normalizeDomain(ruleValue)
+  };
+
+  // Exact match
+  if (normalized.domain === normalized.rule) return true;
+
+  // Subdomain match: download domain is a subdomain of the rule
+  // e.g., api.github.com matches rule github.com
+  if (normalized.domain.endsWith('.' + normalized.rule)) return true;
+
+  // No match (prevents false positives like hub.com matching github.com)
+  return false;
 }
 
 /**
@@ -371,13 +398,10 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
     // Extract domain from URL and find matching domain rules
     try {
       domain = new URL(url).hostname;
-      const normalizedDomain = normalizeDomain(domain);
       // Filter enabled domain rules
       domainMatches = rules.filter(rule => {
         if (rule.type !== 'domain' || rule.enabled === false) return false;
-        const normalizedRuleValue = normalizeDomain(rule.value);
-        return normalizedDomain.includes(normalizedRuleValue) || 
-               normalizedRuleValue.includes(normalizedDomain);
+        return matchesDomainRule(domain, rule.value);
       }).map(r => ({...r, source: 'domain'}));
     } catch (e) {
       console.error("Invalid URL, cannot determine domain:", url);
