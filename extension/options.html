@@ -6,8 +6,8 @@
   <script src="lib/icons.js"></script>
 </head>
 <body>
-  <div class="app-container">
-    <header class="app-header">
+  <header class="app-header">
+    <div class="app-container">
       <div class="header-content">
         <div class="app-icon" id="options-app-icon"></div>
         <div class="app-title">
@@ -20,8 +20,10 @@
         <button class="tab-btn" data-tab="filetypes">File Types</button>
         <button class="tab-btn" data-tab="settings">Settings</button>
       </nav>
-    </header>
+    </div>
+  </header>
 
+  <div class="app-wrapper">
     <main class="app-main">
       <!-- Rules Tab -->
       <div class="tab-content active" id="rules-tab">
@@ -139,8 +141,10 @@
       </div>
 
     </main>
+  </div>
 
-    <footer class="app-footer">
+  <footer class="app-footer">
+    <div class="app-container">
       <div class="footer-actions">
           <button class="btn secondary" id="reset-options">
             <span class="btn-icon" id="reset-options-icon"></span>
@@ -148,8 +152,8 @@
           </button>
       </div>
       <div class="status-message" id="status"></div>
-    </footer>
-  </div>
+    </div>
+  </footer>
 
   <!-- Modals -->
   <div class="modal-overlay" id="modal-overlay">

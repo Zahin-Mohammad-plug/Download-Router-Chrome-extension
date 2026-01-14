@@ -69,16 +69,23 @@ body {
 .app-container {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
   max-width: 1200px;
+  width: 100%;
   margin: 0 auto;
+  padding: 0 32px;
+}
+
+.app-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Header */
 .app-header {
   background: var(--primary-gradient);
   color: white;
-  padding: 32px;
+  padding: 32px 0;
   box-shadow: var(--shadow-lg);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
@@ -88,6 +95,12 @@ body {
   width: 100%;
   margin: 0;
   box-sizing: border-box;
+}
+
+.app-header .app-container {
+  padding: 0 32px;
+  display: flex;
+  flex-direction: column;
 }
 
 .app-header::before {
@@ -105,7 +118,7 @@ body {
   display: flex;
   align-items: center;
   gap: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   position: relative;
   z-index: 1;
 }
@@ -211,6 +224,7 @@ body {
 .tab-navigation {
   display: flex;
   gap: 0.5rem;
+  align-self: flex-start;
 }
 
 .tab-btn {
@@ -262,8 +276,13 @@ body {
 /* Main Content */
 .app-main {
   flex: 1;
-  padding: 32px;
+  padding: 32px 0;
   background: var(--background);
+}
+
+.app-wrapper .app-container {
+  padding: 32px;
+  flex: 1;
 }
 
 .tab-content {
@@ -895,11 +914,22 @@ input:checked + .toggle-slider:before {
 .app-footer {
   background: var(--surface);
   border-top: 1px solid var(--border);
-  padding: 2rem;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+.app-footer .app-container {
+  padding: 2rem 32px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 2rem;
+  width: 100%;
 }
 
 .footer-actions {
@@ -959,6 +989,8 @@ input:checked + .toggle-slider:before {
   overflow: hidden;
   animation: modalSlideIn var(--transition-slow) var(--ease-standard);
   transform: translateZ(0);
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes modalSlideIn {
@@ -1008,8 +1040,9 @@ input:checked + .toggle-slider:before {
 
 .modal-body {
   padding: 0;
-  max-height: 400px;
+  flex: 1;
   overflow-y: auto;
+  min-height: 0;
 }
 
 .modal-footer {
@@ -1018,12 +1051,21 @@ input:checked + .toggle-slider:before {
   gap: 1rem;
   padding: 1.5rem;
   border-top: 1px solid var(--border);
+  position: sticky;
+  bottom: 0;
+  background: var(--surface);
+  z-index: 10;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
 }
 
 /* Responsive Design */
 @media (max-width: 768px) {
   .app-header {
-    padding: 1rem;
+    padding: 1rem 0;
+  }
+
+  .app-header .app-container {
+    padding: 0 1rem;
   }
   
   .header-content {
@@ -1036,9 +1078,15 @@ input:checked + .toggle-slider:before {
   .tab-navigation {
     justify-content: center;
     flex-wrap: wrap;
+    align-self: center;
   }
   
   .app-main {
+    padding: 1rem 0;
+  }
+
+  .app-wrapper .app-container,
+  .app-footer .app-container {
     padding: 1rem;
   }
   
@@ -1048,8 +1096,13 @@ input:checked + .toggle-slider:before {
   }
   
   .app-footer {
+    padding: 0;
+  }
+
+  .app-footer .app-container {
     flex-direction: column;
     text-align: center;
+    padding: 1rem;
   }
 }
 

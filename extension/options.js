@@ -476,6 +476,10 @@ class OptionsApp {
             </select>
           </div>
           <div class="item-actions">
+            <label class="toggle-label quick-toggle">
+              <input type="checkbox" class="rule-enabled-quick" data-index="${index}" ${enabled ? 'checked' : ''}>
+              <span>Enabled</span>
+            </label>
             <button class="btn secondary small edit-rule" data-index="${index}">Edit</button>
             <button class="btn danger small delete-rule" data-index="${index}">Delete</button>
           </div>
@@ -585,6 +589,28 @@ class OptionsApp {
                 this.saveRules();
               }
             });
+          }
+        }
+      });
+    });
+
+    // Quick edit: Rule enabled toggle
+    document.querySelectorAll('.rule-enabled-quick').forEach(checkbox => {
+      checkbox.addEventListener('change', (e) => {
+        const index = parseInt(e.target.dataset.index);
+        if (!isNaN(index) && this.rules[index]) {
+          this.rules[index].enabled = e.target.checked;
+          this.saveRules();
+          // Update status class
+          const item = e.target.closest('.rule-item');
+          if (item) {
+            if (e.target.checked) {
+              item.classList.remove('status-disabled');
+              item.classList.add('status-enabled');
+            } else {
+              item.classList.remove('status-enabled');
+              item.classList.add('status-disabled');
+            }
           }
         }
       });

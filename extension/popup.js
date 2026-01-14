@@ -346,15 +346,19 @@ class PopupApp {
     const allRulesSection = document.getElementById('all-rules-preview');
     const activeRulesSection = document.getElementById('rules-preview');
     const addRuleQuickBtn = document.getElementById('add-rule-quick');
+    const activeRulesList = document.getElementById('active-rules-list');
     if (!allRulesList) return;
 
     const enabledRules = this.rules.filter(r => r.enabled !== false);
     const currentDomain = this.extractDomain(this.currentTabUrl);
 
     if (enabledRules.length === 0) {
-      // No rules - hide active rules section, show condensed message
+      // No rules - keep active rules section visible to show the button
       if (activeRulesSection) {
-        activeRulesSection.style.display = 'none';
+        activeRulesSection.style.display = 'block';
+      }
+      if (activeRulesList) {
+        activeRulesList.innerHTML = '<p class="empty-text">No matching rules for this site</p>';
       }
       if (allRulesSection && allRulesSection.querySelector('h3')) {
         allRulesSection.querySelector('h3').textContent = 'Rules';

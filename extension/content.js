@@ -205,7 +205,7 @@ class DownloadOverlay {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.type === 'showDownloadOverlay') {
         // Show overlay with download information
-        this.showDownloadOverlay(message.downloadInfo);
+        this.showDownloadOverlay(message.downloadInfo, message.confirmationTimeout, message.confirmationEnabled);
       } else if (message.type === 'checkEditorState') {
         // Check if any editor panels are currently visible
         const hasEditor = this.rulesEditorVisible || this.locationPickerVisible;
@@ -255,8 +255,9 @@ class DownloadOverlay {
         return true;
       } else if (message.type === 'settingsChanged') {
         // Settings have been updated - update live timer if overlay is showing
-        if (this.currentDownloadInfo && this.countdownInterval) {
+        if (this.currentDownloadInfo && this.countdownTimer) {
           const newTimeout = message.confirmationTimeout || 5000;
+          // confirmationTimeout is in milliseconds, convert to seconds
           const newTimeoutSeconds = Math.floor(newTimeout / 1000);
 
           // Restart countdown with new duration
@@ -1391,8 +1392,14 @@ class DownloadOverlay {
    *   - startCountdown: Method in this class to begin auto-save countdown
    *   - showFallbackNotification: Method in this class for error handling
    */
-  async showDownloadOverlay(downloadInfo) {
+  async showDownloadOverlay(downloadInfo, confirmationTimeout, confirmationEnabled) {
     try {
+      // Log overlay initialization with settings
+      console.log('[OVERLAY INIT] confirmationTimeout (ms):', confirmationTimeout);
+      console.log('[OVERLAY INIT] confirmationEnabled:', confirmationEnabled);
+      console.log('[OVERLAY INIT] downloadInfo:', downloadInfo);
+      console.log('[OVERLAY INIT] downloadInfo.finalRule (SNAPSHOT):', JSON.parse(JSON.stringify(downloadInfo.finalRule || null)));
+
       // Create shadow DOM if it doesn't exist
       if (!this.shadowRoot) {
         this.createShadowDOM();
@@ -1400,12 +1407,19 @@ class DownloadOverlay {
 
       // Store download info and initialize overlay
       this.currentDownloadInfo = downloadInfo;
+      console.log('[OVERLAY INIT] After assignment - this.currentDownloadInfo.finalRule:', this.currentDownloadInfo.finalRule);
+      console.log('[OVERLAY INIT] After assignment - finalRule.source:', this.currentDownloadInfo.finalRule?.source);
+      console.log('[OVERLAY INIT] After assignment - finalRule.type:', this.currentDownloadInfo.finalRule?.type);
       // createOverlayContent: Generates and injects HTML into shadow root
       await this.createOverlayContent();
       // setupEventListeners: Attaches click handlers and event listeners
       this.setupEventListeners();
       // startCountdown: Begins countdown timer for auto-save
-      this.startCountdown();
+      const timeoutSeconds = confirmationTimeout ? Math.floor(confirmationTimeout / 1000) : 5;
+      console.log('[OVERLAY INIT] timeoutSeconds calculated:', timeoutSeconds);
+      if (confirmationEnabled) {
+        this.startCountdown(timeoutSeconds);
+      }
     } catch (error) {
       // Fall back to notification system if overlay injection fails
       console.error('Failed to show overlay, using fallback notification:', error);
@@ -1453,10 +1467,25 @@ class DownloadOverlay {
     const formattedSize = fileSize ? this.formatFileSize(fileSize) : '';
 
     // Build rule/file type action buttons based on what rules exist
+    console.log('[OVERLAY CONTENT] Before reading finalRule - this.currentDownloadInfo:', this.currentDownloadInfo);
+    console.log('[OVERLAY CONTENT] this.currentDownloadInfo.finalRule SNAPSHOT:', JSON.parse(JSON.stringify(this.currentDownloadInfo.finalRule || null)));
     const rule = this.currentDownloadInfo.finalRule;
+    console.log('[OVERLAY CONTENT] After const rule = ... , rule SNAPSHOT:', JSON.parse(JSON.stringify(rule || null)));
     const hasRule = !!rule && rule.source !== 'default';
     const hasConflict = this.currentDownloadInfo.conflictRules && this.currentDownloadInfo.conflictRules.length > 0;
-    
+
+    // Log the selected rule and conflict rules
+    console.log('[OVERLAY CONTENT] finalRule selected:', rule);
+    console.log('[OVERLAY CONTENT] conflictRules:', this.currentDownloadInfo.conflictRules);
+    console.log('[OVERLAY CONTENT] hasConflict:', hasConflict);
+
+    // Log available rules from storage
+    const data = await chrome.storage.sync.get(['rules', 'groups']);
+    const allRules = data.rules || [];
+    const groups = data.groups || {};
+    console.log('[OVERLAY CONTENT] all stored rules:', allRules);
+    console.log('[OVERLAY CONTENT] all file type groups:', groups);
+
     // Determine the type of rule that matched
     const ruleSource = rule ? (rule.source || 'default') : 'default';
     const isFileTypeRule = ruleSource === 'filetype';
@@ -1465,9 +1494,7 @@ class DownloadOverlay {
     
     // Build the first action button - Site or Extension rule, or Add Site
     // Check if domain/extension rules exist even if not active
-    const data = await chrome.storage.sync.get(['rules', 'groups']);
-    const allRules = data.rules || [];
-    const groups = data.groups || {};
+    // (already fetched above, reuse the data)
     const domain = this.currentDownloadInfo.domain;
     const downloadUrl = this.currentDownloadInfo.url || '';
     const pageUrl = window.location.href || '';
@@ -1485,22 +1512,61 @@ class DownloadOverlay {
     
     // Find BEST matching domain rule (most specific - longest match wins)
     // Check against domain, download URL, and page URL to support path-based rules
-    // Helper function to match domain with proper subdomain support
-    const matchesDomain = (checkDomain, ruleDomain) => {
-      const norm = {
-        domain: normalizeDomainForMatch(checkDomain),
-        rule: normalizeDomainForMatch(ruleDomain)
-      };
-      // Exact match OR subdomain match
-      return norm.domain === norm.rule || norm.domain.endsWith('.' + norm.rule);
+    // Helper function to match URL against rule (domain and optional path)
+    const matchesRule = (checkUrl, ruleValue) => {
+      // Extract domain and path from check URL
+      let checkDomain = '';
+      let checkPath = '';
+      try {
+        const url = new URL(checkUrl);
+        checkDomain = url.hostname;
+        checkPath = url.pathname;
+      } catch (e) {
+        const match = checkUrl.match(/^(?:https?:\/\/)?(?:www\.)?([^\/]+)(\/.*)?/i);
+        if (match) {
+          checkDomain = match[1];
+          checkPath = match[2] || '';
+        } else {
+          return false;
+        }
+      }
+
+      checkDomain = checkDomain.replace(/^www\./, '').toLowerCase();
+
+      // Parse rule for domain and path
+      let ruleDomain = '';
+      let rulePath = '';
+      let normalized = ruleValue.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '').replace(/^www\./, '');
+      const slashIndex = normalized.indexOf('/');
+      if (slashIndex === -1) {
+        ruleDomain = normalized.toLowerCase();
+        rulePath = '';
+      } else {
+        ruleDomain = normalized.substring(0, slashIndex).toLowerCase();
+        rulePath = normalized.substring(slashIndex);
+      }
+
+      // Check domain match
+      const domainMatches =
+        checkDomain === ruleDomain ||
+        checkDomain.endsWith('.' + ruleDomain);
+
+      if (!domainMatches) return false;
+
+      // Check path match if rule has path
+      if (rulePath) {
+        return checkPath.toLowerCase().startsWith(rulePath.toLowerCase());
+      }
+
+      return true;
     };
 
     const matchingDomainRules = allRules.filter(r => {
       if (r.type !== 'domain' || r.enabled === false) return false;
-      // Check if any of our URL sources match the rule value with proper subdomain logic
-      return matchesDomain(normalizedDomain, r.value) ||
-             matchesDomain(normalizedDownloadUrl, r.value) ||
-             matchesDomain(normalizedPageUrl, r.value);
+      // Check if any of our URL sources match the rule value (with domain and optional path matching)
+      return matchesRule(domain, r.value) ||
+             matchesRule(downloadUrl, r.value) ||
+             matchesRule(pageUrl, r.value);
     });
     // Sort by value length (longest first = most specific)
     matchingDomainRules.sort((a, b) => (b.value?.length || 0) - (a.value?.length || 0));
@@ -1603,7 +1669,7 @@ class DownloadOverlay {
             </div>
             
             <div class="rule-actions-row">
-              <button class="rule-action-btn ${ruleButtonClass} ${isDomainRule || isExtensionRule ? 'active' : ''} edit-rule-btn" title="${isDomainRule || isExtensionRule ? 'Change rule' : 'Add a domain rule'}">
+              <button class="rule-action-btn ${ruleButtonClass} ${isDomainRule || isExtensionRule ? 'active' : ''} edit-rule-btn" title="${isDomainRule || isExtensionRule ? 'Change rule' : 'Add a site rule'}">
                 ${this.getSVGIcon(ruleButtonIcon)}
                 <span>${ruleButtonText}</span>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 4px;"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -1688,7 +1754,7 @@ class DownloadOverlay {
                   Add ${this.currentDownloadInfo.extension || 'file type'}
                 </button>
                 <button class="rule-type-btn" data-type="domain">
-                  Add ${this.getBaseDomain(this.currentDownloadInfo.domain) || 'domain'}
+                  Add ${this.getBaseDomain(this.currentDownloadInfo.domain) || 'site'}
                 </button>
               </div>
               
@@ -2443,22 +2509,61 @@ class DownloadOverlay {
     
     // Find BEST matching domain rule (most specific - longest match wins)
     // Check against domain, download URL, and page URL to support path-based rules
-    // Helper function to match domain with proper subdomain support
-    const matchesDomain = (checkDomain, ruleDomain) => {
-      const norm = {
-        domain: normalizeDomainForMatch(checkDomain),
-        rule: normalizeDomainForMatch(ruleDomain)
-      };
-      // Exact match OR subdomain match
-      return norm.domain === norm.rule || norm.domain.endsWith('.' + norm.rule);
+    // Helper function to match URL against rule (domain and optional path)
+    const matchesRule = (checkUrl, ruleValue) => {
+      // Extract domain and path from check URL
+      let checkDomain = '';
+      let checkPath = '';
+      try {
+        const url = new URL(checkUrl);
+        checkDomain = url.hostname;
+        checkPath = url.pathname;
+      } catch (e) {
+        const match = checkUrl.match(/^(?:https?:\/\/)?(?:www\.)?([^\/]+)(\/.*)?/i);
+        if (match) {
+          checkDomain = match[1];
+          checkPath = match[2] || '';
+        } else {
+          return false;
+        }
+      }
+
+      checkDomain = checkDomain.replace(/^www\./, '').toLowerCase();
+
+      // Parse rule for domain and path
+      let ruleDomain = '';
+      let rulePath = '';
+      let normalized = ruleValue.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '').replace(/^www\./, '');
+      const slashIndex = normalized.indexOf('/');
+      if (slashIndex === -1) {
+        ruleDomain = normalized.toLowerCase();
+        rulePath = '';
+      } else {
+        ruleDomain = normalized.substring(0, slashIndex).toLowerCase();
+        rulePath = normalized.substring(slashIndex);
+      }
+
+      // Check domain match
+      const domainMatches =
+        checkDomain === ruleDomain ||
+        checkDomain.endsWith('.' + ruleDomain);
+
+      if (!domainMatches) return false;
+
+      // Check path match if rule has path
+      if (rulePath) {
+        return checkPath.toLowerCase().startsWith(rulePath.toLowerCase());
+      }
+
+      return true;
     };
 
     const matchingDomainRules = allRules.filter(r => {
       if (r.type !== 'domain' || r.enabled === false) return false;
-      // Check if any of our URL sources match the rule value with proper subdomain logic
-      return matchesDomain(normalizedDomain, r.value) ||
-             matchesDomain(normalizedDownloadUrl, r.value) ||
-             matchesDomain(normalizedPageUrl, r.value);
+      // Check if any of our URL sources match the rule value (with domain and optional path matching)
+      return matchesRule(domain, r.value) ||
+             matchesRule(downloadUrl, r.value) ||
+             matchesRule(pageUrl, r.value);
     });
     // Sort by value length (longest first = most specific)
     matchingDomainRules.sort((a, b) => (b.value?.length || 0) - (a.value?.length || 0));
@@ -2617,7 +2722,7 @@ class DownloadOverlay {
       if (btn.dataset.type === 'filetype') {
         btn.textContent = `Add .${this.currentDownloadInfo.extension || 'ext'}`;
       } else if (btn.dataset.type === 'domain') {
-        btn.textContent = `Add ${this.getBaseDomain(this.currentDownloadInfo.domain) || 'domain'}`;
+        btn.textContent = `Add ${this.getBaseDomain(this.currentDownloadInfo.domain) || 'site'}`;
       }
       
       // Only add listeners once - check if already added
@@ -2689,7 +2794,7 @@ class DownloadOverlay {
     const type = this.currentDownloadInfo.ruleEditorType || 'filetype';
     
     if (label) {
-      label.textContent = type === 'domain' ? 'Domain' : 'Extension';
+      label.textContent = type === 'domain' ? 'Site' : 'Extension';
     }
     
     if (type === 'domain') {
@@ -3145,21 +3250,37 @@ class DownloadOverlay {
    *   - this.shadowRoot: Shadow root containing countdown bar element
    *   - saveDownload: Method in this class to proceed with download
    */
-  startCountdown() {
+  startCountdown(timeoutSeconds = null) {
     // Clear any existing timer first
     if (this.countdownTimer) {
       clearInterval(this.countdownTimer);
       this.countdownTimer = null;
     }
-    
+
     // Get reference to countdown progress bar and text elements
     const root = this.shadowRoot;
     const countdownFill = root.querySelector('#countdown-fill');
     const countdownText = root.querySelector('.countdown-info');
     const countdownSeconds = root.querySelector('#countdown-seconds');
-    // Reset countdown time to 5 seconds (5000 milliseconds)
-    this.timeLeft = 5000; // Reset to 5 seconds
+
+    // Use provided timeout or default to 5 seconds
+    let timeout = timeoutSeconds || 5;
+    if (typeof timeout !== 'number') {
+      timeout = Math.floor(timeout / 1000); // Convert ms to seconds if needed
+    }
+
+    // Reset countdown time (in milliseconds)
+    this.timeLeft = timeout * 1000;
+    this.countdownTotal = timeout * 1000; // Store for percentage calculation
     this.countdownPaused = false;
+
+    // Log countdown start
+    const startTimestamp = new Date().toISOString();
+    console.log('[COUNTDOWN START]', startTimestamp, 'timeout requested (seconds):', timeoutSeconds);
+    console.log('[COUNTDOWN START]', startTimestamp, 'timeout converted (seconds):', timeout);
+    console.log('[COUNTDOWN START]', startTimestamp, 'this.countdownTotal (ms):', this.countdownTotal);
+    console.log('[COUNTDOWN START]', startTimestamp, 'Download file:', this.currentDownloadInfo.filename);
+    this.countdownStartTime = Date.now();
     // Update interval: update progress bar every 50ms for smooth animation
     const interval = 50; // Update every 50ms
     
@@ -3177,7 +3298,7 @@ class DownloadOverlay {
       // Decrement remaining time
       this.timeLeft -= interval;
       // Calculate percentage complete for progress bar (0-100%)
-      const percentage = ((5000 - this.timeLeft) / 5000) * 100;
+      const percentage = ((this.countdownTotal - this.timeLeft) / this.countdownTotal) * 100;
       // Calculate seconds remaining
       const secondsLeft = Math.ceil(this.timeLeft / 1000);
       
@@ -3205,6 +3326,17 @@ class DownloadOverlay {
       
       // Auto-save when countdown reaches zero (only if not paused AND no editors are visible)
       if (this.timeLeft <= 0 && !this.countdownPaused && !this.rulesEditorVisible && !this.locationPickerVisible) {
+        // Log actual elapsed time vs expected
+        const actualElapsed = Date.now() - this.countdownStartTime;
+        const expectedElapsed = this.countdownTotal;
+        const expiredTimestamp = new Date().toISOString();
+        console.log('[COUNTDOWN EXPIRED]', expiredTimestamp, 'Expected time (ms):', expectedElapsed);
+        console.log('[COUNTDOWN EXPIRED]', expiredTimestamp, 'Actual elapsed (ms):', actualElapsed);
+        console.log('[COUNTDOWN EXPIRED]', expiredTimestamp, 'Difference (ms):', actualElapsed - expectedElapsed);
+        console.log('[COUNTDOWN EXPIRED]', expiredTimestamp, 'countdownPaused:', this.countdownPaused);
+        console.log('[COUNTDOWN EXPIRED]', expiredTimestamp, 'rulesEditorVisible:', this.rulesEditorVisible);
+        console.log('[COUNTDOWN EXPIRED]', expiredTimestamp, 'locationPickerVisible:', this.locationPickerVisible);
+
         // clearInterval: Browser built-in function to stop interval
         //   Inputs: Interval ID
         //   Outputs: None (stops interval)
@@ -3214,6 +3346,9 @@ class DownloadOverlay {
         this.saveDownload();
       } else if (this.timeLeft <= 0 && (this.countdownPaused || this.rulesEditorVisible || this.locationPickerVisible)) {
         // Don't save - editor is still open or countdown is paused
+        console.log('[COUNTDOWN EXPIRED BUT PAUSED] countdownPaused:', this.countdownPaused);
+        console.log('[COUNTDOWN EXPIRED BUT PAUSED] rulesEditorVisible:', this.rulesEditorVisible);
+        console.log('[COUNTDOWN EXPIRED BUT PAUSED] locationPickerVisible:', this.locationPickerVisible);
         // Just stop the timer
         clearInterval(this.countdownTimer);
         this.countdownTimer = null;
@@ -3264,6 +3399,8 @@ class DownloadOverlay {
    * Outputs: None (cancels timer and notifies background)
    */
   cancelCountdown() {
+    const cancelTimestamp = new Date().toISOString();
+    console.log('[CONTENT cancelCountdown]', cancelTimestamp, 'Called for download:', this.currentDownloadInfo?.id);
     this.countdownPaused = true;
     // Clear the visual countdown timer immediately
     if (this.countdownTimer) {
@@ -3284,11 +3421,15 @@ class DownloadOverlay {
     
     // Cancel the background script's timeout completely
     if (this.currentDownloadInfo && this.currentDownloadInfo.id) {
+      console.log('[CONTENT cancelCountdown] Sending cancelDownloadTimeout to background for:', this.currentDownloadInfo.id);
       chrome.runtime.sendMessage({
         type: 'cancelDownloadTimeout',
         downloadId: this.currentDownloadInfo.id
       }, (response) => {
+        console.log('[CONTENT cancelCountdown] Background responded:', response);
       });
+    } else {
+      console.log('[CONTENT cancelCountdown] Warning: No download ID to cancel');
     }
   }
 
@@ -3335,8 +3476,14 @@ class DownloadOverlay {
    *   - cleanup: Method in this class to remove overlay from DOM
    */
   saveDownload() {
-    console.log('[SAVE DOWNLOAD]  Current finalRule:', this.currentDownloadInfo.finalRule);
-    console.log('[SAVE DOWNLOAD]  Current resolvedPath:', this.currentDownloadInfo.resolvedPath);
+    const saveTimestamp = new Date().toISOString();
+    const rule = this.currentDownloadInfo.finalRule;
+    console.log('[SAVE DOWNLOAD]', saveTimestamp, 'Triggered for file:', this.currentDownloadInfo.filename);
+    console.log('[SAVE DOWNLOAD]', saveTimestamp, 'Current finalRule:', rule);
+    console.log('[SAVE DOWNLOAD]', saveTimestamp, 'Rule source:', rule?.source || 'none');
+    console.log('[SAVE DOWNLOAD]', saveTimestamp, 'Rule type:', rule?.type || 'none');
+    console.log('[SAVE DOWNLOAD]', saveTimestamp, 'Rule priority:', rule?.priority || 'none');
+    console.log('[SAVE DOWNLOAD]', saveTimestamp, 'Current resolvedPath:', this.currentDownloadInfo.resolvedPath);
     
     // Show brief success message before closing
     const overlayHeader = this.shadowRoot.querySelector('.overlay-header');

@@ -226,30 +226,78 @@ function normalizeDomain(domain) {
 }
 
 /**
- * Matches a domain against a rule with proper subdomain support
+ * Matches a URL against a rule with support for domains and paths
  * Rule "github.com" matches "github.com" and "api.github.com" but NOT "hub.com"
+ * Rule "github.com/Zahin-Mohammad-plug/Download-Router-Chrome-extension"
+ *   matches URLs from that path and subpaths
  *
  * Inputs:
- *   - downloadDomain: String domain from download URL
- *   - ruleValue: String domain from rule
+ *   - downloadUrl: String full URL from download
+ *   - ruleValue: String domain or domain/path from rule
  *
- * Outputs: Boolean true if domain matches rule
+ * Outputs: Boolean true if URL matches rule
  */
-function matchesDomainRule(downloadDomain, ruleValue) {
-  const normalized = {
-    domain: normalizeDomain(downloadDomain),
-    rule: normalizeDomain(ruleValue)
-  };
+function matchesDomainRule(downloadUrl, ruleValue) {
+  // Extract domain and path from download URL
+  let downloadDomain = '';
+  let downloadPath = '';
+  try {
+    const url = new URL(downloadUrl);
+    downloadDomain = url.hostname;
+    downloadPath = url.pathname;
+  } catch (e) {
+    // Invalid URL - try simple parsing
+    const match = downloadUrl.match(/^(?:https?:\/\/)?(?:www\.)?([^\/]+)(\/.*)?/i);
+    if (match) {
+      downloadDomain = match[1];
+      downloadPath = match[2] || '';
+    }
+    return false;
+  }
 
-  // Exact match
-  if (normalized.domain === normalized.rule) return true;
+  // Normalize download domain (remove www)
+  downloadDomain = downloadDomain.replace(/^www\./, '').toLowerCase();
 
-  // Subdomain match: download domain is a subdomain of the rule
-  // e.g., api.github.com matches rule github.com
-  if (normalized.domain.endsWith('.' + normalized.rule)) return true;
+  // Extract domain and path from rule
+  let ruleDomain = '';
+  let rulePath = '';
 
-  // No match (prevents false positives like hub.com matching github.com)
-  return false;
+  // Remove protocol if present
+  let normalized = ruleValue.trim().replace(/^https?:\/\//i, '');
+  // Remove trailing slashes
+  normalized = normalized.replace(/\/$/, '');
+  // Remove www
+  normalized = normalized.replace(/^www\./, '');
+
+  // Split on first slash to get domain and path
+  const slashIndex = normalized.indexOf('/');
+  if (slashIndex === -1) {
+    // No path, just domain
+    ruleDomain = normalized.toLowerCase();
+    rulePath = '';
+  } else {
+    // Has path
+    ruleDomain = normalized.substring(0, slashIndex).toLowerCase();
+    rulePath = normalized.substring(slashIndex);
+  }
+
+  // Check domain match
+  const domainMatches =
+    downloadDomain === ruleDomain ||  // Exact match
+    downloadDomain.endsWith('.' + ruleDomain);  // Subdomain match
+
+  if (!domainMatches) return false;
+
+  // If rule has a path, check path match (case-insensitive)
+  if (rulePath) {
+    const rulePathLower = rulePath.toLowerCase();
+    const downloadPathLower = downloadPath.toLowerCase();
+    // Download path should start with the rule path
+    return downloadPathLower.startsWith(rulePathLower);
+  }
+
+  // No path in rule, domain match is enough
+  return true;
 }
 
 /**
@@ -399,12 +447,48 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
     let domain = 'unknown';
 
     // Extract domain from URL and find matching domain rules
+    // Try multiple URL sources: download URL, referrer, and fallback
+    let urlForMatching = url;
     try {
-      domain = new URL(url).hostname;
+      const parsedUrl = new URL(url);
+      domain = parsedUrl.hostname;
+
+      // If download URL is a blob URL, extract domain from the origin
+      // For blob:https://github.com/xxx, hostname is empty but origin is 'https://github.com'
+      if (!domain && parsedUrl.protocol === 'blob:') {
+        const blobOrigin = parsedUrl.origin;
+        console.log('[BACKGROUND] Blob URL detected, origin:', blobOrigin);
+        if (blobOrigin && blobOrigin !== 'null') {
+          try {
+            const originUrl = new URL(blobOrigin);
+            domain = originUrl.hostname;
+            urlForMatching = blobOrigin;
+            console.log('[BACKGROUND] Blob URL - extracted domain from origin:', domain);
+          } catch (e) {
+            console.log('[BACKGROUND] Failed to parse blob origin:', blobOrigin);
+          }
+        }
+      }
+
+      // If still no domain, try to use the referrer instead
+      if (!domain && downloadItem.referrer) {
+        console.log('[BACKGROUND] No domain found, trying referrer:', downloadItem.referrer);
+        urlForMatching = downloadItem.referrer;
+        domain = new URL(downloadItem.referrer).hostname;
+      }
+
+      console.log('[BACKGROUND] Domain extracted from URL:', domain);
+      console.log('[BACKGROUND] urlForMatching:', urlForMatching);
+
       // Filter enabled domain rules
       domainMatches = rules.filter(rule => {
         if (rule.type !== 'domain' || rule.enabled === false) return false;
-        return matchesDomainRule(domain, rule.value);
+        // Try matching against urlForMatching (which handles blob URLs), original URL, and referrer
+        const match1 = matchesDomainRule(urlForMatching, rule.value);
+        const match2 = matchesDomainRule(url, rule.value);
+        const match3 = downloadItem.referrer ? matchesDomainRule(downloadItem.referrer, rule.value) : false;
+        console.log('[BACKGROUND] Rule:', rule.value, 'match1 (urlForMatching):', match1, 'match2 (url):', match2, 'match3 (referrer):', match3);
+        return match1 || match2 || match3;
       }).map(r => ({...r, source: 'domain'}));
     } catch (e) {
       console.error("Invalid URL, cannot determine domain:", url);
@@ -452,11 +536,19 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
       ...fileTypeMatches
     ];
 
+    // Log matching rules from background.js
+    console.log('[BACKGROUND] Download URL:', url);
+    console.log('[BACKGROUND] Download extension:', extension);
+    console.log('[BACKGROUND] Domain matches:', domainMatches);
+    console.log('[BACKGROUND] Extension matches:', extensionMatches);
+    console.log('[BACKGROUND] File type matches:', fileTypeMatches);
+    console.log('[BACKGROUND] All matches (before sort):', allMatches);
+
     // 2. Sort by priority (lower number = higher priority)
     allMatches.sort((a, b) => {
       const priorityA = parseFloat(a.priority) || 2.0;
       const priorityB = parseFloat(b.priority) || 2.0;
-      
+
       if (priorityA !== priorityB) {
         return priorityA - priorityB;
       }
@@ -464,6 +556,8 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
       const order = { domain: 0, extension: 1, filetype: 2 };
       return (order[a.source] || 999) - (order[b.source] || 999);
     });
+
+    console.log('[BACKGROUND] All matches (after sort):', allMatches);
 
     // 3. Check for conflicts (multiple rules with same priority)
     let finalRule = null;
@@ -496,6 +590,8 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
         finalRule = allMatches[0];
       }
     }
+
+    console.log('[BACKGROUND] Final rule selected:', finalRule);
 
     // Handle conflict rules for "ask" mode
     const topPriority = allMatches.length > 0 ? parseFloat(allMatches[0].priority) || 2.0 : 999;
@@ -562,24 +658,44 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
       // chrome.tabs.query: Queries Chrome tabs matching criteria
       //   Inputs: Query object {active: true, currentWindow: true}
       //   Outputs: Calls callback with array of matching tabs
+      let overlayShown = false;
       chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
         if (tabs[0]) {
+          overlayShown = true;
+          console.log('[BACKGROUND] Sending overlay to tab. downloadInfo.finalRule:', downloadInfo.finalRule);
+          console.log('[BACKGROUND] Sending overlay to tab. downloadInfo.url:', downloadInfo.url);
+          console.log('[BACKGROUND] Sending overlay to tab. downloadItem.referrer:', downloadItem.referrer);
           // chrome.tabs.sendMessage: Sends message to content script in specified tab
           //   Inputs: tabId, message object with type and data
           //   Outputs: None (fire-and-forget message)
           chrome.tabs.sendMessage(tabs[0].id, {
             type: 'showDownloadOverlay',
-            downloadInfo: downloadInfo
+            downloadInfo: downloadInfo,
+            confirmationTimeout: confirmationTimeout,
+            confirmationEnabled: confirmationEnabled
           });
+        } else {
+          // No active tab - proceed immediately with download
+          if (pendingDownloads.has(downloadItem.id)) {
+            proceedWithDownload(downloadItem.id);
+          }
         }
       });
-      
+
       // Set up auto-save timeout if user doesn't interact with overlay
       // Store timeout ID so it can be cancelled when user interacts with overlay
+      // Only set timer if we expect to show the overlay (async, so we just proceed)
+      const timerSetupTimestamp = new Date().toISOString();
+      console.log('[BACKGROUND TIMER]', timerSetupTimestamp, 'Setting up auto-save timeout:', confirmationTimeout, 'ms for download:', downloadItem.id);
+      const timeoutStartTime = Date.now();
       const timeoutId = setTimeout(() => {
+        const elapsed = Date.now() - timeoutStartTime;
+        const timerFiredTimestamp = new Date().toISOString();
+        console.log('[BACKGROUND TIMER]', timerFiredTimestamp, 'Timeout fired after', elapsed, 'ms (expected:', confirmationTimeout, 'ms) for download:', downloadItem.id);
         // Only proceed if download is still pending (not already handled)
         if (pendingDownloads.has(downloadItem.id)) {
           const pendingInfo = pendingDownloads.get(downloadItem.id);
+          console.log('[BACKGROUND TIMER]', timerFiredTimestamp, 'pendingInfo.timeoutPaused:', pendingInfo.timeoutPaused);
           // CRITICAL: Check if timeout was paused by overlay - don't proceed if paused
           // This prevents auto-save when user is editing (even if Chrome loses focus)
           if (!pendingInfo.timeoutPaused) {
@@ -592,6 +708,7 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
                 }, (response) => {
                   // Only proceed if no editor is visible and timeout not paused
                   if (response && !response.hasEditor && !pendingInfo.timeoutPaused) {
+                    console.log('[BACKGROUND TIMER]', new Date().toISOString(), 'Proceeding with download after editor check');
                     proceedWithDownload(downloadItem.id);
                   }
                 });
@@ -893,14 +1010,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true });
   } else if (message.type === 'cancelDownloadTimeout') {
     // cancelDownloadTimeout: Cancel auto-save timeout entirely - no auto-save while editing
+    const cancelTimestamp = new Date().toISOString();
     const downloadInfo = pendingDownloads.get(message.downloadId);
+    console.log('[BACKGROUND]', cancelTimestamp, 'cancelDownloadTimeout received for:', message.downloadId, 'downloadInfo exists:', !!downloadInfo);
     if (downloadInfo) {
       downloadInfo.timeoutPaused = true;
       if (downloadInfo.timeoutId) {
         clearTimeout(downloadInfo.timeoutId);
+        console.log('[BACKGROUND]', cancelTimestamp, 'Cleared timeout ID:', downloadInfo.timeoutId);
         downloadInfo.timeoutId = null;
+      } else {
+        console.log('[BACKGROUND]', cancelTimestamp, 'No timeoutId to clear');
       }
-      console.log('Download timeout cancelled for:', message.downloadId);
+      console.log('[BACKGROUND]', cancelTimestamp, 'Download timeout cancelled for:', message.downloadId);
+    } else {
+      console.log('[BACKGROUND]', cancelTimestamp, 'Warning: No downloadInfo found for cancelDownloadTimeout');
     }
     sendResponse({ success: true });
   } else if (message.type === 'cancelDownload') {
@@ -1347,7 +1471,23 @@ chrome.downloads.onChanged.addListener(async (downloadDelta) => {
     }
     
     // Check if file needs to be moved to absolute path
+    // IMPORTANT: Only move if download has been confirmed (countdown expired or user clicked save)
+    // Don't auto-move while countdown is still running - wait for user confirmation
     if (downloadInfo && downloadInfo.needsMove && downloadInfo.absoluteDestination) {
+      // Check if download has been confirmed (countdown expired or user clicked save)
+      // Only move if confirmed is true
+      if (!downloadInfo.confirmed) {
+        // Not confirmed yet - store the download path for later move when confirmed
+        const downloads = await chrome.downloads.search({ id: downloadId });
+        if (downloads && downloads.length > 0) {
+          downloadInfo.actualDownloadPath = downloads[0].filename;
+          downloadInfo.downloadComplete = true;
+          console.log('[onChanged] Download complete but not confirmed yet, waiting for confirmation. confirmed:', downloadInfo.confirmed, 'timeoutPaused:', downloadInfo.timeoutPaused);
+        }
+        return;
+      }
+      
+      console.log('[onChanged] Download confirmed, proceeding with move');
       try {
         // Get the actual download file path from Chrome
         // chrome.downloads.search: Searches for downloads matching criteria
@@ -1534,6 +1674,9 @@ function proceedWithDownload(downloadId, customPath = null) {
     return; // Exit if download info not found
   }
   
+  // Mark as confirmed so onChanged handler knows to proceed with move
+  downloadInfo.confirmed = true;
+  
   // Check if download already has absolute destination set (from rule matching or location change)
   // or if a custom path is being provided that's absolute
   const hasAbsoluteDestination = downloadInfo.absoluteDestination && downloadInfo.needsMove;
@@ -1585,25 +1728,47 @@ function proceedWithDownload(downloadId, customPath = null) {
   // Only call if originalSuggest is available (download is still in determining filename phase)
   if (!downloadInfo.originalSuggest) {
     // Can't change download path - download already started or completed
-    // If we need to move the file, check download state and move if complete
-    if (absoluteDestinationPath && downloadInfo.needsMove) {
-      chrome.downloads.search({ id: downloadId }, (downloads) => {
-        if (downloads && downloads.length > 0 && downloads[0].state === 'complete') {
-          // Download complete - move file now
-          moveFileNative(downloads[0].filename, absoluteDestinationPath).then((success) => {
-            if (success) {
-              const destParts = absoluteDestinationPath.split(/[/\\]/).filter(p => p);
-              const destFolder = destParts[destParts.length - 1] || 'Downloads';
-              chrome.notifications.create({
-                type: 'basic',
-                iconUrl: 'icons/icon128.png',
-                title: 'File Routed Successfully',
-                message: `${downloadInfo.filename} moved to ${destFolder}`
-              });
-            }
-          });
-        }
-      });
+    // If we need to move the file, check if already downloaded and move
+    const destPath = absoluteDestinationPath || downloadInfo.absoluteDestination;
+    if (destPath && downloadInfo.needsMove) {
+      // Use stored actualDownloadPath if available, otherwise search for it
+      const sourcePath = downloadInfo.actualDownloadPath;
+      if (sourcePath && downloadInfo.downloadComplete) {
+        // Download already complete and we have the path - move now
+        console.log('[proceedWithDownload] Download already complete, moving file now');
+        moveFileNative(sourcePath, destPath).then((result) => {
+          if (result && result.moved) {
+            const destParts = destPath.split(/[/\\]/).filter(p => p);
+            const destFolder = destParts[destParts.length - 1] || 'Downloads';
+            chrome.notifications.create({
+              type: 'basic',
+              iconUrl: 'icons/icon128.png',
+              title: 'File Routed Successfully',
+              message: `${downloadInfo.filename} moved to ${destFolder}`
+            });
+          }
+        });
+      } else {
+        // Need to look up download state
+        chrome.downloads.search({ id: downloadId }, (downloads) => {
+          if (downloads && downloads.length > 0 && downloads[0].state === 'complete') {
+            // Download complete - move file now
+            console.log('[proceedWithDownload] Found complete download, moving file');
+            moveFileNative(downloads[0].filename, destPath).then((result) => {
+              if (result && result.moved) {
+                const destParts = destPath.split(/[/\\]/).filter(p => p);
+                const destFolder = destParts[destParts.length - 1] || 'Downloads';
+                chrome.notifications.create({
+                  type: 'basic',
+                  iconUrl: 'icons/icon128.png',
+                  title: 'File Routed Successfully',
+                  message: `${downloadInfo.filename} moved to ${destFolder}`
+                });
+              }
+            });
+          }
+        });
+      }
     }
     return;
   }
