@@ -190,6 +190,40 @@ nativeMessagingHost.onMessage(async (message) => {
         return result;
       }
       
+      if (message.type === 'openFolder') {
+        // Log openFolder requests for debugging
+        logToFile('Received openFolder message: ' + JSON.stringify({ path: message.path }));
+        const { exec } = require('child_process');
+        const path = require('path');
+        
+        try {
+          const folderPath = message.path;
+          if (!folderPath) {
+            return { success: false, error: 'No folder path provided' };
+          }
+          
+          // Platform-specific folder opening (use async exec to avoid blocking on explorer)
+          if (process.platform === 'win32') {
+            // Windows: Use explorer with /select to highlight the file
+            // Use exec with start command to bring window to foreground
+            exec(`explorer /select,"${folderPath.replace(/"/g, '""')}"`);
+          } else if (process.platform === 'darwin') {
+            // macOS: Use open command with -R to reveal in Finder
+            exec(`open -R "${folderPath.replace(/"/g, '\\"')}"`);
+          } else {
+            // Linux: Open the containing folder
+            const dirPath = path.dirname(folderPath);
+            exec(`xdg-open "${dirPath.replace(/"/g, '\\"')}"`);
+          }
+          
+          logToFile('openFolder succeeded: ' + folderPath);
+          return { success: true, type: 'folderOpened' };
+        } catch (error) {
+          logToFile('openFolder error: ' + error.message);
+          return { success: false, error: error.message };
+        }
+      }
+      
       // For other messages, lazy-load handlers only when needed
       if (!handlers) {
         handlers = require('./native-messaging/handlers');

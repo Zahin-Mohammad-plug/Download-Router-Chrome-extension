@@ -798,6 +798,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.log('Download timeout cancelled for:', message.downloadId);
     }
     sendResponse({ success: true });
+  } else if (message.type === 'cancelDownload') {
+    // cancelDownload: User clicked cancel/close button - cancel the download entirely
+    const downloadId = message.downloadId;
+    const downloadInfo = pendingDownloads.get(downloadId);
+    if (downloadInfo) {
+      // Cancel any pending timeout
+      if (downloadInfo.timeoutId) {
+        clearTimeout(downloadInfo.timeoutId);
+        downloadInfo.timeoutId = null;
+      }
+      // Remove from pending downloads
+      pendingDownloads.delete(downloadId);
+    }
+    // Cancel the download in Chrome
+    chrome.downloads.cancel(downloadId, () => {
+      if (chrome.runtime.lastError) {
+        console.log('Download may have already completed:', chrome.runtime.lastError.message);
+      }
+    });
+    sendResponse({ success: true });
+  } else if (message.type === 'updatePendingDownloadInfo') {
+    // updatePendingDownloadInfo: Update the pending download info when user changes rules in overlay
+    // This ensures the countdown timer uses the updated rule when it fires
+    const downloadId = message.downloadInfo.id;
+    const downloadInfo = pendingDownloads.get(downloadId);
+    if (downloadInfo) {
+      // Update the downloadInfo with new values from content script
+      Object.assign(downloadInfo, message.downloadInfo);
+      console.log('[updatePendingDownloadInfo] Updated download', downloadId, 'with finalRule:', message.downloadInfo.finalRule);
+    }
+    sendResponse({ success: true });
   } else if (message.type === 'addRule') {
     // addRule: Adds or updates a routing rule in storage
     addRule(message.rule).then(() => {
@@ -923,6 +954,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     
     sendResponse({ success: true });
+    return true; // Required for async sendResponse
+  } else if (message.type === 'openFolder') {
+    // openFolder: Open folder containing the file
+    const filePath = message.path;
+    const downloadId = message.downloadId;
+    
+    if (!filePath && !downloadId) {
+      sendResponse({ success: false, error: 'No file path or download ID provided' });
+      return;
+    }
+    
+    // Check if path is absolute (has drive letter on Windows or starts with /)
+    const isAbsolutePath = filePath && (/^[A-Za-z]:[\\/]/.test(filePath) || filePath.startsWith('/'));
+    
+    // If we have an absolute path and companion app, use native explorer with /select
+    if (isAbsolutePath && self.nativeMessagingClient && self.nativeMessagingClient.openFolder) {
+      self.nativeMessagingClient.openFolder(filePath)
+        .then(() => {
+          sendResponse({ success: true });
+        })
+        .catch((error) => {
+          console.error('Error opening folder via companion:', error);
+          // Fall back to chrome.downloads.show if available
+          if (downloadId) {
+            chrome.downloads.show(downloadId);
+            sendResponse({ success: true, method: 'chrome.downloads.show' });
+          } else {
+            sendResponse({ success: false, error: error.message });
+          }
+        });
+    } else if (downloadId) {
+      // Use Chrome's built-in show method - works without companion app
+      // chrome.downloads.show: Opens the folder and selects the download file
+      chrome.downloads.show(downloadId);
+      sendResponse({ success: true, method: 'chrome.downloads.show' });
+    } else {
+      // No absolute path and no download ID - just open default downloads folder
+      chrome.downloads.showDefaultFolder();
+      sendResponse({ success: true, method: 'showDefaultFolder' });
+    }
     return true; // Required for async sendResponse
   }
 });
@@ -1137,13 +1208,16 @@ chrome.downloads.onChanged.addListener(async (downloadDelta) => {
           downloadInfo.actualDownloadPath = sourcePath;
           
           // Move file using companion app
-          const moveSuccess = await moveFileNative(sourcePath, downloadInfo.absoluteDestination);
+          const moveResult = await moveFileNative(sourcePath, downloadInfo.absoluteDestination);
           
-          if (moveSuccess) {
-            console.log(`File moved: ${sourcePath} -> ${downloadInfo.absoluteDestination}`);
+          if (moveResult && moveResult.moved) {
+            const actualDestination = moveResult.destination || downloadInfo.absoluteDestination;
+            console.log(`File moved: ${sourcePath} -> ${actualDestination}`);
             // Mark that file was moved so Save As knows correct source
             downloadInfo.fileMoved = true;
             downloadInfo.downloadComplete = true;
+            // Store actual final destination (important for cross-device moves)
+            downloadInfo.actualFinalDestination = actualDestination;
             
             const destParts = downloadInfo.absoluteDestination.split(/[/\\]/).filter(p => p);
             const destFolder = destParts[destParts.length - 1] || 'Downloads';
@@ -1167,6 +1241,18 @@ chrome.downloads.onChanged.addListener(async (downloadDelta) => {
         }
       } catch (error) {
         console.error('Error during post-download file move:', error);
+      }
+    } else if (downloadInfo) {
+      // For non-moved downloads, get the actual download path from Chrome
+      try {
+        const downloads = await chrome.downloads.search({ id: downloadId });
+        if (downloads && downloads.length > 0 && downloads[0].filename) {
+          // Store actual download path as the final destination
+          downloadInfo.actualFinalDestination = downloads[0].filename;
+          downloadInfo.actualDownloadPath = downloads[0].filename;
+        }
+      } catch (error) {
+        console.error('Error getting download path:', error);
       }
     }
     
@@ -1227,12 +1313,22 @@ function updateDownloadStats(downloadId) {
     //   Inputs: Element to add
     //   Outputs: New array length
     // Format folder path for display (store full path for activity display)
-    const folderPath = downloadInfo.resolvedPath.includes('/') 
-      ? downloadInfo.resolvedPath.split('/').slice(0, -1).join('/') // Remove filename
+    // Use actual final destination if file was moved, otherwise use resolved path
+    const actualPath = downloadInfo.actualFinalDestination || downloadInfo.resolvedPath;
+    console.log('updateDownloadStats: Using actualPath:', actualPath, 'actualFinalDestination:', downloadInfo.actualFinalDestination, 'resolvedPath:', downloadInfo.resolvedPath);
+    // Check for path separators (forward slash or backslash)
+    // Note: In JS strings, '\\' represents a single backslash character
+    const hasPathSeparator = actualPath.includes('/') || actualPath.includes('\\');
+    const folderPath = hasPathSeparator
+      ? actualPath.split(/[\\\\/]/).slice(0, -1).join('/') // Remove filename, normalize to forward slashes
       : 'Downloads';
     
     stats.recentActivity.unshift({
       filename: downloadInfo.filename,
+      // Store download ID for chrome.downloads.show() fallback
+      downloadId: downloadId,
+      // Store actual file path after move (includes folder and filename)
+      filePath: actualPath,
       // Store folder path for formatted display in popup
       folder: folderPath || 'Downloads',
       // Date.now: Returns current timestamp in milliseconds
@@ -1466,20 +1562,19 @@ function addRule(rule) {
  *   - getDefaultGroups: Function defined in this file to retrieve default group structure
  */
 function addToGroup(extension, groupName) {
-  // Retrieve groups and rules from sync storage
+  // Retrieve groups from sync storage
   // chrome.storage.sync.get: Retrieves data from sync storage
-  //   Inputs: Array of keys ['groups', 'rules']
+  //   Inputs: Array of keys ['groups']
   //   Outputs: Promise resolving to data object
   return new Promise((resolve, reject) => {
-    chrome.storage.sync.get(['groups', 'rules'], (data) => {
+    chrome.storage.sync.get(['groups'], (data) => {
       if (chrome.runtime.lastError) {
         reject(new Error(chrome.runtime.lastError.message));
         return;
       }
       
-      // Load groups (use defaults if none exist) and rules
+      // Load groups (use defaults if none exist)
       const groups = data.groups || getDefaultGroups();
-      const rules = data.rules || [];
       
       // Only proceed if group exists
       if (!groups[groupName]) {
@@ -1494,43 +1589,28 @@ function addToGroup(extension, groupName) {
       // map: Array method to transform each element
       //   Inputs: Transform function
       //   Outputs: New array with transformed elements
-      const extensions = groups[groupName].extensions.split(',').map(ext => ext.trim());
+      const extensions = groups[groupName].extensions.split(',').map(ext => ext.trim().toLowerCase());
+      const extLower = extension.toLowerCase();
+      
       // includes: Array method to check if element exists
       //   Inputs: Element to search for
       //   Outputs: Boolean
-      if (!extensions.includes(extension)) {
-        extensions.push(extension);
+      if (!extensions.includes(extLower)) {
+        extensions.push(extLower);
         // join: Array method to combine elements with delimiter
         //   Inputs: Delimiter string (',')
         //   Outputs: Combined string
         groups[groupName].extensions = extensions.join(',');
       }
       
-      // Find existing extension rule for this group (by folder match)
-      // Search by folder instead of extension to find the group's existing rule
-      const existingRuleIndex = rules.findIndex(r => 
-        r.type === 'extension' && r.folder === groups[groupName].folder
-      );
-      
-      if (existingRuleIndex >= 0) {
-        // Update existing rule with new extension list
-        rules[existingRuleIndex].value = groups[groupName].extensions;
-        rules[existingRuleIndex].folder = groups[groupName].folder;
-      } else {
-        // Create new extension rule for this group
-        rules.push({
-          type: 'extension',
-          value: groups[groupName].extensions,
-          folder: groups[groupName].folder,
-          priority: groups[groupName].priority || 3.0
-        });
-      }
-      
-      // Save updated groups and rules to sync storage
+      // Save updated groups to sync storage
+      // NOTE: We only update the group's extensions list, NOT the rules.
+      // The findMatchingRule function already iterates through groups and creates
+      // filetype matches on the fly, so no separate rule is needed.
       // chrome.storage.sync.set: Stores data in sync storage
       //   Inputs: Object with key-value pairs
       //   Outputs: Promise resolving when saved
-      chrome.storage.sync.set({ groups, rules }, () => {
+      chrome.storage.sync.set({ groups }, () => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
         } else {
@@ -1538,7 +1618,8 @@ function addToGroup(extension, groupName) {
           resolve({
             success: true,
             folder: groups[groupName].folder,
-            priority: groups[groupName].priority || 3.0
+            priority: groups[groupName].priority || 3.0,
+            groupName: groupName
           });
         }
       });
@@ -1717,7 +1798,7 @@ async function verifyFolderNative(folderPath) {
 async function moveFileNative(sourcePath, destinationPath) {
   if (!self.nativeMessagingClient || !self.nativeMessagingClient.moveFile) {
     console.error('Native messaging client not available for file move');
-    return false;
+    return { success: false, moved: false };
   }
   
   try {
@@ -1725,7 +1806,7 @@ async function moveFileNative(sourcePath, destinationPath) {
     return result;
   } catch (error) {
     console.error('Failed to move file:', error);
-    return false;
+    return { success: false, moved: false };
   }
 }
 
@@ -1936,10 +2017,14 @@ async function handleSaveAsDialog(downloadId, sourceFilePath = null) {
       // Verify source file exists before attempting move
       // If file was moved by auto-routing, it should exist at absoluteDestination
       // The moveFile service will also check, but we provide better error handling here
-      const moveSuccess = await moveFileNative(sourcePath, selectedFilePath);
-      console.log('moveFileNative result:', moveSuccess);
+      const moveResult = await moveFileNative(sourcePath, selectedFilePath);
+      console.log('moveFileNative result:', moveResult);
       
-      if (moveSuccess) {
+      if (moveResult && moveResult.moved) {
+        const actualFinalPath = moveResult.destination || selectedFilePath;
+        // Store the actual final destination for stats recording
+        downloadInfo.actualFinalDestination = actualFinalPath;
+        
         // Show success notification
         const destParts = selectedFilePath.replace(/\\/g, '/').split('/').filter(p => p);
         const destFolder = destParts.length > 1 ? destParts[destParts.length - 2] : 'selected location';
@@ -1950,6 +2035,9 @@ async function handleSaveAsDialog(downloadId, sourceFilePath = null) {
           message: `${downloadInfo.filename} saved to ${destFolder}`
         });
         
+        // Update download stats with the actual final destination
+        updateDownloadStats(downloadId);
+        
         // Close overlay with success message
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
           if (tabs && tabs[0]) {
@@ -1957,7 +2045,7 @@ async function handleSaveAsDialog(downloadId, sourceFilePath = null) {
               type: 'saveAsComplete',
               downloadId: downloadId,
               success: true,
-              filePath: selectedFilePath
+              filePath: actualFinalPath
             }).catch(() => {});
           }
         });

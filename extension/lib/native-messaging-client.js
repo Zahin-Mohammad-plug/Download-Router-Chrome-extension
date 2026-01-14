@@ -265,10 +265,18 @@ class NativeMessagingClient {
       }, 30000);
       console.log('moveFile response:', response);
 
-      return response.success && response.moved === true;
+      // Return full response object with actual destination path
+      if (response.success && response.moved === true) {
+        return {
+          success: true,
+          moved: true,
+          destination: response.destination // Actual file path after move (includes filename)
+        };
+      }
+      return { success: false, moved: false };
     } catch (error) {
       console.error('moveFile error:', error);
-      return false;
+      return { success: false, moved: false };
     }
   }
 
@@ -303,6 +311,27 @@ class NativeMessagingClient {
       if (error.message.includes('cancelled') || error.message.includes('CANCELLED')) {
         return null; // User cancelled - return null instead of throwing
       }
+      throw error;
+    }
+  }
+
+  /**
+   * Opens a folder in the native file explorer/Finder.
+   * 
+   * Inputs:
+   *   - folderPath: String absolute path to folder to open
+   * 
+   * Outputs: Promise resolving to response object
+   */
+  async openFolder(folderPath) {
+    try {
+      const response = await this.sendMessage({
+        type: 'openFolder',
+        path: folderPath
+      }, 5000);
+      return response;
+    } catch (error) {
+      console.error('openFolder error:', error);
       throw error;
     }
   }

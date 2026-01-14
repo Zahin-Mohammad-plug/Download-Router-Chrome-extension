@@ -159,6 +159,24 @@ class PopupApp {
     document.getElementById('toggle-extension-header').addEventListener('click', () => {
       this.toggleExtension();
     });
+    
+    // Handle clicks on activity items to open folder
+    document.addEventListener('click', (e) => {
+      const activityItem = e.target.closest('.activity-item[data-file-path], .activity-item[data-download-id]');
+      if (activityItem) {
+        const filePath = activityItem.dataset.filePath;
+        const downloadId = activityItem.dataset.downloadId ? parseInt(activityItem.dataset.downloadId, 10) : null;
+        if (filePath || downloadId) {
+          chrome.runtime.sendMessage({
+            type: 'openFolder',
+            path: filePath || '',
+            downloadId: downloadId
+          }).catch((error) => {
+            console.error('Error opening folder:', error);
+          });
+        }
+      }
+    });
 
     // Clear recent activity button
     const clearActivityBtn = document.getElementById('clear-activity');
@@ -435,20 +453,31 @@ class PopupApp {
     // Get appropriate icon for file type
     // getFileIcon: Returns Lucide icon markup based on file extension
     const icon = this.getFileIcon(activity.filename);
-    // Format folder path for display
-    const formattedPath = formatPathDisplay(activity.folder);
+    // Use the folder property stored in activity (already formatted correctly)
+    // folder is set by updateDownloadStats to the actual destination folder
+    let displayPath = activity.folder || 'Downloads';
+    
+    // Format path for display based on whether it's absolute or relative
+    displayPath = this.formatActivityPath(displayPath);
+    
     // Show routing badge if file was routed by a rule
     const routedBadge = activity.routed && typeof getIcon !== 'undefined' 
       ? `<span class="routed-badge">${getIcon('folder', 14)}</span>` 
       : '';
     
     // Generate HTML template string with activity data
+    // Use data attribute instead of inline onclick for CSP compliance
+    // Use filePath if available, otherwise fall back to folder (for backward compat)
+    const clickPath = activity.filePath || activity.folder || '';
+    const filePath = clickPath ? clickPath.replace(/"/g, '&quot;') : '';
+    const downloadId = activity.downloadId || '';
+    
     return `
-      <div class="activity-item ${activity.routed ? 'routed' : ''}">
+      <div class="activity-item ${activity.routed ? 'routed' : ''}" style="cursor: pointer;" ${filePath ? `data-file-path="${filePath}"` : ''} ${downloadId ? `data-download-id="${downloadId}"` : ''}>
         <div class="activity-icon">${icon}</div>
         <div class="activity-info">
           <div class="activity-filename" title="${activity.filename}">${activity.filename} ${routedBadge}</div>
-          <div class="activity-path" title="${formattedPath}">Saved to ${formattedPath}</div>
+          <div class="activity-path" title="${activity.folder}">${displayPath}</div>
         </div>
         <div class="activity-time">${timeAgo}</div>
       </div>
@@ -489,6 +518,53 @@ class PopupApp {
     if (hours > 0) return `${hours}h ago`;
     if (minutes > 0) return `${minutes}m ago`;
     return 'Just now';
+  }
+
+  /**
+   * Formats folder path for display in activity items.
+   * Shows relative paths as-is, absolute paths condensed with drive and last folders.
+   * 
+   * Inputs:
+   *   - path: String folder path (relative or absolute)
+   * 
+   * Outputs: String formatted for display (e.g., "scope-test" or "T:/../github > repo")
+   */
+  formatActivityPath(path) {
+    if (!path) return 'Downloads';
+    
+    // Check if it's an absolute path (Windows or Unix)
+    const isAbsolute = /^([A-Za-z]:[\\/]|\/(?!\/))/.test(path);
+    
+    if (!isAbsolute) {
+      // Relative path - just show as-is (e.g., "scope-test", "Images/Screenshots")
+      return path.replace(/\\/g, '/');
+    }
+    
+    // Absolute path - condense for display
+    // Normalize to forward slashes
+    const normalizedPath = path.replace(/\\/g, '/');
+    const parts = normalizedPath.split('/').filter(p => p);
+    
+    if (parts.length === 0) return 'Downloads';
+    
+    // Get drive letter if present (e.g., "T:")
+    let drive = '';
+    let folderParts = parts;
+    if (/^[A-Za-z]:$/.test(parts[0])) {
+      drive = parts[0];
+      folderParts = parts.slice(1);
+    }
+    
+    // Show last 2 folder levels with separator
+    if (folderParts.length <= 2) {
+      // Short path - show all folders
+      const displayFolders = folderParts.join(' > ');
+      return drive ? `${drive}/${displayFolders}` : displayFolders;
+    } else {
+      // Long path - show drive/../lastTwo > lastOne
+      const lastTwo = folderParts.slice(-2).join(' > ');
+      return drive ? `${drive}/../${lastTwo}` : `../${lastTwo}`;
+    }
   }
 
   /**

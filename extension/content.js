@@ -32,19 +32,17 @@
  * Handles absolute paths by showing the folder name.
  */
 function formatPathDisplay(relativePath, absoluteDestination = null) {
-  // Handle absolute destination path
+  // Handle absolute destination path (companion app with custom folder)
   if (absoluteDestination) {
-    // Extract just the folder name from absolute path
-    const parts = absoluteDestination.replace(/\\/g, '/').split('/').filter(p => p);
-    return parts[parts.length - 1] || 'Custom Folder';
+    return formatAbsolutePath(absoluteDestination);
   }
   
   // Check if relativePath is actually an absolute path
   if (relativePath && /^(\/|[A-Za-z]:[\\\/])/.test(relativePath)) {
-    const parts = relativePath.replace(/\\/g, '/').split('/').filter(p => p);
-    return parts[parts.length - 1] || 'Custom Folder';
+    return formatAbsolutePath(relativePath);
   }
   
+  // Handle relative path (standard Chrome downloads)
   if (!relativePath || relativePath === '') return 'Downloads';
   const parts = relativePath.split('/');
   const filename = parts[parts.length - 1];
@@ -59,6 +57,44 @@ function formatPathDisplay(relativePath, absoluteDestination = null) {
   // Show: Downloads > Folder > Subfolder (without filename)
   const folders = parts.slice(0, -1);
   return 'Downloads > ' + folders.join(' > ');
+}
+
+/**
+ * Formats absolute path for display by showing drive and last folder levels.
+ * Examples: "T:/github/repo" -> "T:/../github > repo"
+ *           "C:/Users/Downloads" -> "C:/../Users > Downloads"
+ */
+function formatAbsolutePath(path) {
+  if (!path) return 'Custom Folder';
+  
+  // Normalize to forward slashes and split
+  const normalizedPath = path.replace(/\\/g, '/');
+  const parts = normalizedPath.split('/').filter(p => p);
+  
+  if (parts.length === 0) return 'Custom Folder';
+  
+  // Get drive letter if present (e.g., "T:")
+  let drive = '';
+  let folderParts = parts;
+  if (/^[A-Za-z]:$/.test(parts[0])) {
+    drive = parts[0];
+    folderParts = parts.slice(1);
+  }
+  
+  // Show last 2 folder levels with separator
+  if (folderParts.length === 0) {
+    return drive || 'Custom Folder';
+  } else if (folderParts.length === 1) {
+    // Single folder - show drive/folder or just folder
+    return drive ? `${drive}/${folderParts[0]}` : folderParts[0];
+  } else if (folderParts.length === 2) {
+    // Two folders - show all with separator
+    return drive ? `${drive}/${folderParts.join(' > ')}` : folderParts.join(' > ');
+  } else {
+    // Long path - show drive/../lastTwo > lastOne
+    const lastTwo = folderParts.slice(-2).join(' > ');
+    return drive ? `${drive}/../${lastTwo}` : `../${lastTwo}`;
+  }
 }
 
 /**
@@ -259,6 +295,12 @@ class DownloadOverlay {
     //   Outputs: ShadowRoot object
     this.shadowRoot = host.attachShadow({ mode: 'closed' });
     
+    // Prevent keyboard events from bubbling to the page
+    // This ensures typing in input fields doesn't trigger page shortcuts
+    host.addEventListener('keydown', (e) => e.stopPropagation(), true);
+    host.addEventListener('keyup', (e) => e.stopPropagation(), true);
+    host.addEventListener('keypress', (e) => e.stopPropagation(), true);
+    
     // Create and inject CSS styles into shadow root
     const style = document.createElement('style');
     // getCSS: Returns CSS string with all overlay styles
@@ -367,9 +409,16 @@ class DownloadOverlay {
       }
 
       .overlay-header {
-        padding: 24px;
+        padding: 20px 24px;
         border-bottom: 1px solid var(--border-subtle);
         position: relative;
+      }
+
+      .header-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
       }
 
       .overlay-title {
@@ -377,19 +426,50 @@ class DownloadOverlay {
         line-height: 1.3;
         font-weight: 600;
         color: var(--text);
-        margin-bottom: 12px;
         letter-spacing: -0.01em;
+      }
+
+      .close-btn {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        padding: 6px;
+        border-radius: 6px;
+        color: var(--text-muted);
+        transition: all var(--transition-base);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .close-btn:hover {
+        background: var(--surface);
+        color: var(--error);
+      }
+
+      .close-btn svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .file-info-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        gap: 12px;
       }
 
       .overlay-filename {
         font-size: 15px;
         font-weight: 500;
         color: var(--text);
-        margin-bottom: 10px;
         display: flex;
         align-items: center;
         gap: 10px;
         letter-spacing: -0.01em;
+        flex: 1;
+        min-width: 0;
       }
 
       .overlay-filename svg {
@@ -397,6 +477,19 @@ class DownloadOverlay {
         height: 18px;
         flex-shrink: 0;
         color: var(--text);
+      }
+
+      .filename-text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .file-size {
+        font-size: 12px;
+        color: var(--text-muted);
+        font-weight: 400;
+        flex-shrink: 0;
       }
 
       .overlay-path {
@@ -408,6 +501,7 @@ class DownloadOverlay {
         align-items: center;
         gap: 8px;
         font-weight: 400;
+        margin-bottom: 12px;
       }
 
       .overlay-path svg {
@@ -417,8 +511,133 @@ class DownloadOverlay {
         color: var(--text-muted);
       }
 
+      .rule-actions-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .rule-action-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 500;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all var(--transition-base);
+      }
+
+      .rule-action-btn:hover {
+        background: var(--surface-elevated);
+        border-color: var(--primary);
+        color: var(--primary);
+      }
+
+      .rule-action-btn svg {
+        width: 14px;
+        height: 14px;
+      }
+
+      .rule-action-btn.domain-rule {
+        background: #e3f2fd;
+        border-color: #90caf9;
+        color: #1976d2;
+      }
+
+      .rule-action-btn.domain-rule:hover {
+        background: #bbdefb;
+        border-color: #1976d2;
+      }
+
+      .rule-action-btn.extension-rule {
+        background: #f3e5f5;
+        border-color: #ce93d8;
+        color: #7b1fa2;
+      }
+
+      .rule-action-btn.extension-rule:hover {
+        background: #e1bee7;
+        border-color: #7b1fa2;
+      }
+
+      .rule-action-btn.filetype-rule,
+      .rule-action-btn.has-filetype {
+        background: #e8f5e9;
+        border-color: #a5d6a7;
+        color: #388e3c;
+      }
+
+      .rule-action-btn.filetype-rule:hover,
+      .rule-action-btn.has-filetype:hover {
+        background: #c8e6c9;
+        border-color: #388e3c;
+      }
+
+      /* Active rule highlighting - green with checkmark */
+      .rule-action-btn.active {
+        background: #10b981 !important;
+        border-color: #059669 !important;
+        color: white !important;
+      }
+
+      .rule-action-btn.active:hover {
+        background: #059669 !important;
+        border-color: #047857 !important;
+      }
+
+      .rule-action-btn.active svg {
+        stroke: white !important;
+      }
+
+      .rule-action-btn.create-rule {
+        background: var(--surface);
+        border-style: dashed;
+      }
+
+      .rule-action-btn.add-filetype {
+        background: var(--surface);
+        border-style: dashed;
+      }
+
+      /* Dropdown selectors */
+      .rule-dropdown,
+      .filetype-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        margin-top: 4px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        z-index: 1000;
+        overflow: hidden;
+      }
+
+      .dropdown-option {
+        padding: 10px 16px;
+        font-size: 13px;
+        color: var(--text-primary);
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      .dropdown-option:hover {
+        background: var(--hover);
+      }
+
+      .dropdown-option:active {
+        background: var(--active);
+      }
+
       .overlay-actions {
-        padding: 20px 24px;
+        padding: 16px 24px;
         display: flex;
         flex-direction: column;
         gap: 12px;
@@ -1118,9 +1337,28 @@ class DownloadOverlay {
       box: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>',
       package: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>',
       file: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path></svg>',
-      check: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'
+      check: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>',
+      close: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
+      plus: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>',
+      settings: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>'
     };
     return icons[iconName] || icons.file;
+  }
+
+  /**
+   * Formats file size in bytes to human-readable format.
+   * 
+   * Inputs:
+   *   - bytes: Number of bytes
+   * 
+   * Outputs: String formatted as KB, MB, GB, etc.
+   */
+  formatFileSize(bytes) {
+    if (!bytes || bytes === 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    const size = (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0);
+    return `${size} ${units[i]}`;
   }
 
   /**
@@ -1149,7 +1387,7 @@ class DownloadOverlay {
       // Store download info and initialize overlay
       this.currentDownloadInfo = downloadInfo;
       // createOverlayContent: Generates and injects HTML into shadow root
-      this.createOverlayContent();
+      await this.createOverlayContent();
       // setupEventListeners: Attaches click handlers and event listeners
       this.setupEventListeners();
       // startCountdown: Begins countdown timer for auto-save
@@ -1174,11 +1412,11 @@ class DownloadOverlay {
    *   - this.shadowRoot: Shadow root element created by createShadowDOM
    *   - this.currentDownloadInfo: Download information set by showDownloadOverlay
    */
-  createOverlayContent() {
+  async createOverlayContent() {
     // Get file icon based on extension
     const fileExt = this.currentDownloadInfo.extension || 'file';
     const iconMap = {
-      'jpg': 'image', 'jpeg': 'image', 'png': 'image', 'gif': 'image', 'bmp': 'image', 'svg': 'image', 'webp': 'image',
+      'jpg': 'image', 'jpeg': 'image', 'png': 'image', 'gif': 'image', 'bmp': 'image', 'svg': 'image', 'webp': 'image', 'ico': 'image',
       'mp4': 'video', 'mov': 'video', 'avi': 'video', 'mkv': 'video', 'wmv': 'video', 'flv': 'video', 'webm': 'video',
       'mp3': 'music', 'wav': 'music', 'flac': 'music', 'aac': 'music', 'm4a': 'music',
       'pdf': 'file-text', 'doc': 'file-text', 'docx': 'file-text', 'txt': 'file-text', 'rtf': 'file-text',
@@ -1187,56 +1425,192 @@ class DownloadOverlay {
       'exe': 'package', 'msi': 'package', 'dmg': 'package', 'deb': 'package'
     };
     const fileIcon = iconMap[fileExt.toLowerCase()] || 'file';
-    // Format path display - handle absolute destinations
+    
+    // Format path display - show actual destination
+    // If companion app is connected and has absolute destination, show that
+    // Otherwise show Chrome's relative Downloads path
     const formattedPath = formatPathDisplay(
       this.currentDownloadInfo.resolvedPath, 
       this.currentDownloadInfo.absoluteDestination
     );
+    
+    // Format file size if available
+    const fileSize = this.currentDownloadInfo.fileSize;
+    const formattedSize = fileSize ? this.formatFileSize(fileSize) : '';
 
-    // Show matching rule/file type info
-    let ruleInfo = '';
-    if (this.currentDownloadInfo.finalRule) {
-      const source = this.currentDownloadInfo.finalRule.source || 'rule';
-      const priority = this.currentDownloadInfo.finalRule.priority !== undefined ? 
-        parseFloat(this.currentDownloadInfo.finalRule.priority).toFixed(1) : '2.0';
-      const sourceLabel = source === 'domain' ? 'DOMAIN' : 
-                         source === 'extension' ? 'EXTENSION' : 
-                         source === 'filetype' ? 'FILE TYPE' : 'RULE';
-      ruleInfo = `
-        <div class="rule-info">
-          <span class="rule-badge ${source}">${sourceLabel}</span>
-          <span class="priority-badge">Priority ${priority}</span>
-          ${this.currentDownloadInfo.finalRule.value ? 
-            `<span class="rule-value">${this.currentDownloadInfo.finalRule.value}</span>` : ''}
-        </div>
-      `;
-    } else if (this.currentDownloadInfo.conflictRules && this.currentDownloadInfo.conflictRules.length > 0) {
-      ruleInfo = `
-        <div class="conflict-info">
-          <span class="conflict-badge">⚠ ${this.currentDownloadInfo.conflictRules.length} rules conflict</span>
-          <span>Choose below</span>
-        </div>
-      `;
+    // Build rule/file type action buttons based on what rules exist
+    const rule = this.currentDownloadInfo.finalRule;
+    const hasRule = !!rule && rule.source !== 'default';
+    const hasConflict = this.currentDownloadInfo.conflictRules && this.currentDownloadInfo.conflictRules.length > 0;
+    
+    // Determine the type of rule that matched
+    const ruleSource = rule ? (rule.source || 'default') : 'default';
+    const isFileTypeRule = ruleSource === 'filetype';
+    const isDomainRule = ruleSource === 'domain';
+    const isExtensionRule = ruleSource === 'extension';
+    
+    // Build the first action button - Domain or Extension rule, or Add Domain
+    // Check if domain/extension rules exist even if not active
+    const data = await chrome.storage.sync.get(['rules', 'groups']);
+    const allRules = data.rules || [];
+    const groups = data.groups || {};
+    const domain = this.currentDownloadInfo.domain;
+    const downloadUrl = this.currentDownloadInfo.url || '';
+    const pageUrl = window.location.href || '';
+    const currentExt = this.currentDownloadInfo.extension.toLowerCase();
+    
+    // Normalize domain for comparison (remove protocol, www, etc.)
+    const normalizeDomainForMatch = (d) => {
+      if (!d) return '';
+      return d.replace(/^https?:\/\//, '').replace(/^www\./, '').toLowerCase();
+    };
+    
+    const normalizedDomain = normalizeDomainForMatch(domain);
+    const normalizedDownloadUrl = normalizeDomainForMatch(downloadUrl);
+    const normalizedPageUrl = normalizeDomainForMatch(pageUrl);
+    
+    // Find BEST matching domain rule (most specific - longest match wins)
+    // Check against domain, download URL, and page URL to support path-based rules
+    const matchingDomainRules = allRules.filter(r => {
+      if (r.type !== 'domain' || r.enabled === false) return false;
+      const normalizedRuleValue = normalizeDomainForMatch(r.value);
+      // Check if any of our URL sources match the rule value
+      return normalizedDomain.includes(normalizedRuleValue) || 
+             normalizedRuleValue.includes(normalizedDomain) ||
+             normalizedDownloadUrl.includes(normalizedRuleValue) ||
+             normalizedRuleValue.includes(normalizedDownloadUrl) ||
+             normalizedPageUrl.includes(normalizedRuleValue) ||
+             normalizedRuleValue.includes(normalizedPageUrl);
+    });
+    // Sort by value length (longest first = most specific)
+    matchingDomainRules.sort((a, b) => (b.value?.length || 0) - (a.value?.length || 0));
+    const existingDomainRule = matchingDomainRules[0] || null;
+    
+    // Find matching extension rule (even if not active)
+    const existingExtensionRule = allRules.find(r => 
+      r.type === 'extension' && 
+      r.enabled !== false &&
+      r.value.split(',').map(ext => ext.trim().toLowerCase()).includes(currentExt)
+    );
+    
+    let ruleButtonText = 'Add Domain';
+    let ruleButtonClass = 'create-rule';
+    let ruleButtonIcon = 'plus';
+    let hasExistingDomainOrExtensionRule = false;
+    
+    if (isDomainRule) {
+      // Domain rule is ACTIVE
+      ruleButtonText = `Domain: ${rule.value || this.getBaseDomain(domain)}`;
+      ruleButtonClass = 'domain-rule';
+      ruleButtonIcon = 'check';
+      hasExistingDomainOrExtensionRule = true;
+    } else if (isExtensionRule) {
+      // Extension rule is ACTIVE
+      ruleButtonText = `Extension: .${currentExt}`;
+      ruleButtonClass = 'extension-rule';
+      ruleButtonIcon = 'check';
+      hasExistingDomainOrExtensionRule = true;
+    } else if (existingDomainRule) {
+      // Domain rule EXISTS but not active
+      ruleButtonText = `Domain: ${existingDomainRule.value || this.getBaseDomain(domain)}`;
+      ruleButtonClass = 'domain-rule';
+      ruleButtonIcon = 'settings';
+      hasExistingDomainOrExtensionRule = true;
+    } else if (existingExtensionRule) {
+      // Extension rule EXISTS but not active
+      ruleButtonText = `Extension: .${currentExt}`;
+      ruleButtonClass = 'extension-rule';
+      ruleButtonIcon = 'settings';
+      hasExistingDomainOrExtensionRule = true;
     }
+    
+    // Build the second action button - File Type
+    // Check if extension is in ANY file type group (not just if file type rule won)
+    // Capitalize the group name for display (e.g., "images" -> "Images")
+    const capitalizeFirst = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
+    let fileTypeButtonText = 'Add to File Type';
+    let fileTypeButtonClass = 'add-filetype';
+    let fileTypeButtonIcon = 'plus';
+    let fileTypeGroupName = null;
+    
+    // Check if extension is in any group (already loaded above)
+    for (const [groupName, group] of Object.entries(groups)) {
+      if (group.enabled === false) continue;
+      const groupExtensions = group.extensions.split(',').map(ext => ext.trim().toLowerCase());
+      if (groupExtensions.includes(currentExt)) {
+        fileTypeGroupName = groupName;
+        fileTypeButtonText = `File Type: ${capitalizeFirst(groupName)}`;
+        // Only show as active (green + checkmark) if file type rule is the winner
+        if (isFileTypeRule) {
+          fileTypeButtonClass = 'has-filetype active';
+          fileTypeButtonIcon = 'check';
+        } else {
+          // Extension is in a group but not the active rule - show gear icon
+          fileTypeButtonClass = 'has-filetype';
+          fileTypeButtonIcon = 'settings';
+        }
+        break;
+      }
+    }
+    
+    // Store these for use in event handlers
+    this.existingDomainRule = existingDomainRule;
+    this.existingExtensionRule = existingExtensionRule;
+    this.fileTypeGroupName = fileTypeGroupName;
 
     const overlayHTML = `
       <div class="overlay-container">
         <div class="overlay-content">
           <div class="overlay-header">
-            <div class="overlay-title">Save Download</div>
-            <div class="overlay-filename">
-              ${this.getSVGIcon(fileIcon)}
-              <span>${this.currentDownloadInfo.filename}</span>
+            <div class="header-top">
+              <div class="overlay-title">Save Download</div>
+              <button class="close-btn cancel-download-btn" title="Cancel">
+                ${this.getSVGIcon('close')}
+              </button>
             </div>
-            ${ruleInfo}
+            
+            <div class="file-info-row">
+              <div class="overlay-filename">
+                ${this.getSVGIcon(fileIcon)}
+                <span class="filename-text">${this.currentDownloadInfo.filename}</span>
+              </div>
+              ${formattedSize ? `<span class="file-size">${formattedSize}</span>` : ''}
+            </div>
+            
             <div class="overlay-path">
               ${this.getSVGIcon('folder')}
-              <span>Saving to: ${formattedPath}</span>
+              <span>${formattedPath}</span>
+            </div>
+            
+            <div class="rule-actions-row">
+              <button class="rule-action-btn ${ruleButtonClass} ${isDomainRule || isExtensionRule ? 'active' : ''} edit-rule-btn" title="${isDomainRule || isExtensionRule ? 'Change rule' : 'Add a domain rule'}">
+                ${this.getSVGIcon(ruleButtonIcon)}
+                <span>${ruleButtonText}</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 4px;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
+              <button class="rule-action-btn ${fileTypeButtonClass} add-to-group-btn" title="${fileTypeGroupName ? `Part of ${capitalizeFirst(fileTypeGroupName)} group` : `Add .${this.currentDownloadInfo.extension} to a file type group`}">
+                ${this.getSVGIcon(fileTypeButtonIcon)}
+                <span>${fileTypeButtonText}</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 4px;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
+            </div>
+            
+            <!-- Rule selector dropdown -->
+            <div class="rule-dropdown hidden">
+              <div class="dropdown-option" data-action="create-domain">Add Domain Rule</div>
+              <div class="dropdown-option" data-action="create-extension">Add Extension Rule</div>
+              ${isDomainRule ? `<div class="dropdown-option" data-action="edit-rule">Edit Current Rule</div>` : ''}
+              ${isExtensionRule ? `<div class="dropdown-option" data-action="edit-rule">Edit Current Rule</div>` : ''}
+            </div>
+            
+            <!-- File type selector dropdown -->
+            <div class="filetype-dropdown hidden">
+              ${fileTypeGroupName ? `<div class="dropdown-option" data-action="view-filetype">View in File Types</div>` : ''}
+              <div class="dropdown-option" data-action="add-to-group">Add to File Type Group</div>
             </div>
           </div>
           
-          ${this.currentDownloadInfo.conflictRules && this.currentDownloadInfo.conflictRules.length > 0 ? 
-            this.createConflictSelector(this.currentDownloadInfo) : ''}
+          ${hasConflict ? this.createConflictSelector(this.currentDownloadInfo) : ''}
           
           <div class="overlay-actions">
             <div class="primary-actions">
@@ -1247,17 +1621,6 @@ class DownloadOverlay {
               <button class="btn secondary saveas-btn">
                 ${this.getSVGIcon('folder')}
                 <span>Save As</span>
-              </button>
-            </div>
-            
-            <div class="secondary-actions">
-              <button class="btn text edit-rule-btn">
-                ${this.getSVGIcon('settings')}
-                <span>Edit Rule</span>
-              </button>
-              <button class="btn text add-to-group-btn">
-                ${this.getSVGIcon('pencil')}
-                <span>Add to File Type</span>
               </button>
             </div>
             
@@ -1297,7 +1660,7 @@ class DownloadOverlay {
           <!-- Inline Edit Rule editor (hidden by default) -->
           <div class="rule-editor-inline hidden">
             <div class="rules-header">
-              <div class="rules-title">Edit Routing Rule</div>
+              <div class="rules-title">Add Rule</div>
             </div>
             <div class="rules-content">
               <div class="rule-type-buttons">
@@ -1384,6 +1747,14 @@ class DownloadOverlay {
   setupEventListeners() {
     const root = this.shadowRoot;
     
+    // Cancel/Close button - dismiss overlay without saving
+    const closeBtn = root.querySelector('.cancel-download-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        this.cancelDownload();
+      });
+    }
+    
     // Attach click handler to Save button
     // querySelector: Finds element by CSS class selector
     //   Inputs: CSS selector string ('.save-btn')
@@ -1439,59 +1810,292 @@ class DownloadOverlay {
       });
     }
 
-    // Edit Rule button - show inline rule editor
+    // Edit Rule button - click to SELECT this rule, dropdown for options
     const editRuleBtn = root.querySelector('.edit-rule-btn');
     if (editRuleBtn) {
-      editRuleBtn.addEventListener('click', () => {
-        const editor = root.querySelector('.rule-editor-inline');
-        const saveasEditor = root.querySelector('.saveas-editor');
-        const groupSelector = root.querySelector('.group-selector-inline');
+      editRuleBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        
+        // Check if clicking on the dropdown arrow specifically
+        const isDropdownArrow = e.target.closest('svg:last-child') || e.target.tagName === 'polyline';
+        
+        if (isDropdownArrow) {
+          // Show dropdown menu
+          const dropdown = root.querySelector('.rule-dropdown');
+          const fileTypeDropdown = root.querySelector('.filetype-dropdown');
+          
+          if (dropdown) {
+            const isHidden = dropdown.classList.contains('hidden');
+            if (fileTypeDropdown) fileTypeDropdown.classList.add('hidden');
+            dropdown.classList.toggle('hidden');
+            
+            if (!isHidden) {
+              this.resumeCountdown();
+            } else {
+              this.cancelCountdown();
+            }
+          }
+        } else {
+          // Click on button itself - SELECT this domain/extension rule if it exists
+          // Hide any dropdowns
+          root.querySelector('.rule-dropdown')?.classList.add('hidden');
+          root.querySelector('.filetype-dropdown')?.classList.add('hidden');
+          
+          // Check if there's a domain or extension rule (use stored values)
+          const domainRule = this.existingDomainRule;
+          const extensionRule = this.existingExtensionRule;
+          const ruleToApply = domainRule || extensionRule;
+          
+          if (ruleToApply) {
+            // Apply this rule's folder to the download
+            const folder = ruleToApply.folder;
+            const isAbsPath = /^(\/|[A-Za-z]:[\\\/])/.test(folder);
+            
+            if (isAbsPath) {
+              this.currentDownloadInfo.resolvedPath = this.currentDownloadInfo.filename;
+              this.currentDownloadInfo.absoluteDestination = folder;
+              this.currentDownloadInfo.useAbsolutePath = true;
+              this.currentDownloadInfo.needsMove = true;
+            } else {
+              this.currentDownloadInfo.resolvedPath = buildRelativePath(folder, this.currentDownloadInfo.filename);
+              this.currentDownloadInfo.absoluteDestination = null;
+              this.currentDownloadInfo.useAbsolutePath = false;
+              this.currentDownloadInfo.needsMove = false;
+            }
+            
+            // Update the rule info
+            this.currentDownloadInfo.finalRule = {
+              ...ruleToApply,
+              source: domainRule ? 'domain' : 'extension'
+            };
+            this.currentDownloadInfo.matchedRule = this.currentDownloadInfo.finalRule;
+            
+            // CRITICAL: Sync updated downloadInfo to background so countdown timer uses the correct rule
+            chrome.runtime.sendMessage({
+              type: 'updatePendingDownloadInfo',
+              downloadInfo: this.currentDownloadInfo
+            });
+            
+            // Update UI
+            this.updatePathDisplay();
+            await this.refreshRuleButtons();
+          } else {
+            // No domain/extension rule exists - show the rule editor to create one
+            const editor = root.querySelector('.rule-editor-inline');
+            const saveasEditor = root.querySelector('.saveas-editor');
+            const groupSelector = root.querySelector('.group-selector-inline');
 
-        if (editor) {
-          editor.classList.toggle('hidden');
-          if (!editor.classList.contains('hidden')) {
+            if (editor) {
+              if (saveasEditor) saveasEditor.classList.add('hidden');
+              if (groupSelector) groupSelector.classList.add('hidden');
+              
+              editor.classList.remove('hidden');
+              this.rulesEditorVisible = true;
+              this.locationPickerVisible = false;
+              this.cancelCountdown();
+              this.initializeRuleEditor();
+            }
+          }
+        }
+      });
+    }
+
+    // Rule dropdown option clicks
+    root.querySelectorAll('.rule-dropdown .dropdown-option').forEach(option => {
+      option.addEventListener('click', (e) => {
+        const action = e.target.dataset.action;
+        const dropdown = root.querySelector('.rule-dropdown');
+        
+        if (action === 'edit-rule') {
+          // Open the options page to edit the current rule
+          chrome.runtime.sendMessage({ type: 'openOptions', section: 'rules' });
+          if (dropdown) dropdown.classList.add('hidden');
+        } else if (action === 'create-domain' || action === 'create-extension') {
+          // Open the full rule editor to create a new rule
+          const editor = root.querySelector('.rule-editor-inline');
+          const saveasEditor = root.querySelector('.saveas-editor');
+          const groupSelector = root.querySelector('.group-selector-inline');
+
+          if (editor) {
             if (saveasEditor) saveasEditor.classList.add('hidden');
             if (groupSelector) groupSelector.classList.add('hidden');
-            this.rulesEditorVisible = true;  // Track visibility
+            if (dropdown) dropdown.classList.add('hidden');
+            
+            editor.classList.remove('hidden');
+            this.rulesEditorVisible = true;
             this.locationPickerVisible = false;
-            // CRITICAL: Cancel timeout completely - no auto-save while editing
-            // Download will only proceed when user clicks Apply or Cancel
             this.cancelCountdown();
             this.initializeRuleEditor();
+          }
+        }
+      });
+    });
+
+    // Add to File Type button - click to SELECT this file type, dropdown for options
+    const addToGroupBtn = root.querySelector('.add-to-group-btn');
+    if (addToGroupBtn) {
+      addToGroupBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        
+        console.log('[FILE TYPE BUTTON CLICK]  Event target:', e.target.tagName, 'classList:', e.target.className);
+        console.log('[FILE TYPE BUTTON CLICK]  Closest svg:last-child:', e.target.closest('svg:last-child'));
+        console.log('[FILE TYPE BUTTON CLICK]  Is polyline:', e.target.tagName === 'polyline');
+        
+        // Check if clicking on the dropdown arrow specifically
+        const isDropdownArrow = e.target.closest('svg:last-child') || e.target.tagName === 'polyline';
+        
+        console.log('[FILE TYPE BUTTON CLICK]  isDropdownArrow:', isDropdownArrow);
+        
+        if (isDropdownArrow) {
+          // Show dropdown menu
+          const dropdown = root.querySelector('.filetype-dropdown');
+          const ruleDropdown = root.querySelector('.rule-dropdown');
+          
+          if (dropdown) {
+            const isHidden = dropdown.classList.contains('hidden');
+            if (ruleDropdown) ruleDropdown.classList.add('hidden');
+            dropdown.classList.toggle('hidden');
+            
+            if (!isHidden) {
+              this.resumeCountdown();
+            } else {
+              this.cancelCountdown();
+            }
+          }
+        } else {
+          console.log('[FILE TYPE BUTTON CLICK]  Executing SELECT logic');
+          // Click on button itself - SELECT this file type rule
+          // Hide any dropdowns
+          root.querySelector('.rule-dropdown')?.classList.add('hidden');
+          root.querySelector('.filetype-dropdown')?.classList.add('hidden');
+          
+          // Check if there's a file type group for this extension
+          const data = await chrome.storage.sync.get(['groups']);
+          const groups = data.groups || {};
+          const currentExt = this.currentDownloadInfo.extension.toLowerCase();
+          
+          console.log('[FILE TYPE CLICK]  Looking for group for extension:', currentExt);
+          
+          let matchedGroup = null;
+          let matchedGroupName = null;
+          
+          for (const [groupName, group] of Object.entries(groups)) {
+            if (group.enabled === false) continue;
+            const groupExtensions = group.extensions.split(',').map(ext => ext.trim().toLowerCase());
+            if (groupExtensions.includes(currentExt)) {
+              matchedGroup = group;
+              matchedGroupName = groupName;
+              console.log('[FILE TYPE CLICK]  Found matching group:', groupName, 'folder:', group.folder);
+              break;
+            }
+          }
+          
+          if (matchedGroup) {
+            // Apply this file type's folder to the download
+            const folder = matchedGroup.folder;
+            console.log('[FILE TYPE CLICK]  Applying folder:', folder);
+            const isAbsPath = /^(\/|[A-Za-z]:[\\\/])/.test(folder);
+            
+            if (isAbsPath) {
+              this.currentDownloadInfo.resolvedPath = this.currentDownloadInfo.filename;
+              this.currentDownloadInfo.absoluteDestination = folder;
+              this.currentDownloadInfo.useAbsolutePath = true;
+              this.currentDownloadInfo.needsMove = true;
+            } else {
+              this.currentDownloadInfo.resolvedPath = buildRelativePath(folder, this.currentDownloadInfo.filename);
+              this.currentDownloadInfo.absoluteDestination = null;
+              this.currentDownloadInfo.useAbsolutePath = false;
+              this.currentDownloadInfo.needsMove = false;
+            }
+            
+            console.log('[FILE TYPE CLICK]  resolvedPath set to:', this.currentDownloadInfo.resolvedPath);
+            
+            // Update the rule info
+            this.currentDownloadInfo.finalRule = {
+              type: 'filetype',
+              value: matchedGroup.extensions,
+              folder: folder,
+              source: 'filetype',
+              priority: matchedGroup.priority || 3.0,
+              groupName: matchedGroupName
+            };
+            this.currentDownloadInfo.matchedRule = this.currentDownloadInfo.finalRule;
+            
+            console.log('[FILE TYPE CLICK]  finalRule set to:', this.currentDownloadInfo.finalRule);
+            
+            // CRITICAL: Sync updated downloadInfo to background so countdown timer uses the correct rule
+            chrome.runtime.sendMessage({
+              type: 'updatePendingDownloadInfo',
+              downloadInfo: this.currentDownloadInfo
+            });
+            
+            // Update UI - refresh the overlay to show new active state
+            this.updatePathDisplay();
+            await this.refreshRuleButtons();
           } else {
-            // Editor closed without action (toggle off) - should not happen, but handle gracefully
-            // Don't resume countdown - user should click Apply or Cancel
-            this.rulesEditorVisible = false;
+            // No file type group - show the group selector to add to one
+            const selector = root.querySelector('.group-selector-inline');
+            const saveasEditor = root.querySelector('.saveas-editor');
+            const ruleEditor = root.querySelector('.rule-editor-inline');
+            
+            if (selector) {
+              if (saveasEditor) saveasEditor.classList.add('hidden');
+              if (ruleEditor) ruleEditor.classList.add('hidden');
+              
+              selector.classList.remove('hidden');
+              this.rulesEditorVisible = true;
+              this.locationPickerVisible = false;
+              this.cancelCountdown();
+              this.populateGroupSelector();
+            }
           }
         }
       });
     }
 
-    // Add to File Type button
-    const addToGroupBtn = root.querySelector('.add-to-group-btn');
-    if (addToGroupBtn) {
-      addToGroupBtn.addEventListener('click', () => {
-        const selector = root.querySelector('.group-selector-inline');
-        const saveasEditor = root.querySelector('.saveas-editor');
-        const ruleEditor = root.querySelector('.rule-editor-inline');
+    // File type dropdown option clicks
+    root.querySelectorAll('.filetype-dropdown .dropdown-option').forEach(option => {
+      option.addEventListener('click', (e) => {
+        const action = e.target.dataset.action;
+        const dropdown = root.querySelector('.filetype-dropdown');
         
-        if (selector) {
-          selector.classList.toggle('hidden');
-          if (!selector.classList.contains('hidden')) {
+        if (action === 'add-to-group') {
+          // Open the group selector
+          const selector = root.querySelector('.group-selector-inline');
+          const saveasEditor = root.querySelector('.saveas-editor');
+          const ruleEditor = root.querySelector('.rule-editor-inline');
+          
+          if (selector) {
             if (saveasEditor) saveasEditor.classList.add('hidden');
             if (ruleEditor) ruleEditor.classList.add('hidden');
-            this.rulesEditorVisible = true;  // Track visibility
+            if (dropdown) dropdown.classList.add('hidden');
+            
+            selector.classList.remove('hidden');
+            this.rulesEditorVisible = true;
             this.locationPickerVisible = false;
-            // Cancel timeout completely - download will only proceed when user clicks Add
             this.cancelCountdown();
             this.populateGroupSelector();
-          } else {
-            this.rulesEditorVisible = false;
-            this.resumeCountdown();
           }
+        } else if (action === 'view-filetype') {
+          // Open options page to File Types section
+          chrome.runtime.sendMessage({ type: 'openOptions', section: 'filetypes' });
+          if (dropdown) dropdown.classList.add('hidden');
         }
       });
-    }
+    });
+
+    // Close dropdowns when clicking outside
+    root.addEventListener('click', (e) => {
+      if (!e.target.closest('.rule-action-btn')) {
+        root.querySelector('.rule-dropdown')?.classList.add('hidden');
+        root.querySelector('.filetype-dropdown')?.classList.add('hidden');
+        const wasOpen = !root.querySelector('.rule-dropdown')?.classList.contains('hidden') || 
+                        !root.querySelector('.filetype-dropdown')?.classList.contains('hidden');
+        if (wasOpen) {
+          this.resumeCountdown();
+        }
+      }
+    });
 
     // Conflict rule selection
     root.querySelectorAll('input[name="conflict-rule"]').forEach(radio => {
@@ -1779,7 +2383,150 @@ class DownloadOverlay {
     );
     const pathSpan = root.querySelector('.overlay-path span');
     if (pathSpan) {
-      pathSpan.textContent = 'Saving to: ' + formattedPath;
+      pathSpan.textContent = formattedPath;
+    }
+  }
+
+  /**
+   * Refreshes the rule action buttons to reflect current selection.
+   */
+  async refreshRuleButtons() {
+    const root = this.shadowRoot;
+    if (!root) return;
+    
+    const rule = this.currentDownloadInfo.finalRule;
+    const ruleSource = rule ? (rule.source || 'default') : 'default';
+    const isFileTypeRule = ruleSource === 'filetype';
+    const isDomainRule = ruleSource === 'domain';
+    const isExtensionRule = ruleSource === 'extension';
+    
+    const capitalizeFirst = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
+    
+    // Re-fetch rules and groups to check what exists
+    const data = await chrome.storage.sync.get(['rules', 'groups']);
+    const allRules = data.rules || [];
+    const groups = data.groups || {};
+    const domain = this.currentDownloadInfo.domain;
+    const downloadUrl = this.currentDownloadInfo.url || '';
+    const pageUrl = window.location.href || '';
+    const currentExt = this.currentDownloadInfo.extension.toLowerCase();
+    
+    // Normalize domain for comparison (remove protocol, www, etc.)
+    const normalizeDomainForMatch = (d) => {
+      if (!d) return '';
+      return d.replace(/^https?:\/\//, '').replace(/^www\./, '').toLowerCase();
+    };
+    
+    const normalizedDomain = normalizeDomainForMatch(domain);
+    const normalizedDownloadUrl = normalizeDomainForMatch(downloadUrl);
+    const normalizedPageUrl = normalizeDomainForMatch(pageUrl);
+    
+    // Find BEST matching domain rule (most specific - longest match wins)
+    // Check against domain, download URL, and page URL to support path-based rules
+    const matchingDomainRules = allRules.filter(r => {
+      if (r.type !== 'domain' || r.enabled === false) return false;
+      const normalizedRuleValue = normalizeDomainForMatch(r.value);
+      // Check if any of our URL sources match the rule value
+      return normalizedDomain.includes(normalizedRuleValue) || 
+             normalizedRuleValue.includes(normalizedDomain) ||
+             normalizedDownloadUrl.includes(normalizedRuleValue) ||
+             normalizedRuleValue.includes(normalizedDownloadUrl) ||
+             normalizedPageUrl.includes(normalizedRuleValue) ||
+             normalizedRuleValue.includes(normalizedPageUrl);
+    });
+    // Sort by value length (longest first = most specific)
+    matchingDomainRules.sort((a, b) => (b.value?.length || 0) - (a.value?.length || 0));
+    const existingDomainRule = matchingDomainRules[0] || null;
+    
+    // Find existing extension rule
+    const existingExtensionRule = allRules.find(r => 
+      r.type === 'extension' && 
+      r.enabled !== false &&
+      r.value.split(',').map(ext => ext.trim().toLowerCase()).includes(currentExt)
+    );
+    
+    // Update stored values
+    this.existingDomainRule = existingDomainRule;
+    this.existingExtensionRule = existingExtensionRule;
+    
+    // Update the rule button (first button)
+    const ruleBtn = root.querySelector('.edit-rule-btn');
+    if (ruleBtn) {
+      const textSpan = ruleBtn.querySelector('span');
+      const iconSvg = ruleBtn.querySelector('svg:first-child');
+      
+      if (isDomainRule) {
+        // Domain rule is ACTIVE
+        ruleBtn.classList.remove('create-rule', 'extension-rule');
+        ruleBtn.classList.add('active', 'domain-rule');
+        if (iconSvg) iconSvg.outerHTML = this.getSVGIcon('check');
+        if (textSpan) textSpan.textContent = `Domain: ${rule.value || this.getBaseDomain(domain)}`;
+      } else if (isExtensionRule) {
+        // Extension rule is ACTIVE
+        ruleBtn.classList.remove('create-rule', 'domain-rule');
+        ruleBtn.classList.add('active', 'extension-rule');
+        if (iconSvg) iconSvg.outerHTML = this.getSVGIcon('check');
+        if (textSpan) textSpan.textContent = `Extension: .${currentExt}`;
+      } else if (existingDomainRule) {
+        // Domain rule EXISTS but not active
+        ruleBtn.classList.remove('create-rule', 'active', 'extension-rule');
+        ruleBtn.classList.add('domain-rule');
+        if (iconSvg) iconSvg.outerHTML = this.getSVGIcon('settings');
+        if (textSpan) textSpan.textContent = `Domain: ${existingDomainRule.value || this.getBaseDomain(domain)}`;
+      } else if (existingExtensionRule) {
+        // Extension rule EXISTS but not active
+        ruleBtn.classList.remove('create-rule', 'active', 'domain-rule');
+        ruleBtn.classList.add('extension-rule');
+        if (iconSvg) iconSvg.outerHTML = this.getSVGIcon('settings');
+        if (textSpan) textSpan.textContent = `Extension: .${currentExt}`;
+      } else {
+        // No rule exists
+        ruleBtn.classList.remove('active', 'domain-rule', 'extension-rule');
+        ruleBtn.classList.add('create-rule');
+        if (iconSvg) iconSvg.outerHTML = this.getSVGIcon('plus');
+        if (textSpan) textSpan.textContent = 'Add Domain';
+      }
+    }
+    
+    // Update the file type button (second button)
+    const fileTypeBtn = root.querySelector('.add-to-group-btn');
+    if (fileTypeBtn) {
+      const textSpan = fileTypeBtn.querySelector('span');
+      const iconSvg = fileTypeBtn.querySelector('svg:first-child');
+      
+      // Check if extension is in any group
+      let fileTypeGroupName = null;
+      for (const [groupName, group] of Object.entries(groups)) {
+        if (group.enabled === false) continue;
+        const groupExtensions = group.extensions.split(',').map(ext => ext.trim().toLowerCase());
+        if (groupExtensions.includes(currentExt)) {
+          fileTypeGroupName = groupName;
+          break;
+        }
+      }
+      
+      // Update stored value
+      this.fileTypeGroupName = fileTypeGroupName;
+      
+      if (isFileTypeRule && fileTypeGroupName) {
+        // File Type rule is ACTIVE
+        fileTypeBtn.classList.remove('add-filetype');
+        fileTypeBtn.classList.add('active', 'has-filetype');
+        if (iconSvg) iconSvg.outerHTML = this.getSVGIcon('check');
+        if (textSpan) textSpan.textContent = `File Type: ${capitalizeFirst(fileTypeGroupName)}`;
+      } else if (fileTypeGroupName) {
+        // Extension is in a group but not the active rule
+        fileTypeBtn.classList.remove('active', 'add-filetype');
+        fileTypeBtn.classList.add('has-filetype');
+        if (iconSvg) iconSvg.outerHTML = this.getSVGIcon('settings');
+        if (textSpan) textSpan.textContent = `File Type: ${capitalizeFirst(fileTypeGroupName)}`;
+      } else {
+        // No file type group
+        fileTypeBtn.classList.remove('active', 'has-filetype');
+        fileTypeBtn.classList.add('add-filetype');
+        if (iconSvg) iconSvg.outerHTML = this.getSVGIcon('plus');
+        if (textSpan) textSpan.textContent = 'Add to File Type';
+      }
     }
   }
 
@@ -1920,7 +2667,25 @@ class DownloadOverlay {
     }
     
     if (type === 'domain') {
-      valueInput.value = this.getBaseDomain(this.currentDownloadInfo.domain || '');
+      // Try to prefill with the best available domain source
+      // Priority: page URL > download URL > hostname
+      const normalizeDomainForMatch = (d) => {
+        if (!d) return '';
+        return d.replace(/^https?:\/\//, '').replace(/^www\./, '').toLowerCase();
+      };
+      
+      const pageUrl = window.location.href || '';
+      const downloadUrl = this.currentDownloadInfo.url || '';
+      const hostname = this.currentDownloadInfo.domain || '';
+      
+      const normalizedPageUrl = normalizeDomainForMatch(pageUrl);
+      const normalizedDownloadUrl = normalizeDomainForMatch(downloadUrl);
+      const normalizedHostname = normalizeDomainForMatch(hostname);
+      
+      // Use the first non-empty one, preferring page URL over others
+      let domainToUse = normalizedPageUrl || normalizedDownloadUrl || normalizedHostname || '';
+      
+      valueInput.value = domainToUse;
       valueInput.placeholder = 'e.g., github.com';
     } else {
       valueInput.value = this.currentDownloadInfo.extension || '';
@@ -2115,12 +2880,14 @@ class DownloadOverlay {
       }
       
       // Create a filetype rule object for display
+      // Use the groupName returned from addToGroup for proper display
       this.currentDownloadInfo.finalRule = {
         type: 'filetype',
-        value: groupName,
+        value: result.groupName || groupName,
         folder: folder,
         source: 'filetype',
-        priority: result.priority || 3.0
+        priority: result.priority || 3.0,
+        groupName: result.groupName || groupName
       };
       this.currentDownloadInfo.matchedRule = this.currentDownloadInfo.finalRule;
       
@@ -2542,6 +3309,9 @@ class DownloadOverlay {
    *   - cleanup: Method in this class to remove overlay from DOM
    */
   saveDownload() {
+    console.log('[SAVE DOWNLOAD]  Current finalRule:', this.currentDownloadInfo.finalRule);
+    console.log('[SAVE DOWNLOAD]  Current resolvedPath:', this.currentDownloadInfo.resolvedPath);
+    
     // Show brief success message before closing
     const overlayHeader = this.shadowRoot.querySelector('.overlay-header');
     if (overlayHeader) {
@@ -2573,6 +3343,23 @@ class DownloadOverlay {
       // Remove overlay from page after sending message
       this.cleanup();
     }, 600); // Brief delay to show success message
+  }
+
+  /**
+   * Cancels the download and closes the overlay.
+   * 
+   * Inputs: None
+   * Outputs: None (sends cancel message and cleans up)
+   */
+  cancelDownload() {
+    // Send cancel message to background script
+    chrome.runtime.sendMessage({
+      type: 'cancelDownload',
+      downloadId: this.currentDownloadInfo.id
+    });
+    
+    // Clean up immediately
+    this.cleanup();
   }
 
   /**
