@@ -277,7 +277,7 @@ ls -la extension/icons/icon*.png
 
 2. **Check script path:**
    ```bash
-   ls -la /Users/Shared/Github-repo/companion/run-companion.sh
+   ls -la /path/to/project/companion/run-companion.sh
    ```
 
 3. **Test script manually:**
@@ -378,12 +378,12 @@ ls -la extension/icons/icon*.png
 
 ## File Locations
 
-- **Extension**: `/Users/Shared/Github-repo/extension/`
-- **Companion App**: `/Users/Shared/Github-repo/companion/`
-- **Logs**: `/Users/Shared/Github-repo/logs/debug/`
-- **Tests**: `/Users/Shared/Github-repo/tests/`
+- **Extension**: `/path/to/project/extension/`
+- **Companion App**: `/path/to/project/companion/`
+- **Logs**: `/path/to/project/logs/debug/`
+- **Tests**: `/path/to/project/tests/`
 - **Manifest**: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.downloadrouter.host.json`
-- **Documentation**: `/Users/Shared/Github-repo/docs/`
+- **Documentation**: `/path/to/project/docs/`
 
 ---
 

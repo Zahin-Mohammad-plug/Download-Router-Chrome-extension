@@ -185,6 +185,13 @@ class DownloadOverlay {
     this.countdownPaused = false;
     // Remaining time in milliseconds for countdown (default 5 seconds)
     this.timeLeft = 5000; // 5 seconds
+    // Store original overlay content for modal restoration
+    this.originalOverlayContent = null;
+    // Store countdown state before opening modal
+    this.countdownStateBeforeModal = null;
+    // Store rules and groups for modal editing
+    this.rules = [];
+    this.groups = {};
     this.init();
   }
 
@@ -265,6 +272,31 @@ class DownloadOverlay {
           this.startCountdown(newTimeoutSeconds);
 
           console.log(`Timer updated to ${newTimeoutSeconds}s due to settings change`);
+        }
+        sendResponse({ success: true });
+        return true;
+      } else if (message.type === 'rulesUpdated') {
+        // Rules have been updated - reload and update overlay if showing
+        if (this.currentDownloadInfo && this.currentDownloadInfo.id === message.downloadId) {
+          this.reloadRulesAndUpdateOverlay(message.matchingRules);
+        }
+        sendResponse({ success: true });
+        return true;
+      } else if (message.type === 'reloadRulesForDownload') {
+        // Request to reload rules and update overlay
+        if (this.currentDownloadInfo && this.currentDownloadInfo.id === message.downloadId) {
+          this.reloadRulesAndUpdateOverlay();
+        }
+        sendResponse({ success: true });
+        return true;
+      } else if (message.type === 'rulesChanged') {
+        // Rules have been changed - reload and update overlay if showing
+        console.log('[CONTENT] rulesChanged received, currentDownloadInfo:', this.currentDownloadInfo?.id);
+        if (this.currentDownloadInfo) {
+          // Small delay to ensure storage has been updated
+          setTimeout(() => {
+            this.reloadRulesAndUpdateOverlay();
+          }, 100);
         }
         sendResponse({ success: true });
         return true;
@@ -1333,6 +1365,181 @@ class DownloadOverlay {
           background: rgba(255, 255, 255, 0.12);
         }
       }
+
+      /* Edit Rule Modal Styles */
+      .edit-rule-modal-content {
+        max-height: 90vh;
+        overflow-y: auto;
+      }
+
+      .edit-rule-modal-body {
+        padding: 24px;
+        max-height: calc(90vh - 140px);
+        overflow-y: auto;
+      }
+
+      .edit-rule-modal-body .form-group {
+        margin-bottom: 20px;
+      }
+
+      .edit-rule-modal-body .form-group:last-child {
+        margin-bottom: 0;
+      }
+
+      .form-label {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text);
+        margin-bottom: 8px;
+        display: block;
+      }
+
+      .form-input,
+      .form-select {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        background: var(--surface-elevated);
+        color: var(--text);
+        font-size: 14px;
+        font-family: inherit;
+        transition: all var(--transition-base);
+      }
+
+      .form-input:focus,
+      .form-select:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+      }
+
+      .form-input::placeholder {
+        color: var(--text-muted);
+      }
+
+      .folder-display-clickable {
+        transition: all var(--transition-base);
+      }
+
+      .folder-display-clickable:hover {
+        background: var(--surface) !important;
+        border-color: var(--border) !important;
+      }
+
+      .advanced-section {
+        margin-top: 24px;
+        padding-top: 24px;
+        border-top: 1px solid var(--border-subtle);
+      }
+
+      .advanced-toggle {
+        transition: color var(--transition-base);
+      }
+
+      .advanced-toggle:hover {
+        color: var(--text);
+      }
+
+      .advanced-content {
+        animation: slideDown 0.2s ease;
+      }
+
+      @keyframes slideDown {
+        from {
+          opacity: 0;
+          transform: translateY(-5px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .help-text {
+        font-size: 11px;
+        color: var(--text-muted);
+        font-weight: normal;
+        display: block;
+        margin-top: 2px;
+        line-height: 1.4;
+      }
+
+      .priority-hint {
+        font-size: 11px;
+        color: var(--text-muted);
+        margin-top: 4px;
+        font-style: italic;
+        line-height: 1.4;
+      }
+
+      .toggle-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        font-size: 13px;
+        user-select: none;
+      }
+
+      .toggle-label input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+        accent-color: var(--primary);
+      }
+
+      .toggle-label span {
+        color: var(--text-secondary);
+      }
+
+      .toggle-label:hover span {
+        color: var(--text);
+      }
+
+      .edit-modal-close-btn {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        padding: 6px;
+        border-radius: 6px;
+        color: var(--text-muted);
+        transition: all var(--transition-base);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .edit-modal-close-btn:hover {
+        background: var(--surface);
+        color: var(--error);
+      }
+
+      .edit-modal-close-btn svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .edit-rule-modal-body .form-input,
+        .edit-rule-modal-body .form-select {
+          background: var(--surface-elevated) !important;
+          color: var(--text) !important;
+          border-color: var(--border-subtle);
+        }
+
+        .edit-rule-modal-body .form-input:focus,
+        .edit-rule-modal-body .form-select:focus {
+          background: var(--surface-elevated) !important;
+          color: var(--text) !important;
+          border-color: var(--primary);
+          box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.1);
+        }
+
+        .edit-rule-modal-body .form-input::placeholder {
+          color: var(--text-muted);
+        }
+      }
     `;
   }
 
@@ -1355,7 +1562,9 @@ class DownloadOverlay {
       check: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>',
       close: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
       plus: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>',
-      settings: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>'
+      settings: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>',
+      'chevron-down': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>',
+      'x': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>'
     };
     return icons[iconName] || icons.file;
   }
@@ -1994,8 +2203,19 @@ class DownloadOverlay {
         const dropdown = root.querySelector('.rule-dropdown');
         
         if (action === 'edit-rule') {
-          // Open the options page to edit the current rule
-          chrome.runtime.sendMessage({ type: 'openOptions', section: 'rules' });
+          // Get the current rule from finalRule
+          const rule = this.currentDownloadInfo.finalRule;
+          if (rule && (rule.source === 'domain' || rule.source === 'contains')) {
+            // Find rule index and open edit modal in overlay
+            this.findRuleIndex(rule).then((ruleIndex) => {
+              if (ruleIndex !== -1) {
+                this.openEditRuleModalInOverlay(ruleIndex);
+              } else {
+                console.error('Could not find rule index for:', rule);
+              }
+            });
+          }
+          
           if (dropdown) dropdown.classList.add('hidden');
         } else if (action === 'create-domain' || action === 'create-contains') {
           // Open the full rule editor to create a new rule
@@ -2171,8 +2391,11 @@ class DownloadOverlay {
             this.populateGroupSelector();
           }
         } else if (action === 'view-filetype') {
-          // Open options page to File Types section
-          chrome.runtime.sendMessage({ type: 'openOptions', section: 'filetypes' });
+          // Open edit group modal in overlay
+          if (this.fileTypeGroupName) {
+            this.openEditGroupModalInOverlay(this.fileTypeGroupName);
+          }
+          
           if (dropdown) dropdown.classList.add('hidden');
         }
       });
@@ -2471,13 +2694,23 @@ class DownloadOverlay {
    */
   updatePathDisplay() {
     const root = this.shadowRoot;
+    if (!root || !this.currentDownloadInfo) return;
+    
     const formattedPath = formatPathDisplay(
       this.currentDownloadInfo.resolvedPath,
       this.currentDownloadInfo.absoluteDestination
     );
+    
+    console.log('[UPDATE PATH DISPLAY] resolvedPath:', this.currentDownloadInfo.resolvedPath);
+    console.log('[UPDATE PATH DISPLAY] absoluteDestination:', this.currentDownloadInfo.absoluteDestination);
+    console.log('[UPDATE PATH DISPLAY] formattedPath:', formattedPath);
+    
     const pathSpan = root.querySelector('.overlay-path span');
     if (pathSpan) {
       pathSpan.textContent = formattedPath;
+      console.log('[UPDATE PATH DISPLAY] Updated path span text to:', formattedPath);
+    } else {
+      console.warn('[UPDATE PATH DISPLAY] Path span not found in overlay');
     }
   }
 
@@ -3251,12 +3484,25 @@ class DownloadOverlay {
     // Update overlay display with formatted path
     this.updatePathDisplay();
     
+    // Sync updated downloadInfo to background so countdown timer uses correct path
+    chrome.runtime.sendMessage({
+      type: 'updatePendingDownloadInfo',
+      downloadInfo: this.currentDownloadInfo
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('[APPLY LOCATION] Error updating download info:', chrome.runtime.lastError.message);
+      } else {
+        console.log('[APPLY LOCATION] Download info updated successfully');
+      }
+    });
+    
     // Hide inline editor
     const editor = root.querySelector('.saveas-editor');
     if (editor) {
       editor.classList.add('hidden');
       this.locationPickerVisible = false;  // Reset visibility flag
-      this.resumeCountdown();
+      // Don't auto-resume countdown - let user click Save Now
+      // this.resumeCountdown();
     } else {
       this.hideLocationPicker();
     }
@@ -3509,9 +3755,34 @@ class DownloadOverlay {
     console.log('[SAVE DOWNLOAD]', saveTimestamp, 'Rule type:', rule?.type || 'none');
     console.log('[SAVE DOWNLOAD]', saveTimestamp, 'Rule priority:', rule?.priority || 'none');
     console.log('[SAVE DOWNLOAD]', saveTimestamp, 'Current resolvedPath:', this.currentDownloadInfo.resolvedPath);
+    console.log('[SAVE DOWNLOAD]', saveTimestamp, 'absoluteDestination:', this.currentDownloadInfo.absoluteDestination);
+    console.log('[SAVE DOWNLOAD]', saveTimestamp, 'useAbsolutePath:', this.currentDownloadInfo.useAbsolutePath);
+    console.log('[SAVE DOWNLOAD]', saveTimestamp, 'needsMove:', this.currentDownloadInfo.needsMove);
+    
+    // Ensure resolvedPath is set
+    if (!this.currentDownloadInfo.resolvedPath) {
+      if (this.currentDownloadInfo.absoluteDestination) {
+        this.currentDownloadInfo.resolvedPath = this.currentDownloadInfo.filename;
+      } else if (rule && rule.folder) {
+        const isAbsPath = /^(\/|[A-Za-z]:[\\\/])/.test(rule.folder);
+        if (isAbsPath) {
+          this.currentDownloadInfo.resolvedPath = this.currentDownloadInfo.filename;
+          this.currentDownloadInfo.absoluteDestination = rule.folder;
+          this.currentDownloadInfo.useAbsolutePath = true;
+          this.currentDownloadInfo.needsMove = true;
+        } else {
+          this.currentDownloadInfo.resolvedPath = buildRelativePath(rule.folder, this.currentDownloadInfo.filename);
+        }
+      } else {
+        this.currentDownloadInfo.resolvedPath = this.currentDownloadInfo.filename;
+      }
+    }
+    
+    // Cancel countdown to prevent auto-save
+    this.cancelCountdown();
     
     // Show brief success message before closing
-    const overlayHeader = this.shadowRoot.querySelector('.overlay-header');
+    const overlayHeader = this.shadowRoot?.querySelector('.overlay-header');
     if (overlayHeader) {
       overlayHeader.innerHTML = `
         <div class="overlay-title" style="color: var(--success); display: flex; align-items: center; gap: 8px;">
@@ -3528,6 +3799,24 @@ class DownloadOverlay {
       }
     }
     
+    // Ensure download info has all required fields
+    if (!this.currentDownloadInfo.id) {
+      console.error('[SAVE DOWNLOAD] Missing download ID');
+      this.cleanup();
+      return;
+    }
+    
+    // Log final download info before sending
+    console.log('[SAVE DOWNLOAD] Final downloadInfo being sent:', JSON.stringify({
+      id: this.currentDownloadInfo.id,
+      filename: this.currentDownloadInfo.filename,
+      resolvedPath: this.currentDownloadInfo.resolvedPath,
+      absoluteDestination: this.currentDownloadInfo.absoluteDestination,
+      useAbsolutePath: this.currentDownloadInfo.useAbsolutePath,
+      needsMove: this.currentDownloadInfo.needsMove,
+      finalRule: this.currentDownloadInfo.finalRule
+    }, null, 2));
+    
     // Wait a moment to show success, then proceed
     setTimeout(() => {
       // chrome.runtime.sendMessage: Sends message to background script
@@ -3536,10 +3825,28 @@ class DownloadOverlay {
       chrome.runtime.sendMessage({
         type: 'proceedWithDownload',
         downloadInfo: this.currentDownloadInfo
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('[SAVE DOWNLOAD] Error sending proceedWithDownload:', chrome.runtime.lastError.message);
+          // Show error message to user
+          const overlayHeader = this.shadowRoot?.querySelector('.overlay-header');
+          if (overlayHeader) {
+            overlayHeader.innerHTML = `
+              <div class="overlay-title" style="color: var(--error); display: flex; align-items: center; gap: 8px;">
+                ${this.getSVGIcon('close')}
+                <span>Error: ${chrome.runtime.lastError.message}</span>
+              </div>
+            `;
+            setTimeout(() => this.cleanup(), 2000);
+          } else {
+            this.cleanup();
+          }
+        } else {
+          console.log('[SAVE DOWNLOAD] Response from proceedWithDownload:', response);
+          // Remove overlay from page after sending message
+          this.cleanup();
+        }
       });
-      
-      // Remove overlay from page after sending message
-      this.cleanup();
     }, 600); // Brief delay to show success message
   }
 
@@ -3638,6 +3945,655 @@ class DownloadOverlay {
       console.error('Failed to show fallback notification:', error);
       // saveDownload: Proceeds with download without user confirmation
       this.saveDownload();
+    }
+  }
+
+  /**
+   * Reloads rules from storage and updates the overlay with new rule information.
+   * Called when rules are updated (e.g., from popup modal).
+   * 
+   * Inputs:
+   *   - matchingRules: Optional array of matching rules from background script
+   * 
+   * Outputs: None (updates overlay and download info)
+   */
+  async reloadRulesAndUpdateOverlay(matchingRules = null) {
+    if (!this.currentDownloadInfo) return;
+    
+    // Only update if we're not in modal mode
+    if (this.originalOverlayContent) return;
+    
+    // Pause countdown while updating - but don't resume automatically
+    const wasPaused = this.countdownPaused;
+    if (!wasPaused) {
+      this.cancelCountdown();
+    }
+    
+    // Request background script to re-evaluate rules for this download
+    chrome.runtime.sendMessage({
+      type: 'reEvaluateDownloadRules',
+      downloadId: this.currentDownloadInfo.id,
+      downloadInfo: this.currentDownloadInfo
+    }, async (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('[RELOAD RULES] Error sending reEvaluateDownloadRules:', chrome.runtime.lastError.message);
+        return;
+      }
+      
+      if (response && response.success && response.updatedDownloadInfo) {
+        console.log('[RELOAD RULES] Received updated download info:', response.updatedDownloadInfo);
+        console.log('[RELOAD RULES] New absoluteDestination:', response.updatedDownloadInfo.absoluteDestination);
+        console.log('[RELOAD RULES] New resolvedPath:', response.updatedDownloadInfo.resolvedPath);
+        console.log('[RELOAD RULES] New finalRule:', response.updatedDownloadInfo.finalRule);
+        
+        // Update current download info with new rule
+        Object.assign(this.currentDownloadInfo, response.updatedDownloadInfo);
+        
+        console.log('[RELOAD RULES] Updated currentDownloadInfo.absoluteDestination:', this.currentDownloadInfo.absoluteDestination);
+        console.log('[RELOAD RULES] Updated currentDownloadInfo.resolvedPath:', this.currentDownloadInfo.resolvedPath);
+        
+        // Recreate overlay content with updated rules
+        if (this.shadowRoot) {
+          await this.createOverlayContent();
+          this.setupEventListeners();
+          this.updatePathDisplay();
+          this.updateRuleInfoDisplay();
+          
+          console.log('[RELOAD RULES] Overlay recreated and path display updated');
+        }
+        
+        // Sync updated downloadInfo to background FIRST so countdown timer uses correct rule
+        // This must happen before resuming countdown
+        chrome.runtime.sendMessage({
+          type: 'updatePendingDownloadInfo',
+          downloadInfo: this.currentDownloadInfo
+        }, (updateResponse) => {
+          if (chrome.runtime.lastError) {
+            console.error('[RELOAD RULES] Error updating download info:', chrome.runtime.lastError.message);
+          } else {
+            console.log('[RELOAD RULES] Download info updated successfully');
+          }
+          
+          // Only resume countdown AFTER download info is updated and if it wasn't paused before
+          // Don't auto-resume - let user interaction control it
+          if (!wasPaused && !this.rulesEditorVisible && !this.locationPickerVisible && !this.originalOverlayContent) {
+            // Small delay to ensure overlay is fully rendered and background has updated info
+            setTimeout(() => {
+              if (!this.rulesEditorVisible && !this.locationPickerVisible && !this.originalOverlayContent) {
+                this.resumeCountdown();
+              }
+            }, 200);
+          }
+        });
+      } else {
+        console.error('[RELOAD RULES] Failed to re-evaluate rules:', response);
+      }
+    });
+  }
+
+  /**
+   * Finds the index of a rule in the rules array by matching properties
+   */
+  async findRuleIndex(ruleToFind) {
+    if (!ruleToFind) return -1;
+    
+    const data = await chrome.storage.sync.get(['rules']);
+    const rules = data.rules || [];
+    
+    const ruleType = ruleToFind.type || ruleToFind.source || '';
+    const ruleValue = ruleToFind.value || '';
+    
+    return rules.findIndex(r => {
+      const rType = r.type || '';
+      return rType === ruleType && r.value === ruleValue;
+    });
+  }
+
+  /**
+   * Opens edit rule modal in overlay, replacing the entire overlay content
+   */
+  async openEditRuleModalInOverlay(ruleIndex) {
+    if (!this.shadowRoot || !this.currentDownloadInfo) return;
+    
+    // Store original overlay content and countdown state
+    const overlayContainer = this.shadowRoot.querySelector('.overlay-container');
+    if (overlayContainer) {
+      this.originalOverlayContent = overlayContainer.innerHTML;
+    }
+    this.countdownStateBeforeModal = {
+      paused: this.countdownPaused,
+      timeLeft: this.timeLeft
+    };
+    
+    // Cancel countdown in both content script and background script
+    this.cancelCountdown();
+    
+    // Also pause the background timer to prevent auto-save during rule editing
+    chrome.runtime.sendMessage({
+      type: 'pauseDownloadTimeout',
+      downloadId: this.currentDownloadInfo.id
+    }).catch(() => {}); // Ignore errors if background script is not ready
+    
+    // Load rules
+    const data = await chrome.storage.sync.get(['rules']);
+    this.rules = data.rules || [];
+    
+    const rule = this.rules[ruleIndex];
+    if (!rule) {
+      console.error('Rule not found at index:', ruleIndex);
+      return;
+    }
+    
+    // Replace overlay content with edit modal
+    if (overlayContainer) {
+      overlayContainer.innerHTML = `
+        <div class="overlay-content edit-rule-modal-content">
+          <div class="overlay-header">
+            <div class="header-top">
+              <div class="overlay-title">Edit Rule</div>
+              <button class="close-btn edit-modal-close-btn" title="Close">
+                ${this.getSVGIcon('close')}
+              </button>
+            </div>
+          </div>
+          
+          <div class="edit-rule-modal-body">
+            <div class="form-group">
+              <label class="form-label">Rule Type</label>
+              <select class="form-select" id="edit-rule-type-overlay">
+                <option value="domain" ${rule.type === 'domain' ? 'selected' : ''}>Site</option>
+                <option value="contains" ${rule.type === 'contains' ? 'selected' : ''}>Contains</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" id="edit-rule-value-label-overlay">${rule.type === 'domain' ? 'Site' : 'Filename contains phrase'}</label>
+              <input type="text" class="form-input" id="edit-rule-value-overlay" value="${rule.value || ''}" placeholder="${rule.type === 'domain' ? 'e.g., github.com' : 'e.g., invoice, receipt, report'}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Destination Folder</label>
+              <div class="folder-display-clickable" id="edit-rule-folder-display-overlay" style="cursor: pointer; padding: 12px 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-elevated); display: flex; align-items: center; gap: 8px;">
+                ${this.getSVGIcon('folder')}
+                <span id="edit-rule-folder-text-overlay" style="flex: 1; color: var(--text-primary);">${rule.folder || 'Downloads'}</span>
+                <span style="color: var(--text-secondary); font-size: 12px;">Click to browse</span>
+              </div>
+              <input type="hidden" id="edit-rule-folder-overlay" value="${rule.folder || 'Downloads'}">
+            </div>
+            
+            <div class="advanced-section" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-subtle);">
+              <button type="button" class="advanced-toggle" id="edit-rule-advanced-toggle-overlay" style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 13px; font-weight: 500; margin-bottom: 16px;">
+                <span id="edit-rule-advanced-icon-overlay" style="display: inline-flex; align-items: center; transition: transform 0.2s;">${this.getSVGIcon('chevron-down')}</span>
+                <span>Advanced</span>
+              </button>
+              <div class="advanced-content" id="edit-rule-advanced-content-overlay" style="display: none; padding-left: 20px;">
+                <div class="form-group">
+                  <label class="form-label">
+                    Priority
+                    <span class="help-text">1 = highest priority. Use decimals for fine control (e.g., 1.5, 2.7)</span>
+                  </label>
+                  <input type="number" class="form-input" id="edit-rule-priority-overlay" 
+                         value="${rule.priority !== undefined ? parseFloat(rule.priority).toFixed(1) : '2.0'}"
+                         min="0.1" max="10" step="0.1" placeholder="2.0">
+                  <div class="priority-hint">Default: 2.0 | Common: 1.0 (highest), 2.0 (medium), 3.0 (file types)</div>
+                </div>
+                <div class="form-group" style="margin-top: 16px;">
+                  <label class="toggle-label">
+                    <input type="checkbox" id="edit-rule-enabled-overlay" ${rule.enabled !== false ? 'checked' : ''}>
+                    <span>Enabled</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="overlay-actions">
+            <div class="primary-actions">
+              <button class="btn secondary edit-modal-cancel-btn">Cancel</button>
+              <button class="btn primary edit-modal-save-btn">Save Changes</button>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // Store rule index for saving
+      this.editingRuleIndex = ruleIndex;
+      
+      // Setup event listeners for modal
+      this.setupEditRuleModalListeners();
+    }
+  }
+
+  /**
+   * Opens edit group modal in overlay
+   */
+  async openEditGroupModalInOverlay(groupName) {
+    if (!this.shadowRoot || !this.currentDownloadInfo) return;
+    
+    // Store original overlay content and countdown state
+    const overlayContainer = this.shadowRoot.querySelector('.overlay-container');
+    if (overlayContainer) {
+      this.originalOverlayContent = overlayContainer.innerHTML;
+    }
+    this.countdownStateBeforeModal = {
+      paused: this.countdownPaused,
+      timeLeft: this.timeLeft
+    };
+    
+    // Cancel countdown in both content script and background script
+    this.cancelCountdown();
+    
+    // Also pause the background timer to prevent auto-save during rule editing
+    chrome.runtime.sendMessage({
+      type: 'pauseDownloadTimeout',
+      downloadId: this.currentDownloadInfo.id
+    }).catch(() => {}); // Ignore errors if background script is not ready
+    
+    // Load groups
+    const data = await chrome.storage.sync.get(['groups']);
+    this.groups = data.groups || {};
+    
+    const group = this.groups[groupName];
+    if (!group) {
+      console.error('Group not found:', groupName);
+      return;
+    }
+    
+    // Replace overlay content with edit modal
+    if (overlayContainer) {
+      overlayContainer.innerHTML = `
+        <div class="overlay-content edit-rule-modal-content">
+          <div class="overlay-header">
+            <div class="header-top">
+              <div class="overlay-title">Edit File Type</div>
+              <button class="close-btn edit-modal-close-btn" title="Close">
+                ${this.getSVGIcon('close')}
+              </button>
+            </div>
+          </div>
+          
+          <div class="edit-rule-modal-body">
+            <div class="form-group">
+              <label class="form-label">File Type Name</label>
+              <input type="text" class="form-input" id="edit-group-name-overlay" value="${groupName}" placeholder="e.g., 3d-files">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Extensions (comma-separated)</label>
+              <input type="text" class="form-input" id="edit-group-extensions-overlay" value="${group.extensions || ''}" placeholder="e.g., stl,obj,3mf">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Destination Folder</label>
+              <div class="folder-display-clickable" id="edit-group-folder-display-overlay" style="cursor: pointer; padding: 12px 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-elevated); display: flex; align-items: center; gap: 8px;">
+                ${this.getSVGIcon('folder')}
+                <span id="edit-group-folder-text-overlay" style="flex: 1; color: var(--text-primary);">${group.folder || 'Downloads'}</span>
+                <span style="color: var(--text-secondary); font-size: 12px;">Click to browse</span>
+              </div>
+              <input type="hidden" id="edit-group-folder-overlay" value="${group.folder || 'Downloads'}">
+            </div>
+            
+            <div class="advanced-section" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-subtle);">
+              <button type="button" class="advanced-toggle" id="edit-group-advanced-toggle-overlay" style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 13px; font-weight: 500; margin-bottom: 16px;">
+                <span id="edit-group-advanced-icon-overlay" style="display: inline-flex; align-items: center; transition: transform 0.2s;">${this.getSVGIcon('chevron-down')}</span>
+                <span>Advanced</span>
+              </button>
+              <div class="advanced-content" id="edit-group-advanced-content-overlay" style="display: none; padding-left: 20px;">
+                <div class="form-group">
+                  <label class="form-label">
+                    Priority
+                    <span class="help-text">1 = highest priority. Use decimals for fine control (e.g., 2.5, 3.2)</span>
+                  </label>
+                  <input type="number" class="form-input" id="edit-group-priority-overlay" 
+                         value="${group.priority !== undefined ? parseFloat(group.priority).toFixed(1) : '3.0'}"
+                         min="0.1" max="10" step="0.1" placeholder="3.0">
+                  <div class="priority-hint">Default: 3.0 | File types typically use 2.5-4.0 range</div>
+                </div>
+                <div class="form-group" style="margin-top: 16px;">
+                  <label class="toggle-label">
+                    <input type="checkbox" id="edit-group-override-overlay" ${group.overrideDomainRules ? 'checked' : ''}>
+                    <span>Override Site Rules</span>
+                  </label>
+                  <div class="help-text">Forces file type match even if a domain rule exists</div>
+                </div>
+                <div class="form-group" style="margin-top: 16px;">
+                  <label class="toggle-label">
+                    <input type="checkbox" id="edit-group-enabled-overlay" ${group.enabled !== false ? 'checked' : ''}>
+                    <span>Enabled</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="overlay-actions">
+            <div class="primary-actions">
+              <button class="btn secondary edit-modal-cancel-btn">Cancel</button>
+              <button class="btn primary edit-modal-save-btn">Save Changes</button>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // Store group name for saving
+      this.editingGroupName = groupName;
+      
+      // Setup event listeners for modal
+      this.setupEditGroupModalListeners();
+    }
+  }
+
+  /**
+   * Closes edit modal and restores original overlay content
+   */
+  async closeEditModalInOverlay() {
+    if (!this.shadowRoot || !this.originalOverlayContent) return;
+    
+    const overlayContainer = this.shadowRoot.querySelector('.overlay-container');
+    if (overlayContainer) {
+      // Restore original overlay content
+      overlayContainer.innerHTML = this.originalOverlayContent;
+      this.originalOverlayContent = null;
+      
+      // Restore event listeners
+      this.setupEventListeners();
+      this.updatePathDisplay();
+      this.updateRuleInfoDisplay();
+      
+      // Restore countdown if it wasn't paused before
+      if (this.countdownStateBeforeModal && !this.countdownStateBeforeModal.paused) {
+        // Restore time left
+        this.timeLeft = this.countdownStateBeforeModal.timeLeft || 5000;
+        // Resume countdown if no editors are visible - but wait a bit to ensure overlay is rendered
+        setTimeout(() => {
+          if (!this.rulesEditorVisible && !this.locationPickerVisible && !this.originalOverlayContent) {
+            this.resumeCountdown();
+          }
+        }, 100);
+      }
+      this.countdownStateBeforeModal = null;
+      
+      // Clear editing state
+      this.editingRuleIndex = null;
+      this.editingGroupName = null;
+    }
+  }
+
+  /**
+   * Sets up event listeners for edit rule modal in overlay
+   */
+  setupEditRuleModalListeners() {
+    const root = this.shadowRoot;
+    if (!root) return;
+    
+    // Close button
+    const closeBtn = root.querySelector('.edit-modal-close-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => this.closeEditModalInOverlay());
+    }
+    
+    // Cancel button
+    const cancelBtn = root.querySelector('.edit-modal-cancel-btn');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => this.closeEditModalInOverlay());
+    }
+    
+    // Save button
+    const saveBtn = root.querySelector('.edit-modal-save-btn');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => this.saveEditedRuleInOverlay());
+    }
+    
+    // Folder picker
+    const folderDisplay = root.querySelector('#edit-rule-folder-display-overlay');
+    const folderText = root.querySelector('#edit-rule-folder-text-overlay');
+    const folderInput = root.querySelector('#edit-rule-folder-overlay');
+    
+    if (folderDisplay) {
+      folderDisplay.addEventListener('click', () => {
+        this.openNativeFolderPicker((folder) => {
+          if (folder && folderInput && folderText) {
+            folderInput.value = folder;
+            folderText.textContent = folder;
+          }
+        });
+      });
+    }
+    
+    // Rule type change
+    const ruleType = root.querySelector('#edit-rule-type-overlay');
+    const ruleValue = root.querySelector('#edit-rule-value-overlay');
+    const ruleLabel = root.querySelector('#edit-rule-value-label-overlay');
+    
+    if (ruleType && ruleValue && ruleLabel) {
+      ruleType.addEventListener('change', (e) => {
+        const isDomain = e.target.value === 'domain';
+        ruleLabel.textContent = isDomain ? 'Site' : 'Filename contains phrase';
+        ruleValue.placeholder = isDomain ? 'e.g., github.com' : 'e.g., invoice, receipt, report';
+      });
+    }
+    
+    // Advanced toggle
+    const advancedToggle = root.querySelector('#edit-rule-advanced-toggle-overlay');
+    const advancedContent = root.querySelector('#edit-rule-advanced-content-overlay');
+    const advancedIcon = root.querySelector('#edit-rule-advanced-icon-overlay');
+    
+    if (advancedToggle && advancedContent && advancedIcon) {
+      advancedToggle.addEventListener('click', () => {
+        const isVisible = advancedContent.style.display !== 'none';
+        advancedContent.style.display = isVisible ? 'none' : 'block';
+        advancedIcon.style.transform = isVisible ? 'rotate(0deg)' : 'rotate(-90deg)';
+      });
+    }
+  }
+
+  /**
+   * Sets up event listeners for edit group modal in overlay
+   */
+  setupEditGroupModalListeners() {
+    const root = this.shadowRoot;
+    if (!root) return;
+    
+    // Close button
+    const closeBtn = root.querySelector('.edit-modal-close-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => this.closeEditModalInOverlay());
+    }
+    
+    // Cancel button
+    const cancelBtn = root.querySelector('.edit-modal-cancel-btn');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => this.closeEditModalInOverlay());
+    }
+    
+    // Save button
+    const saveBtn = root.querySelector('.edit-modal-save-btn');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => this.saveEditedGroupInOverlay());
+    }
+    
+    // Folder picker
+    const folderDisplay = root.querySelector('#edit-group-folder-display-overlay');
+    const folderText = root.querySelector('#edit-group-folder-text-overlay');
+    const folderInput = root.querySelector('#edit-group-folder-overlay');
+    
+    if (folderDisplay) {
+      folderDisplay.addEventListener('click', () => {
+        this.openNativeFolderPicker((folder) => {
+          if (folder && folderInput && folderText) {
+            // Normalize folder path (remove trailing slashes for consistency)
+            const normalizedFolder = folder.replace(/[\/\\]+$/, '');
+            folderInput.value = normalizedFolder;
+            folderText.textContent = normalizedFolder;
+            console.log('[EDIT GROUP OVERLAY] Folder updated to:', normalizedFolder);
+          }
+        });
+      });
+    }
+    
+    // Advanced toggle
+    const advancedToggle = root.querySelector('#edit-group-advanced-toggle-overlay');
+    const advancedContent = root.querySelector('#edit-group-advanced-content-overlay');
+    const advancedIcon = root.querySelector('#edit-group-advanced-icon-overlay');
+    
+    if (advancedToggle && advancedContent && advancedIcon) {
+      advancedToggle.addEventListener('click', () => {
+        const isVisible = advancedContent.style.display !== 'none';
+        advancedContent.style.display = isVisible ? 'none' : 'block';
+        advancedIcon.style.transform = isVisible ? 'rotate(0deg)' : 'rotate(-90deg)';
+      });
+    }
+  }
+
+  /**
+   * Saves edited rule in overlay and updates download
+   */
+  async saveEditedRuleInOverlay() {
+    if (this.editingRuleIndex === null || this.editingRuleIndex === undefined) return;
+    
+    const root = this.shadowRoot;
+    if (!root) return;
+    
+    // Ensure countdown is cancelled and stays cancelled during save
+    const wasPaused = this.countdownPaused;
+    this.cancelCountdown();
+    
+    const type = root.querySelector('#edit-rule-type-overlay')?.value || 'domain';
+    const value = root.querySelector('#edit-rule-value-overlay')?.value.trim() || '';
+    const folderInput = root.querySelector('#edit-rule-folder-overlay');
+    const folder = folderInput ? folderInput.value.trim() : 'Downloads';
+    const priorityInput = root.querySelector('#edit-rule-priority-overlay')?.value || '2.0';
+    const priority = Math.max(0.1, Math.min(10, Math.round(parseFloat(priorityInput) * 10) / 10)) || 2.0;
+    const enabled = root.querySelector('#edit-rule-enabled-overlay')?.checked !== false;
+    
+    console.log('[SAVE RULE OVERLAY] Saving rule with folder:', folder);
+    console.log('[SAVE RULE OVERLAY] Folder input value:', folderInput?.value);
+    
+    // Update rule in array
+    this.rules[this.editingRuleIndex] = {
+      type,
+      value,
+      folder,
+      priority,
+      enabled
+    };
+    
+    console.log('[SAVE RULE OVERLAY] Rule to save:', this.rules[this.editingRuleIndex]);
+    
+    // Save to storage
+    await chrome.storage.sync.set({ rules: this.rules });
+    
+    // Verify it was saved
+    const verify = await chrome.storage.sync.get(['rules']);
+    console.log('[SAVE RULE OVERLAY] Verified saved rule:', verify.rules[this.editingRuleIndex]);
+    
+    // Send rulesChanged message to trigger background update
+    chrome.runtime.sendMessage({
+      type: 'rulesChanged'
+    }).catch(() => {}); // Ignore errors if background script is not ready
+    
+    // Close modal first (but don't restore countdown yet)
+    const overlayContainer = this.shadowRoot.querySelector('.overlay-container');
+    if (overlayContainer && this.originalOverlayContent) {
+      overlayContainer.innerHTML = this.originalOverlayContent;
+      this.originalOverlayContent = null;
+      this.setupEventListeners();
+    }
+    
+    // Clear editing state
+    this.editingRuleIndex = null;
+    this.editingGroupName = null;
+    this.countdownStateBeforeModal = null;
+    
+    // Now reload rules and update overlay (this will update downloadInfo with new rule)
+    await this.reloadRulesAndUpdateOverlay();
+    
+    // After overlay is updated, only resume countdown if it wasn't paused before
+    // and no editors are visible
+    if (!wasPaused && !this.rulesEditorVisible && !this.locationPickerVisible) {
+      // Small delay to ensure overlay is fully updated
+      setTimeout(() => {
+        if (!this.rulesEditorVisible && !this.locationPickerVisible && !this.originalOverlayContent) {
+          this.resumeCountdown();
+        }
+      }, 200);
+    }
+  }
+
+  /**
+   * Saves edited group in overlay and updates download
+   */
+  async saveEditedGroupInOverlay() {
+    if (!this.editingGroupName) return;
+    
+    const root = this.shadowRoot;
+    if (!root) return;
+    
+    // Ensure countdown is cancelled and stays cancelled during save
+    const wasPaused = this.countdownPaused;
+    this.cancelCountdown();
+    
+    const newName = root.querySelector('#edit-group-name-overlay')?.value.trim() || '';
+    const extensions = root.querySelector('#edit-group-extensions-overlay')?.value.trim() || '';
+    const folderInput = root.querySelector('#edit-group-folder-overlay');
+    const folder = folderInput ? folderInput.value.trim() : 'Downloads';
+    const priorityInput = root.querySelector('#edit-group-priority-overlay')?.value || '3.0';
+    const priority = Math.max(0.1, Math.min(10, Math.round(parseFloat(priorityInput) * 10) / 10)) || 3.0;
+    const overrideDomainRules = root.querySelector('#edit-group-override-overlay')?.checked || false;
+    const enabled = root.querySelector('#edit-group-enabled-overlay')?.checked !== false;
+    
+    console.log('[SAVE GROUP OVERLAY] Saving group with folder:', folder);
+    console.log('[SAVE GROUP OVERLAY] Folder input value:', folderInput?.value);
+    
+    // Handle rename
+    if (newName && newName !== this.editingGroupName) {
+      delete this.groups[this.editingGroupName];
+    }
+    
+    const saveName = newName || this.editingGroupName;
+    this.groups[saveName] = {
+      extensions,
+      folder,
+      priority,
+      overrideDomainRules,
+      enabled
+    };
+    
+    console.log('[SAVE GROUP OVERLAY] Group to save:', this.groups[saveName]);
+    
+    // Save to storage
+    await chrome.storage.sync.set({ groups: this.groups });
+    
+    // Verify it was saved
+    const verify = await chrome.storage.sync.get(['groups']);
+    console.log('[SAVE GROUP OVERLAY] Verified saved group:', verify.groups[saveName]);
+    
+    // Send rulesChanged message to trigger background update
+    chrome.runtime.sendMessage({
+      type: 'rulesChanged'
+    }).catch(() => {}); // Ignore errors if background script is not ready
+    
+    // Close modal first (but don't restore countdown yet)
+    const overlayContainer = this.shadowRoot.querySelector('.overlay-container');
+    if (overlayContainer && this.originalOverlayContent) {
+      overlayContainer.innerHTML = this.originalOverlayContent;
+      this.originalOverlayContent = null;
+      this.setupEventListeners();
+    }
+    
+    // Clear editing state
+    this.editingRuleIndex = null;
+    this.editingGroupName = null;
+    this.countdownStateBeforeModal = null;
+    
+    // Now reload rules and update overlay (this will update downloadInfo with new rule)
+    await this.reloadRulesAndUpdateOverlay();
+    
+    // After overlay is updated, only resume countdown if it wasn't paused before
+    // and no editors are visible
+    if (!wasPaused && !this.rulesEditorVisible && !this.locationPickerVisible) {
+      // Small delay to ensure overlay is fully updated
+      setTimeout(() => {
+        if (!this.rulesEditorVisible && !this.locationPickerVisible && !this.originalOverlayContent) {
+          this.resumeCountdown();
+        }
+      }, 200);
     }
   }
 }

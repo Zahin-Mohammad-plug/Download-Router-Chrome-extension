@@ -1055,9 +1055,12 @@ class OptionsApp {
     if (folderDisplay) {
       folderDisplay.addEventListener('click', () => {
         this.openFolderPicker((folder) => {
-          if (folder) {
-            folderInput.value = folder;
-            folderText.textContent = folder;
+          if (folder && folderInput && folderText) {
+            // Normalize folder path (remove trailing slashes for consistency)
+            const normalizedFolder = folder.replace(/[\/\\]+$/, '');
+            folderInput.value = normalizedFolder;
+            folderText.textContent = normalizedFolder;
+            console.log('[OPTIONS EDIT RULE] Folder updated to:', normalizedFolder);
           }
         });
       });
@@ -1104,10 +1107,14 @@ class OptionsApp {
     
     const type = document.getElementById('edit-rule-type').value;
     const value = document.getElementById('edit-rule-value').value.trim();
-    const folder = document.getElementById('edit-rule-folder').value.trim() || 'Downloads';
+    const folderInput = document.getElementById('edit-rule-folder');
+    const folder = folderInput ? folderInput.value.trim() : 'Downloads';
     const priorityInput = document.getElementById('edit-rule-priority').value;
     const priority = Math.max(0.1, Math.min(10, Math.round(parseFloat(priorityInput) * 10) / 10)) || 2.0;
     const enabled = document.getElementById('edit-rule-enabled').checked;
+    
+    console.log('[OPTIONS SAVE RULE] Saving rule with folder:', folder);
+    console.log('[OPTIONS SAVE RULE] Folder input value:', folderInput?.value);
     
     this.rules[this.editingRuleIndex] = {
       type,
@@ -1116,6 +1123,8 @@ class OptionsApp {
       priority,
       enabled
     };
+    
+    console.log('[OPTIONS SAVE RULE] Rule to save:', this.rules[this.editingRuleIndex]);
     
     // Clear newly added flag since it's been saved
     if (this.newlyAddedRuleIndex === this.editingRuleIndex) {
@@ -1219,9 +1228,12 @@ class OptionsApp {
     if (folderDisplay) {
       folderDisplay.addEventListener('click', () => {
         this.openFolderPicker((folder) => {
-          if (folder) {
-            folderInput.value = folder;
-            folderText.textContent = folder;
+          if (folder && folderInput && folderText) {
+            // Normalize folder path (remove trailing slashes for consistency)
+            const normalizedFolder = folder.replace(/[\/\\]+$/, '');
+            folderInput.value = normalizedFolder;
+            folderText.textContent = normalizedFolder;
+            console.log('[OPTIONS EDIT GROUP] Folder updated to:', normalizedFolder);
           }
         });
       });
@@ -1255,11 +1267,15 @@ class OptionsApp {
     
     const newName = document.getElementById('edit-group-name').value.trim();
     const extensions = document.getElementById('edit-group-extensions').value.trim();
-    const folder = document.getElementById('edit-group-folder').value.trim() || 'Downloads';
+    const folderInput = document.getElementById('edit-group-folder');
+    const folder = folderInput ? folderInput.value.trim() : 'Downloads';
     const priorityInput = document.getElementById('edit-group-priority').value;
     const priority = Math.max(0.1, Math.min(10, Math.round(parseFloat(priorityInput) * 10) / 10)) || 3.0;
     const overrideDomainRules = document.getElementById('edit-group-override').checked;
     const enabled = document.getElementById('edit-group-enabled').checked;
+    
+    console.log('[OPTIONS SAVE GROUP] Saving group with folder:', folder);
+    console.log('[OPTIONS SAVE GROUP] Folder input value:', folderInput?.value);
     
     // Handle rename
     if (newName && newName !== this.editingGroupName) {
