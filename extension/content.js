@@ -2025,6 +2025,9 @@ class DownloadOverlay {
                          placeholder="Click to select folder"
                          readonly>
                 </div>
+                <div class="rule-edit-warning" style="margin-top: 12px; padding: 8px 12px; background: #e3f2fd; border: 1px solid #2196f3; border-radius: 4px; font-size: 12px; color: #1565c0;">
+                  <strong>Note:</strong> Rule edits apply to future downloads. They may not affect current downloads.
+                </div>
               </div>
               
               <div class="rules-actions">
@@ -2578,16 +2581,25 @@ class DownloadOverlay {
       });
     }
 
-    // Inline Save As browse button
+    // Inline Save As browse button and autocomplete
     const saveasBrowseBtn = root.querySelector('.saveas-editor .browse-btn');
+    const saveasFolderInput = root.querySelector('.saveas-editor .folder-path-input');
     if (saveasBrowseBtn) {
       saveasBrowseBtn.addEventListener('click', () => {
+        const input = saveasFolderInput || root.querySelector('.saveas-editor .folder-path-input');
         this.openNativeFolderPicker((selectedPath) => {
-          if (selectedPath) {
-            const input = root.querySelector('.saveas-editor .folder-path-input');
-            if (input) input.value = selectedPath;
+          if (selectedPath && input) {
+            input.value = selectedPath;
           }
-        });
+        }, null, input);
+      });
+    }
+    // Add autocomplete to save-as folder input for non-companion app users
+    if (saveasFolderInput) {
+      chrome.runtime.sendMessage({ type: 'checkCompanionApp' }, (companionStatus) => {
+        if (!companionStatus || !companionStatus.installed) {
+          this.attachFolderAutocomplete(saveasFolderInput);
+        }
       });
     }
 
@@ -2625,7 +2637,7 @@ class DownloadOverlay {
             if (selectedPath) {
               input.value = selectedPath;
             }
-          });
+          }, null, input);
         }
       });
     });
@@ -2741,6 +2753,217 @@ class DownloadOverlay {
    * External Dependencies:
    *   - resumeCountdown: Method in this class to restart countdown timer
    */
+  hideLocationPicker() {
+    const locationPicker = this.shadowRoot.querySelector('.location-picker');
+    if (locationPicker) {
+      locationPicker.classList.remove('visible');
+    }
+    this.locationPickerVisible = false;
+    // Resume countdown when picker is closed
+    this.resumeCountdown();
+  }
+
+  /**
+   * Attaches autocomplete dropdown to a folder input field for non-companion app users.
+   * Shows suggestions from all currently used folder paths.
+   * 
+   * Inputs:
+   *   - inputElement: The input element to attach autocomplete to
+   *   - callback: Optional function to call when a path is selected
+   * 
+   * Outputs: None (modifies DOM)
+   */
+  attachFolderAutocomplete(inputElement, callback = null) {
+    if (!inputElement) return;
+    
+    const root = this.shadowRoot || document;
+    const isShadowDOM = root !== document;
+    let dropdown = null;
+    let selectedIndex = -1;
+    let suggestions = [];
+    
+    // Create dropdown container
+    const createDropdown = () => {
+      if (dropdown) return;
+      
+      dropdown = document.createElement('div');
+      dropdown.className = 'folder-autocomplete-dropdown';
+      dropdown.style.cssText = `
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        max-height: 200px;
+        overflow-y: auto;
+        background: var(--surface-elevated, #ffffff);
+        border: 1px solid var(--border-subtle, #ddd);
+        border-top: none;
+        border-radius: 0 0 4px 4px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        z-index: 10000;
+        display: none;
+      `;
+      
+      // Position relative to input
+      const inputParent = inputElement.parentElement;
+      if (inputParent) {
+        inputParent.style.position = 'relative';
+        // For shadow DOM, append to shadow root; otherwise append to parent
+        if (isShadowDOM) {
+          root.appendChild(dropdown);
+          // Position absolutely relative to viewport
+          const rect = inputElement.getBoundingClientRect();
+          dropdown.style.position = 'fixed';
+          dropdown.style.top = `${rect.bottom}px`;
+          dropdown.style.left = `${rect.left}px`;
+          dropdown.style.width = `${rect.width}px`;
+        } else {
+          inputParent.appendChild(dropdown);
+        }
+      }
+    };
+    
+    // Update dropdown with filtered suggestions
+    const updateDropdown = (filteredSuggestions) => {
+      if (!dropdown) createDropdown();
+      
+      suggestions = filteredSuggestions;
+      selectedIndex = -1;
+      
+      if (filteredSuggestions.length === 0) {
+        dropdown.style.display = 'none';
+        return;
+      }
+      
+      dropdown.innerHTML = filteredSuggestions.map((path, index) => `
+        <div class="autocomplete-item" data-index="${index}" style="
+          padding: 8px 12px;
+          cursor: pointer;
+          border-bottom: 1px solid var(--border-subtle, #eee);
+          background: ${index === selectedIndex ? 'var(--surface-hover, #f0f0f0)' : 'transparent'};
+        ">
+          ${path}
+        </div>
+      `).join('');
+      
+      // Update position for shadow DOM
+      if (isShadowDOM && inputElement) {
+        const rect = inputElement.getBoundingClientRect();
+        dropdown.style.top = `${rect.bottom}px`;
+        dropdown.style.left = `${rect.left}px`;
+        dropdown.style.width = `${rect.width}px`;
+      }
+      
+      dropdown.style.display = 'block';
+      
+      // Add click handlers
+      dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const path = filteredSuggestions[parseInt(item.dataset.index)];
+          inputElement.value = path;
+          if (callback) callback(path);
+          hideDropdown();
+        });
+      });
+    };
+    
+    const hideDropdown = () => {
+      if (dropdown) {
+        dropdown.style.display = 'none';
+        selectedIndex = -1;
+      }
+    };
+    
+    // Load suggestions from background
+    let allPaths = [];
+    chrome.runtime.sendMessage({ type: 'getUsedFolderPaths' }, (response) => {
+      if (response && response.success && response.paths) {
+        allPaths = response.paths;
+      }
+    });
+    
+    // Handle input
+    let debounceTimer = null;
+    inputElement.addEventListener('input', (e) => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        // Get value from inputElement directly (more reliable than e.target)
+        const value = inputElement.value ? inputElement.value.trim() : '';
+        
+        // Normalize backslashes to forward slashes for matching
+        const normalizedValue = value.replace(/\\/g, '/').toLowerCase();
+        
+        if (normalizedValue === '') {
+          // Show all suggestions when empty
+          updateDropdown(allPaths);
+        } else {
+          // Filter suggestions (case-insensitive)
+          const filtered = allPaths.filter(path => 
+            path.toLowerCase().includes(normalizedValue)
+          );
+          updateDropdown(filtered);
+        }
+      }, 150);
+    });
+    
+    // Handle keyboard navigation
+    inputElement.addEventListener('keydown', (e) => {
+      if (!dropdown || dropdown.style.display === 'none') return;
+      
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        selectedIndex = Math.min(selectedIndex + 1, suggestions.length - 1);
+        updateDropdown(suggestions);
+        const item = dropdown.querySelector(`[data-index="${selectedIndex}"]`);
+        if (item) item.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        selectedIndex = Math.max(selectedIndex - 1, -1);
+        updateDropdown(suggestions);
+        if (selectedIndex >= 0) {
+          const item = dropdown.querySelector(`[data-index="${selectedIndex}"]`);
+          if (item) item.scrollIntoView({ block: 'nearest' });
+        }
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (selectedIndex >= 0 && suggestions[selectedIndex]) {
+          inputElement.value = suggestions[selectedIndex];
+          if (callback) callback(suggestions[selectedIndex]);
+          hideDropdown();
+        }
+      } else if (e.key === 'Escape') {
+        hideDropdown();
+      }
+    });
+    
+    // Hide dropdown when clicking outside
+    const clickHandler = (e) => {
+      if (dropdown && !dropdown.contains(e.target) && e.target !== inputElement) {
+        hideDropdown();
+      }
+    };
+    if (isShadowDOM) {
+      root.addEventListener('click', clickHandler);
+    } else {
+      document.addEventListener('click', clickHandler);
+    }
+    
+    // Show all suggestions on focus (wait for paths to load if needed)
+    inputElement.addEventListener('focus', () => {
+      // Wait a bit for paths to load if they haven't loaded yet
+      if (allPaths.length > 0) {
+        updateDropdown(allPaths);
+      } else {
+        // Retry after a short delay
+        setTimeout(() => {
+          if (allPaths.length > 0) {
+            updateDropdown(allPaths);
+          }
+        }, 100);
+      }
+    });
+  }
+
   /**
    * Opens native folder picker via background script.
    * 
@@ -2750,7 +2973,7 @@ class DownloadOverlay {
    * 
    * Outputs: None (calls callback asynchronously)
    */
-  openNativeFolderPicker(callback, startPath = null) {
+  openNativeFolderPicker(callback, startPath = null, inputElement = null) {
     // CRITICAL: Ensure timeout is paused before opening folder picker
     // Chrome will lose focus, so we need to prevent timeout from firing
     if (this.currentDownloadInfo && this.currentDownloadInfo.id) {
@@ -2782,138 +3005,25 @@ class DownloadOverlay {
           }
         });
       } else {
-        // Companion app not available - show fallback UI for subdirectory input
+        // Companion app not available - attach autocomplete to input if provided
         // Without companion app, users can only pick subdirectories of Chrome's download path
-        this.showSubdirectoryInput(callback);
-      }
-    });
-  }
-
-  /**
-   * Shows a fallback UI for entering subdirectory name when companion app is not available.
-   * Without companion app, users (Windows & Mac) can only pick subdirectories of Chrome's download path.
-   * 
-   * Inputs:
-   *   - callback: Function to call with selected subdirectory path (relative)
-   * 
-   * Outputs: None (shows modal/input UI)
-   */
-  showSubdirectoryInput(callback) {
-    const root = this.shadowRoot;
-    
-    // Detect dark mode - match the overlay's dark mode colors
-    const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    
-    // Create a simple modal for subdirectory input
-    const modal = document.createElement('div');
-    modal.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 10000;
-    `;
-    
-    const dialog = document.createElement('div');
-    // Use colors that match the overlay's CSS variables for consistency
-    // Dark mode: --surface-elevated: rgba(30, 30, 30, 0.98), --text: #f5f5f7, --text-secondary: #a1a1a6, --border: rgba(255, 255, 255, 0.12)
-    // Light mode: --surface-elevated: rgba(255, 255, 255, 0.98), --text: #1d1d1f, --text-secondary: #6e6e73, --border: rgba(0, 0, 0, 0.08)
-    const bgColor = isDarkMode ? 'rgba(30, 30, 30, 0.98)' : 'rgba(255, 255, 255, 0.98)';
-    const textColor = isDarkMode ? '#f5f5f7' : '#1d1d1f';
-    const textSecondary = isDarkMode ? '#a1a1a6' : '#6e6e73';
-    const borderColor = isDarkMode ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)';
-    const inputBg = isDarkMode ? 'rgba(30, 30, 30, 0.98)' : '#ffffff';
-    const buttonBg = '#007bff'; // Primary button color (same in both modes)
-    const cancelButtonBg = isDarkMode ? 'rgba(30, 30, 30, 0.98)' : '#ffffff';
-    const cancelButtonText = isDarkMode ? '#f5f5f7' : '#1d1d1f';
-    
-    dialog.style.cssText = `
-      background: ${bgColor};
-      padding: 24px;
-      border-radius: 8px;
-      min-width: 400px;
-      max-width: 500px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, ${isDarkMode ? '0.4' : '0.15'});
-      color: ${textColor};
-    `;
-    
-    dialog.innerHTML = `
-      <h3 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600; color: ${textColor};">Select Subdirectory</h3>
-      <p style="margin: 0 0 16px 0; color: ${textSecondary}; font-size: 14px;">
-        Without the companion app, you can only select subdirectories within Chrome's Downloads folder.
-        Enter a subdirectory name (e.g., "Documents", "Videos").
-      </p>
-      <input type="text" id="subdirectory-input" placeholder="Enter subdirectory name" 
-             style="width: 100%; padding: 8px 12px; border: 1px solid ${borderColor}; border-radius: 4px; font-size: 14px; margin-bottom: 16px; background: ${inputBg}; color: ${textColor};"
-             autofocus>
-      <div style="display: flex; gap: 8px; justify-content: flex-end;">
-        <button id="subdirectory-cancel" style="padding: 8px 16px; border: 1px solid ${borderColor}; background: ${cancelButtonBg}; color: ${cancelButtonText}; border-radius: 4px; cursor: pointer; font-size: 14px;">Cancel</button>
-        <button id="subdirectory-ok" style="padding: 8px 16px; border: none; background: ${buttonBg}; color: white; border-radius: 4px; cursor: pointer; font-size: 14px;">OK</button>
-      </div>
-    `;
-    
-    modal.appendChild(dialog);
-    document.body.appendChild(modal);
-    
-    const input = dialog.querySelector('#subdirectory-input');
-    const okBtn = dialog.querySelector('#subdirectory-ok');
-    const cancelBtn = dialog.querySelector('#subdirectory-cancel');
-    
-    const cleanup = () => {
-      document.body.removeChild(modal);
-      this.resumeCountdown();
-    };
-    
-    okBtn.addEventListener('click', () => {
-      const subdir = input.value.trim();
-      if (subdir) {
-        // Validate: must be relative path (not absolute)
-        if (/^(\/|[A-Za-z]:[\\\/])/.test(subdir)) {
-          alert('Please enter only a subdirectory name (e.g., "Documents"), not an absolute path.');
-          return;
+        if (inputElement) {
+          // Make input editable and attach autocomplete
+          inputElement.removeAttribute('readonly');
+          inputElement.focus();
+          this.attachFolderAutocomplete(inputElement, (selectedPath) => {
+            if (selectedPath && callback) {
+              // Normalize path (accept both / and \ but store as forward slashes)
+              const normalized = selectedPath.replace(/\\/g, '/');
+              callback(normalized);
+            }
+          });
+        } else if (callback) {
+          // No input element provided - just call callback with null
+          callback(null);
         }
-        // Remove any slashes and normalize
-        const normalizedSubdir = subdir.replace(/[\/\\]/g, '');
-        cleanup();
-        // Return relative path (subdirectory name only)
-        if (callback) callback(normalizedSubdir);
-      } else {
-        alert('Please enter a subdirectory name.');
       }
     });
-    
-    cancelBtn.addEventListener('click', () => {
-      cleanup();
-      if (callback) callback(null);
-    });
-    
-    // Close on Escape key
-    const handleEscape = (e) => {
-      if (e.key === 'Escape') {
-        cleanup();
-        if (callback) callback(null);
-        document.removeEventListener('keydown', handleEscape);
-      }
-    };
-    document.addEventListener('keydown', handleEscape);
-    
-    // Focus input
-    input.focus();
-  }
-
-  hideLocationPicker() {
-    const locationPicker = this.shadowRoot.querySelector('.location-picker');
-    if (locationPicker) {
-      locationPicker.classList.remove('visible');
-    }
-    this.locationPickerVisible = false;
-    // Resume countdown when picker is closed
-    this.resumeCountdown();
   }
 
   /**
@@ -3260,27 +3370,38 @@ class DownloadOverlay {
     if (folderInput) {
       folderInput.value = expectedFolder;
       
-      // Only add click listener once
-      if (!folderInput.dataset.listenerAdded) {
-        folderInput.dataset.listenerAdded = 'true';
-        folderInput.addEventListener('click', () => {
-          // CRITICAL: Ensure timeout stays paused when opening folder picker
-          // Chrome will lose focus, and we don't want timeout to fire
-          if (this.currentDownloadInfo && this.currentDownloadInfo.id) {
-            this.pauseCountdown();
-          }
-          this.openNativeFolderPicker((selectedPath) => {
-            if (selectedPath) {
-              const input = root.querySelector('#rule-folder-input');
-              if (input) {
-                input.value = selectedPath;
+      // Check companion app status and set up input accordingly
+      chrome.runtime.sendMessage({ type: 'checkCompanionApp' }, (companionStatus) => {
+        if (companionStatus && companionStatus.installed) {
+          // Companion app available - make it clickable for native picker
+          folderInput.setAttribute('readonly', 'readonly');
+          if (!folderInput.dataset.listenerAdded) {
+            folderInput.dataset.listenerAdded = 'true';
+            folderInput.addEventListener('click', () => {
+              // CRITICAL: Ensure timeout stays paused when opening folder picker
+              // Chrome will lose focus, and we don't want timeout to fire
+              if (this.currentDownloadInfo && this.currentDownloadInfo.id) {
+                this.pauseCountdown();
               }
-            }
-            // After folder picker closes, timeout should still be paused
-            // It will only resume when editor is closed (Cancel/Apply)
-          });
-        });
-      }
+              this.openNativeFolderPicker((selectedPath) => {
+                if (selectedPath) {
+                  const input = root.querySelector('#rule-folder-input');
+                  if (input) {
+                    input.value = selectedPath;
+                  }
+                }
+                // After folder picker closes, timeout should still be paused
+                // It will only resume when editor is closed (Cancel/Apply)
+              }, null, folderInput);
+            });
+          }
+        } else {
+          // No companion app - make it editable with autocomplete
+          folderInput.removeAttribute('readonly');
+          folderInput.placeholder = 'Type folder path (e.g., Documents/Subfolder)';
+          this.attachFolderAutocomplete(folderInput);
+        }
+      });
     }
     
     // Update value input based on selected type
@@ -4397,6 +4518,10 @@ class DownloadOverlay {
               <input type="hidden" id="edit-rule-folder-overlay" value="${rule.folder || 'Downloads'}">
             </div>
             
+            <div class="rule-edit-warning" style="margin-top: 12px; padding: 8px 12px; background: #e3f2fd; border: 1px solid #2196f3; border-radius: 4px; font-size: 12px; color: #1565c0;">
+              <strong>Note:</strong> Rule edits apply to future downloads. They may not affect current downloads.
+            </div>
+            
             <div class="advanced-section" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-subtle);">
               <button type="button" class="advanced-toggle" id="edit-rule-advanced-toggle-overlay" style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 13px; font-weight: 500; margin-bottom: 16px;">
                 <span id="edit-rule-advanced-icon-overlay" style="display: inline-flex; align-items: center; transition: transform 0.2s;">${this.getSVGIcon('chevron-down')}</span>
@@ -4505,6 +4630,10 @@ class DownloadOverlay {
                 <span style="color: var(--text-secondary); font-size: 12px;">Click to browse</span>
               </div>
               <input type="hidden" id="edit-group-folder-overlay" value="${group.folder || 'Downloads'}">
+            </div>
+            
+            <div class="rule-edit-warning" style="margin-top: 12px; padding: 8px 12px; background: #e3f2fd; border: 1px solid #2196f3; border-radius: 4px; font-size: 12px; color: #1565c0;">
+              <strong>Note:</strong> Rule edits apply to future downloads. They may not affect current downloads.
             </div>
             
             <div class="advanced-section" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-subtle);">
@@ -4623,14 +4752,47 @@ class DownloadOverlay {
     const folderText = root.querySelector('#edit-rule-folder-text-overlay');
     const folderInput = root.querySelector('#edit-rule-folder-overlay');
     
-    if (folderDisplay) {
-      folderDisplay.addEventListener('click', () => {
-        this.openNativeFolderPicker((folder) => {
-          if (folder && folderInput && folderText) {
-            folderInput.value = folder;
-            folderText.textContent = folder;
-          }
-        });
+    if (folderDisplay && folderInput) {
+      // Check companion app status and setup accordingly
+      chrome.runtime.sendMessage({ type: 'checkCompanionApp' }, (companionStatus) => {
+        if (companionStatus && companionStatus.installed) {
+          // Companion app available - keep clickable display
+          folderDisplay.addEventListener('click', () => {
+            this.openNativeFolderPicker((folder) => {
+              if (folder && folderInput && folderText) {
+                folderInput.value = folder;
+                folderText.textContent = folder;
+              }
+            });
+          });
+        } else {
+          // No companion app - convert to text input with autocomplete
+          // Create input element (works in both regular DOM and shadow DOM)
+          const textInput = document.createElement('input');
+          textInput.type = 'text';
+          textInput.className = 'form-input';
+          textInput.value = folderInput.value || 'Downloads';
+          textInput.style.cssText = 'width: 100%; padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: 4px;';
+          textInput.placeholder = 'Type folder path (e.g., Documents/Subfolder)';
+          
+          // Replace display with input
+          folderDisplay.replaceWith(textInput);
+          
+          // Update hidden input when text input changes
+          textInput.addEventListener('input', () => {
+            const normalized = textInput.value ? textInput.value.replace(/\\/g, '/') : '';
+            folderInput.value = normalized;
+            if (folderText) folderText.textContent = normalized;
+          });
+          
+          // Attach autocomplete
+          this.attachFolderAutocomplete(textInput, (selectedPath) => {
+            if (selectedPath && folderInput) {
+              folderInput.value = selectedPath;
+              if (folderText) folderText.textContent = selectedPath;
+            }
+          });
+        }
       });
     }
     
@@ -4691,17 +4853,49 @@ class DownloadOverlay {
     const folderText = root.querySelector('#edit-group-folder-text-overlay');
     const folderInput = root.querySelector('#edit-group-folder-overlay');
     
-    if (folderDisplay) {
-      folderDisplay.addEventListener('click', () => {
-        this.openNativeFolderPicker((folder) => {
-          if (folder && folderInput && folderText) {
-            // Normalize folder path (remove trailing slashes for consistency)
-            const normalizedFolder = folder.replace(/[\/\\]+$/, '');
-            folderInput.value = normalizedFolder;
-            folderText.textContent = normalizedFolder;
-            console.log('[EDIT GROUP OVERLAY] Folder updated to:', normalizedFolder);
-          }
-        });
+    if (folderDisplay && folderInput) {
+      // Check companion app status and setup accordingly
+      chrome.runtime.sendMessage({ type: 'checkCompanionApp' }, (companionStatus) => {
+        if (companionStatus && companionStatus.installed) {
+          // Companion app available - keep clickable display
+          folderDisplay.addEventListener('click', () => {
+            this.openNativeFolderPicker((folder) => {
+              if (folder && folderInput && folderText) {
+                const normalizedFolder = folder.replace(/[\/\\]+$/, '');
+                folderInput.value = normalizedFolder;
+                folderText.textContent = normalizedFolder;
+                console.log('[EDIT GROUP OVERLAY] Folder updated to:', normalizedFolder);
+              }
+            });
+          });
+        } else {
+          // No companion app - convert to text input with autocomplete
+          // Create input element (works in both regular DOM and shadow DOM)
+          const textInput = document.createElement('input');
+          textInput.type = 'text';
+          textInput.className = 'form-input';
+          textInput.value = folderInput.value || 'Downloads';
+          textInput.style.cssText = 'width: 100%; padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: 4px;';
+          textInput.placeholder = 'Type folder path (e.g., Documents/Subfolder)';
+          
+          // Replace display with input
+          folderDisplay.replaceWith(textInput);
+          
+          // Update hidden input when text input changes
+          textInput.addEventListener('input', () => {
+            const normalized = textInput.value ? textInput.value.replace(/\\/g, '/') : '';
+            folderInput.value = normalized;
+            if (folderText) folderText.textContent = normalized;
+          });
+          
+          // Attach autocomplete
+          this.attachFolderAutocomplete(textInput, (selectedPath) => {
+            if (selectedPath && folderInput) {
+              folderInput.value = selectedPath;
+              if (folderText) folderText.textContent = selectedPath;
+            }
+          });
+        }
       });
     }
     

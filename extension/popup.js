@@ -893,6 +893,213 @@ class PopupApp {
   /**
    * Opens folder picker - uses native OS dialog if companion app available.
    */
+  /**
+   * Converts a clickable folder display to a text input with autocomplete for non-companion app users.
+   * For companion app users, keeps the clickable display.
+   */
+  async setupFolderInput(displayElement, hiddenInput, textSpan, onFolderChange = null) {
+    if (!displayElement || !hiddenInput) return;
+    
+    try {
+      const companionStatus = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ type: 'checkCompanionApp' }, (response) => {
+          resolve(response || { installed: false });
+        });
+      });
+      
+      if (companionStatus && companionStatus.installed) {
+        // Companion app available - keep clickable display
+        displayElement.addEventListener('click', () => {
+          this.openFolderPicker((folder) => {
+            if (folder && hiddenInput && textSpan) {
+              const normalizedFolder = folder.replace(/[\/\\]+$/, '');
+              hiddenInput.value = normalizedFolder;
+              if (textSpan) textSpan.textContent = normalizedFolder;
+              if (onFolderChange) onFolderChange(normalizedFolder);
+            }
+          });
+        });
+      } else {
+        // No companion app - convert to text input with autocomplete
+        const textInput = document.createElement('input');
+        textInput.type = 'text';
+        textInput.className = 'form-input';
+        textInput.value = hiddenInput.value || 'Downloads';
+        textInput.style.cssText = 'width: 100%; padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: 4px;';
+        textInput.placeholder = 'Type folder path (e.g., Documents/Subfolder)';
+        
+        // Replace display with input
+        displayElement.replaceWith(textInput);
+        
+        // Update hidden input when text input changes
+        textInput.addEventListener('input', () => {
+          const normalized = textInput.value ? textInput.value.replace(/\\/g, '/') : '';
+          hiddenInput.value = normalized;
+          if (textSpan) textSpan.textContent = normalized;
+          if (onFolderChange) onFolderChange(normalized);
+        });
+        
+        // Attach autocomplete
+        this.attachFolderAutocomplete(textInput, (selectedPath) => {
+          if (selectedPath) {
+            hiddenInput.value = selectedPath;
+            if (textSpan) textSpan.textContent = selectedPath;
+            if (onFolderChange) onFolderChange(selectedPath);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error setting up folder input:', error);
+    }
+  }
+
+  /**
+   * Attaches autocomplete dropdown to a folder input field for non-companion app users.
+   */
+  attachFolderAutocomplete(inputElement, callback = null) {
+    if (!inputElement) return;
+    
+    let dropdown = null;
+    let selectedIndex = -1;
+    let suggestions = [];
+    
+    // Create dropdown container
+    const createDropdown = () => {
+      if (dropdown) return;
+      
+      dropdown = document.createElement('div');
+      dropdown.className = 'folder-autocomplete-dropdown';
+      dropdown.style.cssText = `
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        max-height: 200px;
+        overflow-y: auto;
+        background: var(--surface-elevated, #ffffff);
+        border: 1px solid var(--border-subtle, #ddd);
+        border-top: none;
+        border-radius: 0 0 4px 4px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        z-index: 10000;
+        display: none;
+      `;
+      
+      const inputParent = inputElement.parentElement;
+      if (inputParent) {
+        inputParent.style.position = 'relative';
+        inputParent.appendChild(dropdown);
+      }
+    };
+    
+    const updateDropdown = (filteredSuggestions) => {
+      if (!dropdown) createDropdown();
+      
+      suggestions = filteredSuggestions;
+      selectedIndex = -1;
+      
+      if (filteredSuggestions.length === 0) {
+        dropdown.style.display = 'none';
+        return;
+      }
+      
+      dropdown.innerHTML = filteredSuggestions.map((path, index) => `
+        <div class="autocomplete-item" data-index="${index}" style="
+          padding: 8px 12px;
+          cursor: pointer;
+          border-bottom: 1px solid var(--border-subtle, #eee);
+          background: ${index === selectedIndex ? 'var(--surface-hover, #f0f0f0)' : 'transparent'};
+        ">
+          ${path}
+        </div>
+      `).join('');
+      
+      dropdown.style.display = 'block';
+      
+      dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const path = filteredSuggestions[parseInt(item.dataset.index)];
+          inputElement.value = path;
+          if (callback) callback(path);
+          hideDropdown();
+        });
+      });
+    };
+    
+    const hideDropdown = () => {
+      if (dropdown) {
+        dropdown.style.display = 'none';
+        selectedIndex = -1;
+      }
+    };
+    
+    let allPaths = [];
+    chrome.runtime.sendMessage({ type: 'getUsedFolderPaths' }, (response) => {
+      if (response && response.success && response.paths) {
+        allPaths = response.paths;
+      }
+    });
+    
+    let debounceTimer = null;
+    inputElement.addEventListener('input', (e) => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const value = e.target.value.trim();
+        const normalizedValue = value.replace(/\\/g, '/').toLowerCase();
+        
+        if (normalizedValue === '') {
+          updateDropdown(allPaths);
+        } else {
+          const filtered = allPaths.filter(path => 
+            path.toLowerCase().includes(normalizedValue)
+          );
+          updateDropdown(filtered);
+        }
+      }, 150);
+    });
+    
+    inputElement.addEventListener('keydown', (e) => {
+      if (!dropdown || dropdown.style.display === 'none') return;
+      
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        selectedIndex = Math.min(selectedIndex + 1, suggestions.length - 1);
+        updateDropdown(suggestions);
+        const item = dropdown.querySelector(`[data-index="${selectedIndex}"]`);
+        if (item) item.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        selectedIndex = Math.max(selectedIndex - 1, -1);
+        updateDropdown(suggestions);
+        if (selectedIndex >= 0) {
+          const item = dropdown.querySelector(`[data-index="${selectedIndex}"]`);
+          if (item) item.scrollIntoView({ block: 'nearest' });
+        }
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (selectedIndex >= 0 && suggestions[selectedIndex]) {
+          inputElement.value = suggestions[selectedIndex];
+          if (callback) callback(suggestions[selectedIndex]);
+          hideDropdown();
+        }
+      } else if (e.key === 'Escape') {
+        hideDropdown();
+      }
+    });
+    
+    document.addEventListener('click', (e) => {
+      if (dropdown && !dropdown.contains(e.target) && e.target !== inputElement) {
+        hideDropdown();
+      }
+    });
+    
+    inputElement.addEventListener('focus', () => {
+      if (allPaths.length > 0) {
+        updateDropdown(allPaths);
+      }
+    });
+  }
+
   async openFolderPicker(callback) {
     if (this.folderPickerOpen) {
       console.log('Folder picker already open, ignoring');
@@ -1024,6 +1231,88 @@ class PopupApp {
   /**
    * Opens edit modal for a rule
    */
+
+
+  closeModal() {
+    const modal = document.getElementById('modal-overlay');
+    if (modal) {
+      modal.classList.remove('active');
+    }
+    
+    this.editingRuleIndex = null;
+    this.editingGroupName = null;
+  }
+
+  saveRule() {
+    const type = document.getElementById('edit-rule-type').value;
+    const value = document.getElementById('edit-rule-value').value.trim();
+    const folderInput = document.getElementById('edit-rule-folder');
+    const folder = folderInput ? folderInput.value.trim() : 'Downloads';
+    
+    if (!value) {
+      alert('Please enter a value for the rule');
+      return;
+    }
+    
+    console.log('[POPUP SAVE RULE] Folder input value:', folderInput?.value);
+    
+    const rule = {
+      type: type,
+      value: value,
+      folder: folder
+    };
+    
+    if (this.editingRuleIndex !== null) {
+      this.rules[this.editingRuleIndex] = rule;
+    } else {
+      this.rules.push(rule);
+    }
+    
+    chrome.storage.sync.set({ rules: this.rules }, () => {
+      this.renderRules();
+      this.closeModal();
+    });
+  }
+
+  saveGroup() {
+    const newName = document.getElementById('edit-group-name').value.trim();
+    const extensions = document.getElementById('edit-group-extensions').value.trim();
+    const folderInput = document.getElementById('edit-group-folder');
+    const folder = folderInput ? folderInput.value.trim() : 'Downloads';
+    
+    if (!newName || !extensions) {
+      alert('Please enter a name and extensions for the file type');
+      return;
+    }
+    
+    console.log('[POPUP SAVE GROUP] Folder input value:', folderInput?.value);
+    
+    // If name changed, need to update the key
+    if (newName !== this.editingGroupName) {
+      // Delete old group
+      delete this.groups[this.editingGroupName];
+      // Create new group with new name
+      this.groups[newName] = {
+        extensions: extensions,
+        folder: folder
+      };
+    } else {
+      // Just update existing group
+      this.groups[newName] = {
+        extensions: extensions,
+        folder: folder
+      };
+    }
+    
+    chrome.storage.sync.set({ groups: this.groups }, () => {
+      this.renderGroups();
+      this.closeModal();
+    });
+  }
+
+  /**
+   * Opens edit modal for a rule
+   */
   openEditRuleModal(index) {
     const rule = this.rules[index];
     if (!rule) return;
@@ -1064,6 +1353,10 @@ class PopupApp {
           <input type="hidden" id="edit-rule-folder" value="${rule.folder || 'Downloads'}">
         </div>
         
+        <div class="rule-edit-warning" style="margin-top: 12px; padding: 8px 12px; background: #e3f2fd; border: 1px solid #2196f3; border-radius: 4px; font-size: 12px; color: #1565c0;">
+          <strong>Note:</strong> Rule edits apply to future downloads. They may not affect current downloads.
+        </div>
+        
         <div class="advanced-section" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-subtle);">
           <button type="button" class="advanced-toggle" id="edit-rule-advanced-toggle" style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 13px; font-weight: 500; margin-bottom: 16px;">
             <span id="edit-rule-advanced-icon" style="display: inline-flex; align-items: center; transition: transform 0.2s;">${typeof getIcon !== 'undefined' ? getIcon('chevron-down', 16) : '▼'}</span>
@@ -1102,17 +1395,9 @@ class PopupApp {
     const folderText = document.getElementById('edit-rule-folder-text');
     const folderInput = document.getElementById('edit-rule-folder');
     
-    if (folderDisplay) {
-      folderDisplay.addEventListener('click', () => {
-        this.openFolderPicker((folder) => {
-          if (folder && folderInput && folderText) {
-            // Normalize folder path (remove trailing slashes for consistency)
-            const normalizedFolder = folder.replace(/[\/\\]+$/, '');
-            folderInput.value = normalizedFolder;
-            folderText.textContent = normalizedFolder;
-            console.log('[POPUP EDIT RULE] Folder updated to:', normalizedFolder);
-          }
-        });
+    if (folderDisplay && folderInput) {
+      this.setupFolderInput(folderDisplay, folderInput, folderText, (folder) => {
+        console.log('[POPUP EDIT RULE] Folder updated to:', folder);
       });
     }
     
@@ -1150,11 +1435,11 @@ class PopupApp {
   /**
    * Opens edit modal for a file type group
    */
-  openEditGroupModal(name) {
-    const group = this.groups[name];
+  openEditGroupModal(groupName) {
+    const group = this.groups[groupName];
     if (!group) return;
     
-    this.editingGroupName = name;
+    this.editingGroupName = groupName;
     
     const modal = document.getElementById('modal-overlay');
     const modalBody = document.getElementById('folder-picker-modal');
@@ -1171,7 +1456,7 @@ class PopupApp {
       <div class="modal-body edit-form">
         <div class="form-group">
           <label class="form-label">File Type Name</label>
-          <input type="text" class="form-input" id="edit-group-name" value="${name}" placeholder="e.g., 3d-files">
+          <input type="text" class="form-input" id="edit-group-name" value="${groupName}" placeholder="e.g., 3d-files">
         </div>
         <div class="form-group">
           <label class="form-label">Extensions (comma-separated)</label>
@@ -1185,6 +1470,10 @@ class PopupApp {
             <span style="color: var(--text-secondary); font-size: 12px;">Click to browse</span>
           </div>
           <input type="hidden" id="edit-group-folder" value="${group.folder || 'Downloads'}">
+        </div>
+        
+        <div class="rule-edit-warning" style="margin-top: 12px; padding: 8px 12px; background: #e3f2fd; border: 1px solid #2196f3; border-radius: 4px; font-size: 12px; color: #1565c0;">
+          <strong>Note:</strong> Rule edits apply to future downloads. They may not affect current downloads.
         </div>
         
         <div class="advanced-section" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-subtle);">
@@ -1232,17 +1521,9 @@ class PopupApp {
     const folderText = document.getElementById('edit-group-folder-text');
     const folderInput = document.getElementById('edit-group-folder');
     
-    if (folderDisplay) {
-      folderDisplay.addEventListener('click', () => {
-        this.openFolderPicker((folder) => {
-          if (folder && folderInput && folderText) {
-            // Normalize folder path (remove trailing slashes for consistency)
-            const normalizedFolder = folder.replace(/[\/\\]+$/, '');
-            folderInput.value = normalizedFolder;
-            folderText.textContent = normalizedFolder;
-            console.log('[POPUP EDIT GROUP] Folder updated to:', normalizedFolder);
-          }
-        });
+    if (folderDisplay && folderInput) {
+      this.setupFolderInput(folderDisplay, folderInput, folderText, (folder) => {
+        console.log('[POPUP EDIT GROUP] Folder updated to:', folder);
       });
     }
     

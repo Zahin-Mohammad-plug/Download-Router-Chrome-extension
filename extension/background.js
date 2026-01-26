@@ -192,6 +192,43 @@ function isAbsolutePath(path) {
 }
 
 /**
+ * Collects all folder paths currently used in rules, groups, and default folder.
+ * Returns only relative paths (filters out absolute paths).
+ * 
+ * Inputs: None
+ * Outputs: Promise resolving to sorted array of normalized folder paths (forward slashes)
+ */
+async function getAllUsedFolderPaths() {
+  const data = await chrome.storage.sync.get(['rules', 'groups', 'defaultFolder']);
+  const paths = new Set();
+  
+  // Add paths from rules
+  if (data.rules && Array.isArray(data.rules)) {
+    data.rules.forEach(rule => {
+      if (rule.folder && !isAbsolutePath(rule.folder)) {
+        paths.add(rule.folder.replace(/\\/g, '/'));
+      }
+    });
+  }
+  
+  // Add paths from groups
+  if (data.groups && typeof data.groups === 'object') {
+    Object.values(data.groups).forEach(group => {
+      if (group.folder && !isAbsolutePath(group.folder)) {
+        paths.add(group.folder.replace(/\\/g, '/'));
+      }
+    });
+  }
+  
+  // Add default folder
+  if (data.defaultFolder && !isAbsolutePath(data.defaultFolder)) {
+    paths.add(data.defaultFolder.replace(/\\/g, '/'));
+  }
+  
+  return Array.from(paths).sort();
+}
+
+/**
  * Normalizes a domain value for rule matching.
  * Strips protocol, trailing slashes, paths, and www prefix.
  * 
@@ -1530,6 +1567,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: success });
     }).catch(error => {
       sendResponse({ success: false, error: error.message });
+    });
+    return true; // Required for async sendResponse
+  } else if (message.type === 'getUsedFolderPaths') {
+    // getUsedFolderPaths: Get all folder paths currently used in rules, groups, and default folder
+    getAllUsedFolderPaths().then(paths => {
+      sendResponse({ success: true, paths: paths });
+    }).catch(error => {
+      sendResponse({ success: false, error: error.message, paths: [] });
     });
     return true; // Required for async sendResponse
   } else if (message.type === 'useNativeSaveAs') {

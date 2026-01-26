@@ -170,9 +170,235 @@ class OptionsApp {
    * External Dependencies:
    *   - chrome.runtime.sendMessage: Chrome API for communicating with background script
    */
+  /**
+   * Converts a clickable folder display to a text input with autocomplete for non-companion app users.
+   * For companion app users, keeps the clickable display.
+   */
+  async setupFolderInput(displayElement, hiddenInput, textSpan, onFolderChange = null) {
+    if (!displayElement || !hiddenInput) return;
+    
+    const companionStatus = await this.checkCompanionAppStatusHelper();
+    
+    if (companionStatus && companionStatus.installed) {
+      // Companion app available - keep clickable display
+      displayElement.addEventListener('click', () => {
+        this.openFolderPicker((folder) => {
+          if (folder && hiddenInput && textSpan) {
+            const normalizedFolder = folder.replace(/[\/\\]+$/, '');
+            hiddenInput.value = normalizedFolder;
+            if (textSpan) textSpan.textContent = normalizedFolder;
+            if (onFolderChange) onFolderChange(normalizedFolder);
+          }
+        });
+      });
+    } else {
+      // No companion app - convert to text input with autocomplete
+      const textInput = document.createElement('input');
+      textInput.type = 'text';
+      textInput.className = 'form-input';
+      textInput.value = hiddenInput.value || 'Downloads';
+      textInput.style.cssText = 'width: 100%; padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: 4px;';
+      textInput.placeholder = 'Type folder path (e.g., Documents/Subfolder)';
+      
+      // Replace display with input
+      displayElement.replaceWith(textInput);
+      
+      // Update hidden input when text input changes
+      textInput.addEventListener('input', () => {
+        const normalized = textInput.value ? textInput.value.replace(/\\/g, '/') : '';
+        hiddenInput.value = normalized;
+        if (textSpan) textSpan.textContent = normalized;
+        if (onFolderChange) onFolderChange(normalized);
+      });
+      
+      // Attach autocomplete
+      this.attachFolderAutocomplete(textInput, (selectedPath) => {
+        if (selectedPath) {
+          hiddenInput.value = selectedPath;
+          if (textSpan) textSpan.textContent = selectedPath;
+          if (onFolderChange) onFolderChange(selectedPath);
+        }
+      });
+    }
+  }
+
+  /**
+   * Attaches autocomplete dropdown to a folder input field for non-companion app users.
+   */
+  attachFolderAutocomplete(inputElement, callback = null) {
+    if (!inputElement) return;
+    
+    let dropdown = null;
+    let selectedIndex = -1;
+    let suggestions = [];
+    
+    // Create dropdown container
+    const createDropdown = () => {
+      if (dropdown) return;
+      
+      dropdown = document.createElement('div');
+      dropdown.className = 'folder-autocomplete-dropdown';
+      dropdown.style.cssText = `
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        max-height: 200px;
+        overflow-y: auto;
+        background: var(--surface-elevated, #ffffff);
+        border: 1px solid var(--border-subtle, #ddd);
+        border-top: none;
+        border-radius: 0 0 4px 4px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        z-index: 10000;
+        display: none;
+      `;
+      
+      const inputParent = inputElement.parentElement;
+      if (inputParent) {
+        inputParent.style.position = 'relative';
+        inputParent.appendChild(dropdown);
+      }
+    };
+    
+    const updateDropdown = (filteredSuggestions) => {
+      if (!dropdown) createDropdown();
+      
+      suggestions = filteredSuggestions;
+      selectedIndex = -1;
+      
+      if (filteredSuggestions.length === 0) {
+        dropdown.style.display = 'none';
+        return;
+      }
+      
+      dropdown.innerHTML = filteredSuggestions.map((path, index) => `
+        <div class="autocomplete-item" data-index="${index}" style="
+          padding: 8px 12px;
+          cursor: pointer;
+          border-bottom: 1px solid var(--border-subtle, #eee);
+          background: ${index === selectedIndex ? 'var(--surface-hover, #f0f0f0)' : 'transparent'};
+        ">
+          ${path}
+        </div>
+      `).join('');
+      
+      dropdown.style.display = 'block';
+      
+      dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const path = filteredSuggestions[parseInt(item.dataset.index)];
+          inputElement.value = path;
+          if (callback) callback(path);
+          hideDropdown();
+        });
+      });
+    };
+    
+    const hideDropdown = () => {
+      if (dropdown) {
+        dropdown.style.display = 'none';
+        selectedIndex = -1;
+      }
+    };
+    
+    let allPaths = [];
+    chrome.runtime.sendMessage({ type: 'getUsedFolderPaths' }, (response) => {
+      if (response && response.success && response.paths) {
+        allPaths = response.paths;
+      }
+    });
+    
+    let debounceTimer = null;
+    inputElement.addEventListener('input', (e) => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const value = e.target.value.trim();
+        const normalizedValue = value.replace(/\\/g, '/').toLowerCase();
+        
+        if (normalizedValue === '') {
+          updateDropdown(allPaths);
+        } else {
+          const filtered = allPaths.filter(path => 
+            path.toLowerCase().includes(normalizedValue)
+          );
+          updateDropdown(filtered);
+        }
+      }, 150);
+    });
+    
+    inputElement.addEventListener('keydown', (e) => {
+      if (!dropdown || dropdown.style.display === 'none') return;
+      
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        selectedIndex = Math.min(selectedIndex + 1, suggestions.length - 1);
+        updateDropdown(suggestions);
+        const item = dropdown.querySelector(`[data-index="${selectedIndex}"]`);
+        if (item) item.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        selectedIndex = Math.max(selectedIndex - 1, -1);
+        updateDropdown(suggestions);
+        if (selectedIndex >= 0) {
+          const item = dropdown.querySelector(`[data-index="${selectedIndex}"]`);
+          if (item) item.scrollIntoView({ block: 'nearest' });
+        }
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (selectedIndex >= 0 && suggestions[selectedIndex]) {
+          inputElement.value = suggestions[selectedIndex];
+          if (callback) callback(suggestions[selectedIndex]);
+          hideDropdown();
+        }
+      } else if (e.key === 'Escape') {
+        hideDropdown();
+      }
+    });
+    
+    document.addEventListener('click', (e) => {
+      if (dropdown && !dropdown.contains(e.target) && e.target !== inputElement) {
+        hideDropdown();
+      }
+    });
+    
+    inputElement.addEventListener('focus', () => {
+      if (allPaths.length > 0) {
+        updateDropdown(allPaths);
+      }
+    });
+  }
+
   async checkCompanionAppStatus() {
     try {
       const status = await this.checkCompanionAppStatusHelper();
+      
+      // Update default folder UI based on companion app status
+      const companionInfo = document.getElementById('default-folder-companion-info');
+      const nonCompanionInfo = document.getElementById('default-folder-non-companion-info');
+      const chromeDownloadsLink = document.getElementById('chrome-downloads-link');
+      const browseBtn = document.getElementById('browse-default-folder');
+      const defaultFolderInput = document.getElementById('default-folder');
+      const companionTimerNote = document.getElementById('companion-app-timer-note');
+      
+      if (status && status.installed) {
+        if (companionInfo) companionInfo.style.display = 'block';
+        if (nonCompanionInfo) nonCompanionInfo.style.display = 'none';
+        if (chromeDownloadsLink) chromeDownloadsLink.style.display = 'none';
+        if (browseBtn) browseBtn.style.display = 'inline-block';
+        if (companionTimerNote) companionTimerNote.style.display = 'block';
+      } else {
+        if (companionInfo) companionInfo.style.display = 'none';
+        if (nonCompanionInfo) nonCompanionInfo.style.display = 'block';
+        if (chromeDownloadsLink) chromeDownloadsLink.style.display = 'block';
+        if (browseBtn) browseBtn.style.display = 'none';
+        if (companionTimerNote) companionTimerNote.style.display = 'none';
+        
+        // Add autocomplete to default folder input for non-companion app users
+        if (defaultFolderInput) {
+          this.attachFolderAutocomplete(defaultFolderInput);
+        }
+      }
       
       // Update UI with companion app status
       // Add status indicator to settings tab or header
@@ -330,6 +556,9 @@ class OptionsApp {
     // Default folder setting
     const defaultFolderInput = document.getElementById('default-folder');
     const browseDefaultFolderBtn = document.getElementById('browse-default-folder');
+    const openChromeDownloadsBtn = document.getElementById('open-chrome-downloads-settings');
+    const openChromeBehaviorBtn = document.getElementById('open-chrome-download-behavior');
+    
     if (defaultFolderInput) {
       defaultFolderInput.value = this.settings.defaultFolder || 'Downloads';
       // Auto-save on change
@@ -350,6 +579,16 @@ class OptionsApp {
             await this.saveSettingsOnly();
           }
         });
+      });
+    }
+    if (openChromeDownloadsBtn) {
+      openChromeDownloadsBtn.addEventListener('click', () => {
+        chrome.tabs.create({ url: 'chrome://settings/downloads' });
+      });
+    }
+    if (openChromeBehaviorBtn) {
+      openChromeBehaviorBtn.addEventListener('click', () => {
+        chrome.tabs.create({ url: 'chrome://settings/downloads' });
       });
     }
     
@@ -567,30 +806,31 @@ class OptionsApp {
       });
     });
 
-    // Quick browse folder for rules - make folder display clickable
-    document.querySelectorAll('.rule-item .folder-display-clickable').forEach(display => {
-      display.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const index = parseInt(display.dataset.index);
-        if (!isNaN(index) && index >= 0) {
-          const rule = this.rules[index];
-          if (rule) {
-            this.openFolderPicker((folder) => {
-              if (folder) {
-                rule.folder = folder;
-                const input = display.querySelector('.rule-folder-quick');
-                const textSpan = display.querySelector('.rule-folder-quick-text');
-                if (input) {
-                  input.value = folder;
-                  input.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-                if (textSpan) textSpan.textContent = folder;
-                this.saveRules();
-              }
-            });
-          }
+    // Quick browse folder for rules - setup folder input based on companion app status
+    document.querySelectorAll('.rule-item .folder-display-clickable').forEach(async (display) => {
+      const index = parseInt(display.dataset.index);
+      if (isNaN(index) || index < 0) return;
+      
+      const rule = this.rules[index];
+      if (!rule) return;
+      
+      // Hidden input is a sibling, not a child
+      const formGroup = display.closest('.form-group');
+      const hiddenInput = formGroup ? formGroup.querySelector('.rule-folder-quick') : null;
+      const textSpan = display.querySelector('.rule-folder-quick-text');
+      
+      if (!hiddenInput) {
+        console.warn('Could not find hidden input for rule', index);
+        return;
+      }
+      
+      await this.setupFolderInput(display, hiddenInput, textSpan, (folder) => {
+        rule.folder = folder;
+        if (hiddenInput) {
+          hiddenInput.value = folder;
+          hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
+        this.saveRules();
       });
     });
 
@@ -750,27 +990,28 @@ class OptionsApp {
       });
     });
 
-    // Quick browse folder for groups - make folder display clickable
-    document.querySelectorAll('.group-item .folder-display-clickable').forEach(display => {
-      display.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const name = display.dataset.name;
-        if (name && this.groups[name]) {
-          this.openFolderPicker((folder) => {
-            if (folder) {
-              this.groups[name].folder = folder;
-              const input = display.querySelector('.group-folder-quick');
-              const textSpan = display.querySelector('.group-folder-quick-text');
-              if (input) {
-                input.value = folder;
-                input.dispatchEvent(new Event('change', { bubbles: true }));
-              }
-              if (textSpan) textSpan.textContent = folder;
-              this.saveRules();
-            }
-          });
+    // Quick browse folder for groups - setup folder input based on companion app status
+    document.querySelectorAll('.group-item .folder-display-clickable').forEach(async (display) => {
+      const name = display.dataset.name;
+      if (!name || !this.groups[name]) return;
+      
+      // Hidden input is a sibling, not a child
+      const formGroup = display.closest('.form-group');
+      const hiddenInput = formGroup ? formGroup.querySelector('.group-folder-quick') : null;
+      const textSpan = display.querySelector('.group-folder-quick-text');
+      
+      if (!hiddenInput) {
+        console.warn('Could not find hidden input for group', name);
+        return;
+      }
+      
+      await this.setupFolderInput(display, hiddenInput, textSpan, (folder) => {
+        this.groups[name].folder = folder;
+        if (hiddenInput) {
+          hiddenInput.value = folder;
+          hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
+        this.saveRules();
       });
     });
 
@@ -1012,6 +1253,10 @@ class OptionsApp {
           <input type="hidden" id="edit-rule-folder" value="${rule.folder || 'Downloads'}">
         </div>
         
+        <div class="rule-edit-warning" style="margin-top: 12px; padding: 8px 12px; background: #e3f2fd; border: 1px solid #2196f3; border-radius: 4px; font-size: 12px; color: #1565c0;">
+          <strong>Note:</strong> Rule edits apply to future downloads. They may not affect current downloads.
+        </div>
+        
         <div class="advanced-section" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-subtle);">
           <button type="button" class="advanced-toggle" id="edit-rule-advanced-toggle" style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 13px; font-weight: 500; margin-bottom: 16px;">
             <span id="edit-rule-advanced-icon" style="display: inline-flex; align-items: center; transition: transform 0.2s;">${typeof getIcon !== 'undefined' ? getIcon('chevron-down', 16) : '▼'}</span>
@@ -1047,22 +1292,14 @@ class OptionsApp {
     document.getElementById('close-modal').addEventListener('click', () => this.closeModal());
     document.getElementById('modal-cancel').addEventListener('click', () => this.closeModal());
     
-    // Make folder display clickable
+    // Setup folder input based on companion app status
     const folderDisplay = document.getElementById('edit-rule-folder-display');
     const folderText = document.getElementById('edit-rule-folder-text');
     const folderInput = document.getElementById('edit-rule-folder');
     
-    if (folderDisplay) {
-      folderDisplay.addEventListener('click', () => {
-        this.openFolderPicker((folder) => {
-          if (folder && folderInput && folderText) {
-            // Normalize folder path (remove trailing slashes for consistency)
-            const normalizedFolder = folder.replace(/[\/\\]+$/, '');
-            folderInput.value = normalizedFolder;
-            folderText.textContent = normalizedFolder;
-            console.log('[OPTIONS EDIT RULE] Folder updated to:', normalizedFolder);
-          }
-        });
+    if (folderDisplay && folderInput) {
+      this.setupFolderInput(folderDisplay, folderInput, folderText, (folder) => {
+        console.log('[OPTIONS EDIT RULE] Folder updated to:', folder);
       });
     }
     
@@ -1178,6 +1415,10 @@ class OptionsApp {
           <input type="hidden" id="edit-group-folder" value="${group.folder || 'Downloads'}">
         </div>
         
+        <div class="rule-edit-warning" style="margin-top: 12px; padding: 8px 12px; background: #e3f2fd; border: 1px solid #2196f3; border-radius: 4px; font-size: 12px; color: #1565c0;">
+          <strong>Note:</strong> Rule edits apply to future downloads. They may not affect current downloads.
+        </div>
+        
         <div class="advanced-section" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-subtle);">
           <button type="button" class="advanced-toggle" id="edit-group-advanced-toggle" style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 13px; font-weight: 500; margin-bottom: 16px;">
             <span id="edit-group-advanced-icon" style="display: inline-flex; align-items: center; transition: transform 0.2s;">${typeof getIcon !== 'undefined' ? getIcon('chevron-down', 16) : '▼'}</span>
@@ -1220,22 +1461,14 @@ class OptionsApp {
     document.getElementById('close-modal').addEventListener('click', () => this.closeModal());
     document.getElementById('modal-cancel').addEventListener('click', () => this.closeModal());
     
-    // Make folder display clickable
+    // Setup folder input based on companion app status
     const folderDisplay = document.getElementById('edit-group-folder-display');
     const folderText = document.getElementById('edit-group-folder-text');
     const folderInput = document.getElementById('edit-group-folder');
     
-    if (folderDisplay) {
-      folderDisplay.addEventListener('click', () => {
-        this.openFolderPicker((folder) => {
-          if (folder && folderInput && folderText) {
-            // Normalize folder path (remove trailing slashes for consistency)
-            const normalizedFolder = folder.replace(/[\/\\]+$/, '');
-            folderInput.value = normalizedFolder;
-            folderText.textContent = normalizedFolder;
-            console.log('[OPTIONS EDIT GROUP] Folder updated to:', normalizedFolder);
-          }
-        });
+    if (folderDisplay && folderInput) {
+      this.setupFolderInput(folderDisplay, folderInput, folderText, (folder) => {
+        console.log('[OPTIONS EDIT GROUP] Folder updated to:', folder);
       });
     }
     

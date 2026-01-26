@@ -95,8 +95,14 @@
             
             <div class="setting-option" id="timeout-setting">
               <label for="confirmation-timeout">Auto-save timeout (seconds):</label>
-              <input type="range" id="confirmation-timeout" min="1" max="30" value="5" class="range-input">
+              <input type="range" id="confirmation-timeout" min="1" max="17" value="5" class="range-input">
               <span class="range-value" id="timeout-value">5s</span>
+            </div>
+            <div class="setting-warning" style="margin-top: 8px; padding: 8px 12px; background: #fff3e0; border: 1px solid #ff9800; border-radius: 4px; font-size: 12px; color: #e65100;">
+              <strong>Chrome Limitation:</strong> The timer may not always work reliably due to Chrome's download handling. Downloads may proceed before the timeout in some cases.
+              <span id="companion-app-timer-note" style="display: none; margin-top: 4px; display: block;">
+                <strong>Tip:</strong> With the companion app installed, files can still be moved after download completes.
+              </span>
             </div>
           </div>
 
@@ -106,9 +112,29 @@
             </div>
             <p class="setting-description">Where to save downloads when no rules match</p>
             
+            <div id="default-folder-companion-info" style="display: none; margin-bottom: 12px; padding: 8px 12px; background: #e8f5e9; border: 1px solid #4caf50; border-radius: 4px; font-size: 12px; color: #2e7d32;">
+              <strong>✓ Companion App Installed:</strong> You can select any folder on your system using the Browse button below.
+            </div>
+            
+            <div id="default-folder-non-companion-info" style="display: none; margin-bottom: 12px; padding: 8px 12px; background: #fff3e0; border: 1px solid #ff9800; border-radius: 4px; font-size: 12px; color: #e65100;">
+              <strong>Chrome Limitation:</strong> Without the companion app, this extension cannot change Chrome's base download directory. 
+              You can only specify subdirectories relative to Chrome's download folder (e.g., "Documents", "Videos/2024").
+              <br><br>
+              <strong>To change Chrome's base download directory:</strong> Use the button below to open Chrome's download settings.
+            </div>
+            
             <div class="setting-input">
               <input type="text" id="default-folder" value="Downloads" class="form-input" placeholder="Downloads">
               <button id="browse-default-folder" class="btn secondary">Browse</button>
+            </div>
+            
+            <div id="chrome-downloads-link" style="margin-top: 8px; display: none;">
+              <button id="open-chrome-downloads-settings" class="btn secondary" style="font-size: 12px; padding: 6px 12px;">
+                Open Chrome Download Settings
+              </button>
+              <p style="font-size: 11px; color: #6e6e73; margin-top: 4px;">
+                Change Chrome's default download location in Chrome settings
+              </p>
             </div>
           </div>
 
@@ -135,6 +161,21 @@
                   <small>Show conflict dialog in overlay</small>
                 </div>
               </label>
+            </div>
+          </div>
+
+          <div class="setting-card">
+            <div class="setting-header">
+              <h3>Save As Dialog</h3>
+            </div>
+            <p class="setting-description">
+              The extension cannot detect if Chrome's "Ask where to save each file before downloading" setting is enabled.
+              If this setting is on, Chrome's Save As dialog will appear, and the extension's routing may not apply as expected.
+            </p>
+            <div style="margin-top: 8px;">
+              <button id="open-chrome-download-behavior" class="btn secondary" style="font-size: 12px; padding: 6px 12px;">
+                Check Chrome Download Behavior Settings
+              </button>
             </div>
           </div>
         </div>
