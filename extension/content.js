@@ -179,6 +179,8 @@ class DownloadOverlay {
     this.fallbackNotificationId = null;
     // Flag indicating if rules editor panel is currently visible
     this.rulesEditorVisible = false;
+    // Flag indicating if group selector panel is currently visible
+    this.groupSelectorVisible = false;
     // Flag indicating if location picker panel is currently visible
     this.locationPickerVisible = false;
     // Flag indicating if countdown is paused
@@ -215,7 +217,7 @@ class DownloadOverlay {
         this.showDownloadOverlay(message.downloadInfo, message.confirmationTimeout, message.confirmationEnabled);
       } else if (message.type === 'checkEditorState') {
         // Check if any editor panels are currently visible
-        const hasEditor = this.rulesEditorVisible || this.locationPickerVisible;
+        const hasEditor = this.rulesEditorVisible || this.groupSelectorVisible || this.locationPickerVisible;
         sendResponse({ hasEditor, countdownPaused: this.countdownPaused });
         return true; // Required for async sendResponse
       } else if (message.type === 'saveAsDialogOpening') {
@@ -681,6 +683,17 @@ class DownloadOverlay {
 
       .dropdown-option:active {
         background: var(--active);
+      }
+
+      .dropdown-option.active {
+        background: var(--hover);
+        font-weight: 500;
+      }
+
+      .dropdown-divider {
+        height: 1px;
+        background: var(--border-subtle);
+        margin: 4px 0;
       }
 
       .overlay-actions {
@@ -1689,9 +1702,29 @@ class DownloadOverlay {
     console.log('[OVERLAY CONTENT] hasConflict:', hasConflict);
 
     // Log available rules from storage
-    const data = await chrome.storage.sync.get(['rules', 'groups']);
-    const allRules = data.rules || [];
-    const groups = data.groups || {};
+    // Request from background script to avoid content script storage access issues
+    let allRules = [];
+    let groups = {};
+    try {
+      const data = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ type: 'getRulesAndGroups' }, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else if (response && response.success) {
+            resolve(response);
+          } else {
+            reject(new Error('Failed to get rules and groups'));
+          }
+        });
+      });
+      allRules = data.rules || [];
+      groups = data.groups || {};
+    } catch (error) {
+      console.error('[OVERLAY CONTENT] Error loading rules/groups:', error);
+      // Use empty defaults on error
+      allRules = [];
+      groups = {};
+    }
     console.log('[OVERLAY CONTENT] all stored rules:', allRules);
     console.log('[OVERLAY CONTENT] all file type groups:', groups);
 
@@ -1903,6 +1936,14 @@ class DownloadOverlay {
             <div class="filetype-dropdown hidden">
               ${fileTypeGroupName ? `<div class="dropdown-option" data-action="view-filetype">View in File Types</div>` : ''}
               <div class="dropdown-option" data-action="add-to-group">Add to File Type Group</div>
+              ${Object.keys(groups).length > 0 ? '<div class="dropdown-divider"></div>' : ''}
+              ${Object.keys(groups).map(name => {
+                const group = groups[name];
+                const groupExtensions = group.extensions.split(',').map(ext => ext.trim().toLowerCase());
+                const isInGroup = groupExtensions.includes(this.currentDownloadInfo.extension.toLowerCase());
+                const capitalizeFirst = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
+                return `<div class="dropdown-option ${isInGroup ? 'active' : ''}" data-action="select-group" data-group="${name}">${capitalizeFirst(name)} ${isInGroup ? '(current)' : ''}</div>`;
+              }).join('')}
             </div>
           </div>
           
@@ -2182,12 +2223,11 @@ class DownloadOverlay {
             const groupSelector = root.querySelector('.group-selector-inline');
 
             if (editor) {
-              if (saveasEditor) saveasEditor.classList.add('hidden');
-              if (groupSelector) groupSelector.classList.add('hidden');
+              // Hide all other editors first
+              this.hideAllEditors();
               
               editor.classList.remove('hidden');
               this.rulesEditorVisible = true;
-              this.locationPickerVisible = false;
               this.cancelCountdown();
               this.initializeRuleEditor();
             }
@@ -2224,8 +2264,8 @@ class DownloadOverlay {
           const groupSelector = root.querySelector('.group-selector-inline');
 
           if (editor) {
-            if (saveasEditor) saveasEditor.classList.add('hidden');
-            if (groupSelector) groupSelector.classList.add('hidden');
+            // Hide all other editors first
+            this.hideAllEditors();
             if (dropdown) dropdown.classList.add('hidden');
             
             // Set rule editor type based on action
@@ -2237,7 +2277,6 @@ class DownloadOverlay {
             
             editor.classList.remove('hidden');
             this.rulesEditorVisible = true;
-            this.locationPickerVisible = false;
             this.cancelCountdown();
             this.initializeRuleEditor();
           }
@@ -2284,8 +2323,25 @@ class DownloadOverlay {
           root.querySelector('.filetype-dropdown')?.classList.add('hidden');
           
           // Check if there's a file type group for this extension
-          const data = await chrome.storage.sync.get(['groups']);
-          const groups = data.groups || {};
+          // Request from background script to avoid content script storage access issues
+          let groups = {};
+          try {
+            const data = await new Promise((resolve, reject) => {
+              chrome.runtime.sendMessage({ type: 'getRulesAndGroups' }, (response) => {
+                if (chrome.runtime.lastError) {
+                  reject(new Error(chrome.runtime.lastError.message));
+                } else if (response && response.success) {
+                  resolve(response);
+                } else {
+                  reject(new Error('Failed to get rules and groups'));
+                }
+              });
+            });
+            groups = data.groups || {};
+          } catch (error) {
+            console.error('[FILE TYPE CLICK] Error loading groups:', error);
+            groups = {};
+          }
           const currentExt = this.currentDownloadInfo.extension.toLowerCase();
           
           console.log('[FILE TYPE CLICK]  Looking for group for extension:', currentExt);
@@ -2353,12 +2409,11 @@ class DownloadOverlay {
             const ruleEditor = root.querySelector('.rule-editor-inline');
             
             if (selector) {
-              if (saveasEditor) saveasEditor.classList.add('hidden');
-              if (ruleEditor) ruleEditor.classList.add('hidden');
+              // Hide all other editors first
+              this.hideAllEditors();
               
               selector.classList.remove('hidden');
-              this.rulesEditorVisible = true;
-              this.locationPickerVisible = false;
+              this.groupSelectorVisible = true;
               this.cancelCountdown();
               this.populateGroupSelector();
             }
@@ -2369,7 +2424,7 @@ class DownloadOverlay {
 
     // File type dropdown option clicks
     root.querySelectorAll('.filetype-dropdown .dropdown-option').forEach(option => {
-      option.addEventListener('click', (e) => {
+      option.addEventListener('click', async (e) => {
         const action = e.target.dataset.action;
         const dropdown = root.querySelector('.filetype-dropdown');
         
@@ -2380,13 +2435,12 @@ class DownloadOverlay {
           const ruleEditor = root.querySelector('.rule-editor-inline');
           
           if (selector) {
-            if (saveasEditor) saveasEditor.classList.add('hidden');
-            if (ruleEditor) ruleEditor.classList.add('hidden');
+            // Hide all other editors first
+            this.hideAllEditors();
             if (dropdown) dropdown.classList.add('hidden');
             
             selector.classList.remove('hidden');
-            this.rulesEditorVisible = true;
-            this.locationPickerVisible = false;
+            this.groupSelectorVisible = true;
             this.cancelCountdown();
             this.populateGroupSelector();
           }
@@ -2397,6 +2451,69 @@ class DownloadOverlay {
           }
           
           if (dropdown) dropdown.classList.add('hidden');
+        } else if (action === 'select-group') {
+          // User selected a file type group from dropdown
+          const groupName = e.target.dataset.group;
+          if (groupName) {
+            // Load groups from background
+            try {
+              const data = await new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage({ type: 'getRulesAndGroups' }, (response) => {
+                  if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                  } else if (response && response.success) {
+                    resolve(response);
+                  } else {
+                    reject(new Error('Failed to get rules and groups'));
+                  }
+                });
+              });
+              const groups = data.groups || {};
+              
+              if (groups[groupName]) {
+                const group = groups[groupName];
+                const folder = group.folder;
+                const isAbsPath = /^(\/|[A-Za-z]:[\\\/])/.test(folder);
+                
+                if (isAbsPath) {
+                  this.currentDownloadInfo.resolvedPath = this.currentDownloadInfo.filename;
+                  this.currentDownloadInfo.absoluteDestination = folder;
+                  this.currentDownloadInfo.useAbsolutePath = true;
+                  this.currentDownloadInfo.needsMove = true;
+                } else {
+                  this.currentDownloadInfo.resolvedPath = buildRelativePath(folder, this.currentDownloadInfo.filename);
+                  this.currentDownloadInfo.absoluteDestination = null;
+                  this.currentDownloadInfo.useAbsolutePath = false;
+                  this.currentDownloadInfo.needsMove = false;
+                }
+                
+                // Update the rule info
+                this.currentDownloadInfo.finalRule = {
+                  type: 'filetype',
+                  value: group.extensions,
+                  folder: folder,
+                  source: 'filetype',
+                  priority: parseFloat(group.priority) || 3.0,
+                  groupName: groupName
+                };
+                this.currentDownloadInfo.matchedRule = this.currentDownloadInfo.finalRule;
+                
+                // Sync to background
+                chrome.runtime.sendMessage({
+                  type: 'updatePendingDownloadInfo',
+                  downloadInfo: this.currentDownloadInfo
+                });
+                
+                // Update UI
+                this.updatePathDisplay();
+                await this.refreshRuleButtons();
+                
+                if (dropdown) dropdown.classList.add('hidden');
+              }
+            } catch (error) {
+              console.error('[FILE TYPE DROPDOWN] Error loading group:', error);
+            }
+          }
         }
       });
     });
@@ -2521,7 +2638,7 @@ class DownloadOverlay {
         const selector = root.querySelector('.group-selector-inline');
         if (selector) {
           selector.classList.add('hidden');
-          this.rulesEditorVisible = false;  // Reset visibility flag
+          this.groupSelectorVisible = false;  // Reset visibility flag
           this.resumeCountdown();
         }
       });
@@ -2576,6 +2693,25 @@ class DownloadOverlay {
     this.rulesEditorVisible = true;
   }
 
+  /**
+   * Hides all inline editors to ensure clean state transitions.
+   * Ensures only one editor is visible at a time.
+   */
+  hideAllEditors() {
+    const root = this.shadowRoot;
+    const ruleEditor = root.querySelector('.rule-editor-inline');
+    const groupSelector = root.querySelector('.group-selector-inline');
+    const saveasEditor = root.querySelector('.saveas-editor');
+    
+    if (ruleEditor) ruleEditor.classList.add('hidden');
+    if (groupSelector) groupSelector.classList.add('hidden');
+    if (saveasEditor) saveasEditor.classList.add('hidden');
+    
+    this.rulesEditorVisible = false;
+    this.groupSelectorVisible = false;
+    this.locationPickerVisible = false;
+  }
+
   hideRulesEditor() {
     // Legacy method - inline editor is now used
     const editor = this.shadowRoot.querySelector('.rule-editor-inline');
@@ -2621,26 +2757,153 @@ class DownloadOverlay {
       this.pauseCountdown();
     }
     
-    chrome.runtime.sendMessage({
-      type: 'pickFolderNative',
-      startPath: startPath
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('Error opening native folder picker:', chrome.runtime.lastError.message);
-        if (callback) callback(null);
-        return;
-      }
-      
-      if (response && response.success && response.path) {
-        if (callback) callback(response.path);
-      } else if (response && response.error && !response.error.includes('cancelled')) {
-        console.error('Native folder picker error:', response.error);
-        if (callback) callback(null);
+    // Check if companion app is available first
+    chrome.runtime.sendMessage({ type: 'checkCompanionApp' }, (companionStatus) => {
+      if (companionStatus && companionStatus.installed) {
+        // Companion app available - use native folder picker
+        chrome.runtime.sendMessage({
+          type: 'pickFolderNative',
+          startPath: startPath
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('Error opening native folder picker:', chrome.runtime.lastError.message);
+            if (callback) callback(null);
+            return;
+          }
+          
+          if (response && response.success && response.path) {
+            if (callback) callback(response.path);
+          } else if (response && response.error && !response.error.includes('cancelled')) {
+            console.error('Native folder picker error:', response.error);
+            if (callback) callback(null);
+          } else {
+            // User cancelled - call callback with null
+            if (callback) callback(null);
+          }
+        });
       } else {
-        // User cancelled - call callback with null
-        if (callback) callback(null);
+        // Companion app not available - show fallback UI for subdirectory input
+        // Without companion app, users can only pick subdirectories of Chrome's download path
+        this.showSubdirectoryInput(callback);
       }
     });
+  }
+
+  /**
+   * Shows a fallback UI for entering subdirectory name when companion app is not available.
+   * Without companion app, users (Windows & Mac) can only pick subdirectories of Chrome's download path.
+   * 
+   * Inputs:
+   *   - callback: Function to call with selected subdirectory path (relative)
+   * 
+   * Outputs: None (shows modal/input UI)
+   */
+  showSubdirectoryInput(callback) {
+    const root = this.shadowRoot;
+    
+    // Detect dark mode - match the overlay's dark mode colors
+    const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    
+    // Create a simple modal for subdirectory input
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    `;
+    
+    const dialog = document.createElement('div');
+    // Use colors that match the overlay's CSS variables for consistency
+    // Dark mode: --surface-elevated: rgba(30, 30, 30, 0.98), --text: #f5f5f7, --text-secondary: #a1a1a6, --border: rgba(255, 255, 255, 0.12)
+    // Light mode: --surface-elevated: rgba(255, 255, 255, 0.98), --text: #1d1d1f, --text-secondary: #6e6e73, --border: rgba(0, 0, 0, 0.08)
+    const bgColor = isDarkMode ? 'rgba(30, 30, 30, 0.98)' : 'rgba(255, 255, 255, 0.98)';
+    const textColor = isDarkMode ? '#f5f5f7' : '#1d1d1f';
+    const textSecondary = isDarkMode ? '#a1a1a6' : '#6e6e73';
+    const borderColor = isDarkMode ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)';
+    const inputBg = isDarkMode ? 'rgba(30, 30, 30, 0.98)' : '#ffffff';
+    const buttonBg = '#007bff'; // Primary button color (same in both modes)
+    const cancelButtonBg = isDarkMode ? 'rgba(30, 30, 30, 0.98)' : '#ffffff';
+    const cancelButtonText = isDarkMode ? '#f5f5f7' : '#1d1d1f';
+    
+    dialog.style.cssText = `
+      background: ${bgColor};
+      padding: 24px;
+      border-radius: 8px;
+      min-width: 400px;
+      max-width: 500px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, ${isDarkMode ? '0.4' : '0.15'});
+      color: ${textColor};
+    `;
+    
+    dialog.innerHTML = `
+      <h3 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600; color: ${textColor};">Select Subdirectory</h3>
+      <p style="margin: 0 0 16px 0; color: ${textSecondary}; font-size: 14px;">
+        Without the companion app, you can only select subdirectories within Chrome's Downloads folder.
+        Enter a subdirectory name (e.g., "Documents", "Videos").
+      </p>
+      <input type="text" id="subdirectory-input" placeholder="Enter subdirectory name" 
+             style="width: 100%; padding: 8px 12px; border: 1px solid ${borderColor}; border-radius: 4px; font-size: 14px; margin-bottom: 16px; background: ${inputBg}; color: ${textColor};"
+             autofocus>
+      <div style="display: flex; gap: 8px; justify-content: flex-end;">
+        <button id="subdirectory-cancel" style="padding: 8px 16px; border: 1px solid ${borderColor}; background: ${cancelButtonBg}; color: ${cancelButtonText}; border-radius: 4px; cursor: pointer; font-size: 14px;">Cancel</button>
+        <button id="subdirectory-ok" style="padding: 8px 16px; border: none; background: ${buttonBg}; color: white; border-radius: 4px; cursor: pointer; font-size: 14px;">OK</button>
+      </div>
+    `;
+    
+    modal.appendChild(dialog);
+    document.body.appendChild(modal);
+    
+    const input = dialog.querySelector('#subdirectory-input');
+    const okBtn = dialog.querySelector('#subdirectory-ok');
+    const cancelBtn = dialog.querySelector('#subdirectory-cancel');
+    
+    const cleanup = () => {
+      document.body.removeChild(modal);
+      this.resumeCountdown();
+    };
+    
+    okBtn.addEventListener('click', () => {
+      const subdir = input.value.trim();
+      if (subdir) {
+        // Validate: must be relative path (not absolute)
+        if (/^(\/|[A-Za-z]:[\\\/])/.test(subdir)) {
+          alert('Please enter only a subdirectory name (e.g., "Documents"), not an absolute path.');
+          return;
+        }
+        // Remove any slashes and normalize
+        const normalizedSubdir = subdir.replace(/[\/\\]/g, '');
+        cleanup();
+        // Return relative path (subdirectory name only)
+        if (callback) callback(normalizedSubdir);
+      } else {
+        alert('Please enter a subdirectory name.');
+      }
+    });
+    
+    cancelBtn.addEventListener('click', () => {
+      cleanup();
+      if (callback) callback(null);
+    });
+    
+    // Close on Escape key
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        cleanup();
+        if (callback) callback(null);
+        document.removeEventListener('keydown', handleEscape);
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    
+    // Focus input
+    input.focus();
   }
 
   hideLocationPicker() {
@@ -3206,7 +3469,18 @@ class DownloadOverlay {
     if (!select) return;
     
     try {
-      const data = await chrome.storage.sync.get(['groups']);
+      // Request from background script to avoid content script storage access issues
+      const data = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ type: 'getRulesAndGroups' }, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else if (response && response.success) {
+            resolve(response);
+          } else {
+            reject(new Error('Failed to get rules and groups'));
+          }
+        });
+      });
       const groups = data.groups || {};
       
       select.innerHTML = '<option value="">Select file type...</option>' +
@@ -3215,6 +3489,8 @@ class DownloadOverlay {
         }).join('');
     } catch (error) {
       console.error('Failed to load groups:', error);
+      // Set empty dropdown on error
+      select.innerHTML = '<option value="">Select file type...</option>';
     }
   }
 
@@ -3287,7 +3563,7 @@ class DownloadOverlay {
       const selector = root.querySelector('.group-selector-inline');
       if (selector) {
         selector.classList.add('hidden');
-        this.rulesEditorVisible = false;
+        this.groupSelectorVisible = false;
       }
       
       // CRITICAL: Cancel timeout and proceed immediately with download using group's folder
@@ -3560,7 +3836,7 @@ class DownloadOverlay {
     //   Outputs: Interval ID (stored for cleanup)
     this.countdownTimer = setInterval(() => {
       // CRITICAL: Safety checks - stop immediately if paused or editor visible
-      if (this.countdownPaused || this.rulesEditorVisible || this.locationPickerVisible) {
+      if (this.countdownPaused || this.rulesEditorVisible || this.groupSelectorVisible || this.locationPickerVisible) {
         clearInterval(this.countdownTimer);
         this.countdownTimer = null;
         return;
@@ -3596,7 +3872,7 @@ class DownloadOverlay {
       }
       
       // Auto-save when countdown reaches zero (only if not paused AND no editors are visible)
-      if (this.timeLeft <= 0 && !this.countdownPaused && !this.rulesEditorVisible && !this.locationPickerVisible) {
+      if (this.timeLeft <= 0 && !this.countdownPaused && !this.rulesEditorVisible && !this.groupSelectorVisible && !this.locationPickerVisible) {
         // Log actual elapsed time vs expected
         const actualElapsed = Date.now() - this.countdownStartTime;
         const expectedElapsed = this.countdownTotal;
@@ -3606,6 +3882,7 @@ class DownloadOverlay {
         console.log('[COUNTDOWN EXPIRED]', expiredTimestamp, 'Difference (ms):', actualElapsed - expectedElapsed);
         console.log('[COUNTDOWN EXPIRED]', expiredTimestamp, 'countdownPaused:', this.countdownPaused);
         console.log('[COUNTDOWN EXPIRED]', expiredTimestamp, 'rulesEditorVisible:', this.rulesEditorVisible);
+        console.log('[COUNTDOWN EXPIRED]', expiredTimestamp, 'groupSelectorVisible:', this.groupSelectorVisible);
         console.log('[COUNTDOWN EXPIRED]', expiredTimestamp, 'locationPickerVisible:', this.locationPickerVisible);
 
         // clearInterval: Browser built-in function to stop interval
@@ -3615,7 +3892,7 @@ class DownloadOverlay {
         this.countdownTimer = null;
         // saveDownload: Proceeds with download immediately
         this.saveDownload();
-      } else if (this.timeLeft <= 0 && (this.countdownPaused || this.rulesEditorVisible || this.locationPickerVisible)) {
+      } else if (this.timeLeft <= 0 && (this.countdownPaused || this.rulesEditorVisible || this.groupSelectorVisible || this.locationPickerVisible)) {
         // Don't save - editor is still open or countdown is paused
         console.log('[COUNTDOWN EXPIRED BUT PAUSED] countdownPaused:', this.countdownPaused);
         console.log('[COUNTDOWN EXPIRED BUT PAUSED] rulesEditorVisible:', this.rulesEditorVisible);
@@ -3716,7 +3993,7 @@ class DownloadOverlay {
    */
   resumeCountdown() {
     // Only resume if no editor panels are currently visible
-    if (!this.rulesEditorVisible && !this.locationPickerVisible) {
+    if (!this.rulesEditorVisible && !this.groupSelectorVisible && !this.locationPickerVisible) {
       this.countdownPaused = false;
       // startCountdown: Restarts countdown from beginning
       this.startCountdown();
@@ -3915,6 +4192,7 @@ class DownloadOverlay {
     this.shadowRoot = null;
     this.currentOverlay = null;
     this.rulesEditorVisible = false;
+    this.groupSelectorVisible = false;
     this.locationPickerVisible = false;
   }
 
@@ -4016,10 +4294,10 @@ class DownloadOverlay {
           
           // Only resume countdown AFTER download info is updated and if it wasn't paused before
           // Don't auto-resume - let user interaction control it
-          if (!wasPaused && !this.rulesEditorVisible && !this.locationPickerVisible && !this.originalOverlayContent) {
+          if (!wasPaused && !this.rulesEditorVisible && !this.groupSelectorVisible && !this.locationPickerVisible && !this.originalOverlayContent) {
             // Small delay to ensure overlay is fully rendered and background has updated info
             setTimeout(() => {
-              if (!this.rulesEditorVisible && !this.locationPickerVisible && !this.originalOverlayContent) {
+              if (!this.rulesEditorVisible && !this.groupSelectorVisible && !this.locationPickerVisible && !this.originalOverlayContent) {
                 this.resumeCountdown();
               }
             }, 200);
@@ -4302,7 +4580,7 @@ class DownloadOverlay {
         this.timeLeft = this.countdownStateBeforeModal.timeLeft || 5000;
         // Resume countdown if no editors are visible - but wait a bit to ensure overlay is rendered
         setTimeout(() => {
-          if (!this.rulesEditorVisible && !this.locationPickerVisible && !this.originalOverlayContent) {
+          if (!this.rulesEditorVisible && !this.groupSelectorVisible && !this.locationPickerVisible && !this.originalOverlayContent) {
             this.resumeCountdown();
           }
         }, 100);
@@ -4506,10 +4784,10 @@ class DownloadOverlay {
     
     // After overlay is updated, only resume countdown if it wasn't paused before
     // and no editors are visible
-    if (!wasPaused && !this.rulesEditorVisible && !this.locationPickerVisible) {
+    if (!wasPaused && !this.rulesEditorVisible && !this.groupSelectorVisible && !this.locationPickerVisible) {
       // Small delay to ensure overlay is fully updated
       setTimeout(() => {
-        if (!this.rulesEditorVisible && !this.locationPickerVisible && !this.originalOverlayContent) {
+        if (!this.rulesEditorVisible && !this.groupSelectorVisible && !this.locationPickerVisible && !this.originalOverlayContent) {
           this.resumeCountdown();
         }
       }, 200);
@@ -4587,10 +4865,10 @@ class DownloadOverlay {
     
     // After overlay is updated, only resume countdown if it wasn't paused before
     // and no editors are visible
-    if (!wasPaused && !this.rulesEditorVisible && !this.locationPickerVisible) {
+    if (!wasPaused && !this.rulesEditorVisible && !this.groupSelectorVisible && !this.locationPickerVisible) {
       // Small delay to ensure overlay is fully updated
       setTimeout(() => {
-        if (!this.rulesEditorVisible && !this.locationPickerVisible && !this.originalOverlayContent) {
+        if (!this.rulesEditorVisible && !this.groupSelectorVisible && !this.locationPickerVisible && !this.originalOverlayContent) {
           this.resumeCountdown();
         }
       }, 200);

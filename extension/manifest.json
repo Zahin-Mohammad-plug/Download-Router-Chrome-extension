@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Download Router",
-  "version": "2.1.0",
+  "version": "2.1.2",
   "description": "Automatically routes downloads to specific folders based on rules.",
   "permissions": [
     "downloads",

@@ -410,6 +410,43 @@ async function getDefaultSaveAsDirectory(downloadInfo) {
  *   - chrome.storage.sync API: For retrieving user rules and settings
  *   - chrome.tabs API: For sending messages to content scripts
  */
+/**
+ * Chrome Downloads API: onDeterminingFilename
+ * 
+ * HOW DOWNLOAD DELAYING WORKS:
+ * Chrome waits for the suggest() callback to be called before proceeding with the download.
+ * By storing the suggest() callback and NOT calling it immediately, we effectively delay/pause
+ * the download until the user confirms or the timeout expires.
+ * 
+ * Flow:
+ * 1. onDeterminingFilename fires when download starts
+ * 2. We store suggest() in downloadInfo.originalSuggest but don't call it yet
+ * 3. Chrome waits - download is effectively paused until suggest() is called
+ * 4. Overlay is shown to user for confirmation
+ * 5. suggest() is called in proceedWithDownload() after:
+ *    - User clicks "Save" in overlay, OR
+ *    - Auto-save timeout expires, OR
+ *    - Confirmation is disabled (immediate)
+ * 6. Download then proceeds with the specified path
+ * 
+ * CHROME API LIMITATIONS (as of January 2026):
+ * Chrome's onDeterminingFilename API provides a "hold" window that defers finalizing the
+ * filename/path for a short time while extensions respond. Our overlay logic essentially
+ * lives inside that window. However, there are critical limitations:
+ * 
+ * - Internal timeout: If listeners do not call suggest() in time, Chrome proceeds with the
+ *   original filename. This timeout is internal to Chrome and extensions cannot change it.
+ * - Unknown timeout duration: We don't know what the timeout value is - it's not documented
+ *   and may vary by Chrome version or platform.
+ * - Reliability concerns: Because we can't control or know the timeout, we cannot reliably
+ *   delay downloads indefinitely. We must call suggest() within a reasonable time window.
+ * - Default behavior: If suggest() is never called (e.g., extension crashes), Chrome will
+ *   eventually timeout and proceed with the default filename/location.
+ * 
+ * This is why we use a configurable auto-save timeout (default 5 seconds) - it ensures we
+ * call suggest() before Chrome's internal timeout, while still giving users time to interact
+ * with the overlay.
+ */
 chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
   // Retrieve user configuration from Chrome sync storage
   // chrome.storage.sync.get: Retrieves stored extension settings
@@ -1272,10 +1309,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }).map(r => ({...r, source: 'contains'}));
       
       // File type matches
+      console.log('[BACKGROUND] Checking file type groups for extension:', extension);
+      console.log('[BACKGROUND] Available groups:', Object.keys(groups));
       for (const [name, group] of Object.entries(groups)) {
-        if (group.enabled === false) continue;
+        if (group.enabled === false) {
+          console.log('[BACKGROUND] Group', name, 'is disabled, skipping');
+          continue;
+        }
         const groupExtensions = group.extensions.split(',').map(ext => ext.trim().toLowerCase());
+        console.log('[BACKGROUND] Checking group', name, 'with extensions:', groupExtensions);
         if (groupExtensions.includes(extension)) {
+          console.log('[BACKGROUND] Extension', extension, 'matches group', name);
           const fileTypeRule = {
             type: 'filetype',
             value: group.extensions,
@@ -1291,8 +1335,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             fileTypeRule.priority = Math.max(0.1, lowestDomainPriority - 0.1);
           }
           fileTypeMatches.push(fileTypeRule);
+        } else {
+          console.log('[BACKGROUND] Extension', extension, 'does not match group', name);
         }
       }
+      console.log('[BACKGROUND] File type matches found:', fileTypeMatches.length);
       
       // Collect all matches and sort
       const allMatches = [...domainMatches, ...containsMatches, ...fileTypeMatches];
@@ -1440,6 +1487,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ 
         success: false, 
         error: error.message || 'Failed to pick folder' 
+      });
+    });
+    return true; // Required for async sendResponse
+  } else if (message.type === 'getRulesAndGroups') {
+    // getRulesAndGroups: Returns rules and groups from storage for content script
+    // This avoids content script storage access issues
+    chrome.storage.sync.get(['rules', 'groups'], (data) => {
+      sendResponse({
+        success: true,
+        rules: data.rules || [],
+        groups: data.groups || {}
       });
     });
     return true; // Required for async sendResponse

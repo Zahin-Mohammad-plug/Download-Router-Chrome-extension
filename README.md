@@ -10,7 +10,7 @@ The extension shows a confirmation overlay so you can see where it's going and c
 
 ## Status
 
-- **Extension**: v2.1.0, works on macOS and Windows
+- **Extension**: v2.1.3, works on macOS and Windows
 - **Companion App**: v1.0.0, tested on macOS. Windows builds ready but need testing on actual Windows machine
 - **Chrome Web Store**: Not published yet
 
