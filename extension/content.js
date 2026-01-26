@@ -2788,38 +2788,34 @@ class DownloadOverlay {
       
       dropdown = document.createElement('div');
       dropdown.className = 'folder-autocomplete-dropdown';
-      dropdown.style.cssText = `
-        position: absolute;
-        top: 100%;
-        left: 0;
-        right: 0;
-        max-height: 200px;
-        overflow-y: auto;
-        background: var(--surface-elevated, #ffffff);
-        border: 1px solid var(--border-subtle, #ddd);
-        border-top: none;
-        border-radius: 0 0 4px 4px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        z-index: 10000;
-        display: none;
-      `;
       
-      // Position relative to input
+      // Position relative to input - use same pattern as other overlay dropdowns
       const inputParent = inputElement.parentElement;
       if (inputParent) {
-        inputParent.style.position = 'relative';
-        // For shadow DOM, append to shadow root; otherwise append to parent
-        if (isShadowDOM) {
-          root.appendChild(dropdown);
-          // Position absolutely relative to viewport
-          const rect = inputElement.getBoundingClientRect();
-          dropdown.style.position = 'fixed';
-          dropdown.style.top = `${rect.bottom}px`;
-          dropdown.style.left = `${rect.left}px`;
-          dropdown.style.width = `${rect.width}px`;
-        } else {
-          inputParent.appendChild(dropdown);
+        // Ensure parent has relative positioning (same as rule-dropdown, filetype-dropdown)
+        if (window.getComputedStyle(inputParent).position === 'static') {
+          inputParent.style.position = 'relative';
         }
+        
+        // Append to parent (works in both regular DOM and shadow DOM)
+        inputParent.appendChild(dropdown);
+        
+        // Use absolute positioning with same z-index as other overlay dropdowns
+        dropdown.style.cssText = `
+          position: absolute;
+          top: 100%;
+          left: 0;
+          right: 0;
+          margin-top: 4px;
+          max-height: 200px;
+          overflow-y: auto;
+          background: var(--surface-elevated, #ffffff);
+          border: 1px solid var(--border-subtle, #ddd);
+          border-radius: 8px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+          z-index: 1000;
+          display: none;
+        `;
       }
     };
     
@@ -2846,13 +2842,7 @@ class DownloadOverlay {
         </div>
       `).join('');
       
-      // Update position for shadow DOM
-      if (isShadowDOM && inputElement) {
-        const rect = inputElement.getBoundingClientRect();
-        dropdown.style.top = `${rect.bottom}px`;
-        dropdown.style.left = `${rect.left}px`;
-        dropdown.style.width = `${rect.width}px`;
-      }
+      // No need to update position - using absolute positioning relative to parent
       
       dropdown.style.display = 'block';
       
