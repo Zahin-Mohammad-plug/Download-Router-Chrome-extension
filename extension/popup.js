@@ -418,7 +418,7 @@ class PopupApp {
         activeRulesList.innerHTML = '<p class="empty-text">No matching rules for this site</p>';
       }
       if (allRulesSection && allRulesSection.querySelector('h3')) {
-        allRulesSection.querySelector('h3').textContent = 'Rules';
+        allRulesSection.querySelector('h3').textContent = 'All Rules';
       }
       allRulesList.innerHTML = '<p class="empty-text">No rules configured</p>';
 
