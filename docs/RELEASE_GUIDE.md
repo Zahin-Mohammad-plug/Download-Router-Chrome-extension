@@ -1,4 +1,32 @@
-# Release Guide - Companion App Distribution
+# Release Guide
+
+Two things get released from this repo: the Chrome extension (through the Chrome Web Store) and the optional companion app (GitHub releases). They're versioned separately.
+
+## Extension Release (Chrome Web Store)
+
+Store listing: https://chromewebstore.google.com/detail/download-router/gbdficmkipoplmkhcdbdlfmjfpgbgjbn (ID `gbdficmkipoplmkhcdbdlfmjfpgbgjbn`)
+
+### Steps
+1. Bump `version` in `extension/manifest.json`. It must be higher than what's live on the store.
+2. Update `CHANGELOG.md` and the version history in `README.md`.
+3. Run the manual checks in [TESTING.md](TESTING.md) (rule order, card, 12s cap, migration).
+4. Commit, then build the zip:
+   ```bash
+   STORE_VERSION=<live store version> scripts/package.sh
+   # e.g. STORE_VERSION=2.1.3 scripts/package.sh
+   ```
+   This writes `dist/download-router-<version>.zip` (dev files excluded) and refuses to run if the version isn't higher, a manifest file is missing, or `extension/` has uncommitted changes.
+5. Load the unzipped build once as a sanity check.
+6. Developer dashboard → Package → Upload new package → the zip. The store takes a zip, not a `.crx`.
+7. Update the listing and Privacy practices if anything changed (see [STORE_LISTING.md](STORE_LISTING.md)). New permissions (2.2.0 adds `scripting`) need a justification.
+8. Submit for review. Tag the commit (`git tag v<version>`) so the zip can be rebuilt.
+
+### Rollout and rollback
+- Staged (percentage) rollout isn't available for extensions under 10,000 users, so every release goes to everyone at once.
+- There's no "revert" button. To roll back, check out the last good code, set the version **higher** than the bad one (e.g. 2.2.0 broken → publish the 2.1.3 code as 2.2.1), build with `scripts/package.sh` and submit.
+- Existing users update automatically within a few hours of approval.
+
+## Companion App Release (GitHub)
 
 ## DMG Location and Filename
 
@@ -32,7 +60,7 @@ mv "Download Router Companion-1.0.0-arm64.dmg" "download-router-companion-1.0.0-
 - **macOS**: `download-router-companion-1.0.0-mac-arm64.dmg` (or universal)
 - **Windows**: `download-router-companion-1.0.0-windows-x64.exe` (after Windows build)
 - **README**: Brief installation instructions
-- **Extension ID**: Document the Chrome Web Store extension ID (once published)
+- **Extension ID**: Chrome Web Store ID `gbdficmkipoplmkhcdbdlfmjfpgbgjbn`
 
 ## Testing the Built DMG
 
@@ -60,13 +88,13 @@ mv "Download Router Companion-1.0.0-arm64.dmg" "download-router-companion-1.0.0-
    - Get your extension ID (32-character string)
    - Run the installer script (it will prompt for extension ID)
    - Restart Chrome
-   - Open extension options → Settings → Check companion status
+   - Open extension Settings → Companion app row should say "Installed ✓"
 
 5. **Test functionality:**
-   - Open extension options → Rules tab
-   - Click "Browse" → Should open native folder picker
-   - Download a test file → Should route correctly
-   - Verify file moves work
+   - Download card → folder menu → "Other Location…" → native folder picker opens
+   - Settings → edit a rule → "Choose…" → native folder picker opens
+   - Download a test file with a rule pointing outside Downloads → file ends up there
+   - Pick a new folder after the card saved early → file is moved
 
 ## Extension ID Handling
 
@@ -87,7 +115,7 @@ mv "Download Router Companion-1.0.0-arm64.dmg" "download-router-companion-1.0.0-
 
 **Development/Unpacked Extension:**
 - Different ID per developer/installation
-- Changes when extension is reloaded
+- Depends on the folder it was loaded from (same folder = same ID, even after Reload)
 - Each developer needs their own ID
 
 ### Current Installer Behavior
@@ -99,14 +127,11 @@ The installer now:
 4. Saves it for future use
 5. Configures the manifest automatically
 
-### For Web Store Users (Future)
+### For Web Store Users
 
-Once published to Chrome Web Store:
-1. Note the extension ID from developer dashboard
-2. Update installation documentation with the extension ID
-3. Users can either:
-   - Enter the extension ID when prompted (all users have the same one)
-   - Or you can provide a pre-configured installer for Web Store users
+The extension is published; the Web Store ID is `gbdficmkipoplmkhcdbdlfmjfpgbgjbn` for everyone.
+1. Users can enter that ID when the installer prompts
+2. Or a future installer can have it pre-configured
 
 **Recommended approach:**
 - Keep installer generic (prompts for ID)
@@ -160,8 +185,7 @@ Before creating a release:
 - [ ] Test Windows EXE on Windows machine
 - [ ] Verify icons appear correctly in built apps
 - [ ] Test installer script prompts for extension ID
-- [ ] Document Chrome Web Store extension ID (once published)
-- [ ] Update installation instructions with extension ID
+- [ ] Installer works with the Web Store ID `gbdficmkipoplmkhcdbdlfmjfpgbgjbn`
 - [ ] Create release notes
 - [ ] Upload assets to GitHub release
 - [ ] Test download and installation from release
@@ -184,8 +208,8 @@ bash install/install-macos.sh
 # 5. Restart Chrome
 
 # 6. Verify:
-#    - Extension options → Settings → Companion status should show "Installed"
-#    - Options → Rules → Browse button → Should open folder picker
+#    - Extension Settings → Companion app row should show "Installed ✓"
+#    - Download card → folder menu → Other Location… → should open folder picker
 #    - Download a test file → Should route correctly
 ```
 
