@@ -1,1771 +1,560 @@
 /**
- * popup.js
- * 
- * Purpose: Popup interface for the Download Router Chrome extension.
- * Role: Displays extension status, statistics, recent activity, and provides quick access
- *       to settings. Serves as the main user-facing control panel.
- * 
- * Key Responsibilities:
- * - Display extension enable/disable status and controls
- * - Show download statistics (total, routed, efficiency metrics)
- * - Display recent download activity history
- * - Provide quick links to options page and help resources
- * - Handle extension state toggling
- * 
- * Architecture:
- * - Single class (PopupApp) manages all popup functionality
- * - Communicates with background.js for statistics retrieval
- * - Updates UI dynamically based on storage data
+ * popup.js - Toolbar popup for Download Router.
+ *
+ * Answers two questions (docs/DESIGN.md v3, "Popup"):
+ *   - RECENT (grouped Today / Earlier): where did my recent downloads go? Clicking a row shows
+ *     the file in Finder.
+ *   - THIS SITE: where do downloads from the current website go? "Change" opens a folder menu
+ *     (1–9 pick, typing filters) and saves a website rule.
+ * Plus the sorting on/off switch, a weekly count and a link to Settings.
+ *
+ * Background messages used: getStats, getSiteRoute, getFolderSuggestions, addRule,
+ * checkCompanionApp, pickFolderNative, openFolder.
  */
 
-/**
- * PopupApp class
- * Manages the extension popup interface and user interactions.
- * Handles status display, statistics, and quick actions.
- */
-class PopupApp {
-  /**
-   * Initializes the PopupApp instance.
-   * Sets default state and begins initialization process.
-   * 
-   * Inputs: None
-   * Outputs: None (calls init method)
-   */
-  constructor() {
-    // Extension enabled/disabled state (default: enabled)
-    this.isExtensionEnabled = true;
-    // Current tab URL for matching rules
-    this.currentTabUrl = null;
-    // Modal state tracking
-    this.editingRuleIndex = null;
-    this.editingGroupName = null;
-    this.newlyAddedRuleIndex = null;
-    this.newlyAddedGroupName = null;
-    this.folderPickerOpen = false;
-    this.folderSelectCallback = null;
-    this.init();
-  }
-
-  /**
-   * Initializes popup interface by loading data and setting up UI.
-   * Loads statistics, sets up event handlers, and renders initial display.
-   * 
-   * Inputs: None
-   * Outputs: None (updates UI and sets up listeners)
-   * 
-   * External Dependencies:
-   *   - loadData: Method in this class to retrieve data from storage
-   *   - setupEventListeners: Method in this class to attach event handlers
-   *   - updateDisplay: Method in this class to render UI
-   *   - loadRecentActivity: Method in this class to populate activity list
-   */
-  async init() {
-    // Get current tab URL for matching rules
-    await this.getCurrentTabUrl();
-    // Load extension data and statistics
-    await this.loadData();
-    // Attach event handlers to UI elements
-    this.setupEventListeners();
-    // Setup modal listeners
-    this.setupModalListeners();
-    // Render initial UI state
-    this.updateDisplay();
-    // Populate recent activity list
-    this.loadRecentActivity();
-    // Update "+ Add" button with current site
-    this.updateAddRuleButton();
-    
-    // Check for flags from content.js to auto-open modals
-    const storageData = await chrome.storage.local.get([
-      'openEditRuleInPopup',
-      'editRuleData',
-      'openEditGroupInPopup',
-      'editGroupName'
-    ]);
-    
-    if (storageData.openEditRuleInPopup && storageData.editRuleData) {
-      await chrome.storage.local.remove(['openEditRuleInPopup', 'editRuleData']);
-      // Find rule index by matching rule properties
-      const ruleData = storageData.editRuleData;
-      // Match by type (or source if type not available) and value
-      const ruleIndex = this.rules.findIndex(r => {
-        const ruleType = r.type || r.source || '';
-        const dataType = ruleData.type || ruleData.source || '';
-        return ruleType === dataType && 
-               r.value === ruleData.value;
-      });
-      if (ruleIndex !== -1) {
-        setTimeout(() => {
-          this.openEditRuleModal(ruleIndex);
-        }, 200);
-      } else {
-        // If exact match not found, try to find by value only (in case folder changed)
-        const fallbackIndex = this.rules.findIndex(r => {
-          const ruleType = r.type || r.source || '';
-          const dataType = ruleData.type || ruleData.source || '';
-          return ruleType === dataType && r.value === ruleData.value;
-        });
-        if (fallbackIndex !== -1) {
-          setTimeout(() => {
-            this.openEditRuleModal(fallbackIndex);
-          }, 200);
-        }
-      }
-    }
-    
-    if (storageData.openEditGroupInPopup && storageData.editGroupName) {
-      await chrome.storage.local.remove(['openEditGroupInPopup', 'editGroupName']);
-      const groupName = storageData.editGroupName;
-      if (this.groups[groupName]) {
-        setTimeout(() => {
-          this.openEditGroupModal(groupName);
-        }, 200);
-      }
-    }
-  }
-
-  /**
-   * Gets the current active tab's URL to match rules against.
-   */
-  async getCurrentTabUrl() {
-    try {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tabs && tabs[0] && tabs[0].url) {
-        this.currentTabUrl = tabs[0].url;
-      }
-    } catch (error) {
-      console.error('Failed to get current tab URL:', error);
-      this.currentTabUrl = null;
-    }
-  }
-
-  /**
-   * Extracts domain from URL
-   */
-  extractDomain(url) {
-    if (!url) return null;
-    try {
-      const urlObj = new URL(url);
-      return urlObj.hostname.replace(/^www\./, '');
-    } catch (e) {
-      return null;
-    }
-  }
-
-  /**
-   * Loads extension data from Chrome storage and background script.
-   * Retrieves rules, groups, extension state, and download statistics.
-   * 
-   * Inputs: None
-   * 
-   * Outputs: None (updates instance properties)
-   * 
-   * External Dependencies:
-   *   - chrome.storage.sync: Chrome API for retrieving sync storage data
-   *   - chrome.runtime.sendMessage: Chrome API for communicating with background script
-   */
-  async loadData() {
-    // chrome.storage.sync.get: Retrieves data from sync storage
-    //   Inputs: Array of keys to retrieve
-    //   Outputs: Promise resolving to object with stored values
-    const syncData = await chrome.storage.sync.get([
-      'rules', 
-      'groups', 
-      'extensionEnabled'
-    ]);
-    
-    // Get statistics from background script
-    // chrome.runtime.sendMessage: Sends message to background script
-    //   Inputs: Message object with type 'getStats'
-    //   Outputs: Promise resolving to stats object
-    const stats = await chrome.runtime.sendMessage({ type: 'getStats' });
-    
-    // Store retrieved data in instance properties with defaults
-    this.rules = syncData.rules || [];
-    this.groups = syncData.groups || {};
-    // Default to enabled if not explicitly set
-    this.isExtensionEnabled = syncData.extensionEnabled !== false;
-    // Use default stats if none returned
-    this.stats = stats || {
-      totalDownloads: 0,
-      routedDownloads: 0,
-      recentActivity: []
-    };
-  }
-
-  /**
-   * Attaches event listeners to popup UI elements.
-   * Sets up handlers for options page, extension toggle, and external links.
-   * 
-   * Inputs: None (uses DOM elements from popup.html)
-   * 
-   * Outputs: None (attaches event listeners)
-   * 
-   * External Dependencies:
-   *   - document.getElementById: Browser DOM API to find elements
-   *   - addEventListener: Browser DOM API to attach event handlers
-   *   - chrome.runtime.openOptionsPage: Chrome API to open options page
-   *   - chrome.tabs.create: Chrome API to create new tabs
-   *   - toggleExtension: Method in this class to toggle extension state
-   */
-  setupEventListeners() {
-    // Open options page button (header)
-    document.getElementById('open-options-header').addEventListener('click', () => {
-      chrome.runtime.openOptionsPage();
-    });
-
-    // Toggle extension enable/disable button (header)
-    document.getElementById('toggle-extension-header').addEventListener('click', () => {
-      this.toggleExtension();
-    });
-    
-    // Handle clicks on activity items to open folder
-    document.addEventListener('click', (e) => {
-      const activityItem = e.target.closest('.activity-item[data-file-path], .activity-item[data-download-id]');
-      if (activityItem) {
-        const filePath = activityItem.dataset.filePath;
-        const downloadId = activityItem.dataset.downloadId ? parseInt(activityItem.dataset.downloadId, 10) : null;
-        if (filePath || downloadId) {
-          chrome.runtime.sendMessage({
-            type: 'openFolder',
-            path: filePath || '',
-            downloadId: downloadId
-          }).catch((error) => {
-            console.error('Error opening folder:', error);
-          });
-        }
-      }
-    });
-
-    // Clear recent activity button
-    const clearActivityBtn = document.getElementById('clear-activity');
-    if (clearActivityBtn) {
-      clearActivityBtn.addEventListener('click', async () => {
-        if (confirm('Clear all recent downloads?')) {
-          await chrome.storage.local.set({
-            downloadStats: {
-              totalDownloads: this.stats.totalDownloads,
-              routedDownloads: this.stats.routedDownloads,
-              recentActivity: [] // Clear activity
-            }
-          });
-          this.stats.recentActivity = [];
-          this.loadRecentActivity();
-          this.showToast('Recent activity cleared');
-        }
-      });
-    }
-
-    // Add rule quick button - now opens modal instead of redirecting
-    const addRuleQuickBtn = document.getElementById('add-rule-quick');
-    if (addRuleQuickBtn) {
-      addRuleQuickBtn.addEventListener('click', () => {
-        const currentDomain = this.extractDomain(this.currentTabUrl);
-        this.openAddRuleModal(currentDomain || '');
-      });
-    }
-
-    // Help link - opens README in new tab
-    document.getElementById('help-link').addEventListener('click', (e) => {
-      // preventDefault: Prevents default anchor link behavior
-      //   Inputs: None
-      //   Outputs: None (prevents navigation)
-      e.preventDefault();
-      // chrome.tabs.create: Creates new tab with specified URL
-      //   Inputs: Object with url property
-      //   Outputs: Promise resolving to Tab object
-      chrome.tabs.create({ url: 'https://github.com/Zahin-Mohammad-plug/Download-Router-Chrome-extension#readme' });
-    });
-
-    // Feedback link - opens GitHub issues page in new tab
-    document.getElementById('feedback-link').addEventListener('click', (e) => {
-      e.preventDefault();
-      chrome.tabs.create({ url: 'https://github.com/Zahin-Mohammad-plug/Download-Router-Chrome-extension/issues' });
-    });
-  }
-
-  /**
-   * Updates popup UI display with current statistics and extension state.
-   * Renders rule counts, group counts, download counts, and toggle button state.
-   * 
-   * Inputs: None (uses instance properties: this.rules, this.groups, this.stats, this.isExtensionEnabled)
-   * 
-   * Outputs: None (updates DOM elements)
-   * 
-   * External Dependencies:
-   *   - document.getElementById: Browser DOM API to find elements
-   *   - textContent: DOM property to set element text
-   *   - Object.keys: JavaScript built-in to get object keys
-   *   - classList.add/remove: DOM API to modify element classes
-   */
-  updateDisplay() {
-    // Update statistics displays
-    // textContent: Sets element's text content
-    //   Inputs: String text
-    //   Outputs: None (modifies element)
-    document.getElementById('rules-count').textContent = this.rules.length;
-    // Object.keys: Returns array of object's own property names
-    //   Inputs: Object
-    //   Outputs: Array of strings
-    document.getElementById('groups-count').textContent = Object.keys(this.groups).length;
-    document.getElementById('downloads-count').textContent = this.stats.totalDownloads;
-
-    // Show active rules matching current site
-    this.renderActiveRules();
-    
-    // Show all rules
-    this.renderAllRules();
-
-    // Update extension toggle button appearance based on state (header)
-    const toggleBtnHeader = document.getElementById('toggle-extension-header');
-    const toggleIconHeader = document.getElementById('toggle-icon-header');
-
-    if (this.isExtensionEnabled) {
-      // Extension is enabled - show pause option
-      if (typeof getIcon !== 'undefined') {
-        toggleIconHeader.innerHTML = getIcon('pause', 18);
-      }
-      toggleBtnHeader.classList.remove('disabled');
-      toggleBtnHeader.title = 'Pause';
-    } else {
-      // Extension is disabled - show resume option
-      if (typeof getIcon !== 'undefined') {
-        toggleIconHeader.innerHTML = getIcon('play', 18);
-      }
-      toggleBtnHeader.classList.add('disabled');
-      toggleBtnHeader.title = 'Resume';
-    }
-  }
-
-  /**
-   * Renders active rules that match the current site
-   */
-  renderActiveRules() {
-    const activeRulesList = document.getElementById('active-rules-list');
-    if (!activeRulesList) return;
-
-    const currentDomain = this.extractDomain(this.currentTabUrl);
-    if (!currentDomain) {
-      activeRulesList.innerHTML = '<p class="empty-text">Unable to detect current site</p>';
-      return;
-    }
-
-    // Find matching domain rules
-    const enabledRules = this.rules.filter(r => r.enabled !== false);
-    const matchingRules = enabledRules.filter(rule => {
-      if (rule.type === 'domain') {
-        const ruleDomain = rule.value.replace(/^www\./, '');
-        return currentDomain === ruleDomain || currentDomain.endsWith('.' + ruleDomain);
-      }
-      return false;
-    });
-
-    if (matchingRules.length === 0) {
-      activeRulesList.innerHTML = '<p class="empty-text">No matching rules for this site</p>';
-      return;
-    }
-
-    // Sort by priority (lower = higher priority)
-    matchingRules.sort((a, b) => {
-      const priorityA = a.priority !== undefined ? parseFloat(a.priority) : 2.0;
-      const priorityB = b.priority !== undefined ? parseFloat(b.priority) : 2.0;
-      return priorityA - priorityB;
-    });
-
-    activeRulesList.innerHTML = matchingRules.map((rule, idx) => {
-      const iconHTML = typeof getIcon !== 'undefined' ? getIcon('globe', 16) : '';
-      const ruleIndex = this.rules.findIndex(r => r === rule);
-      return `
-        <div class="rule-preview" data-rule-index="${ruleIndex}" style="cursor: pointer;">
-          <span class="rule-icon">${iconHTML}</span>
-          <span class="rule-value" title="${rule.value}">${rule.value.length > 30 ? rule.value.substring(0, 30) + '...' : rule.value}</span>
-          <span class="rule-folder" title="${rule.folder}">${rule.folder.length > 20 ? rule.folder.substring(0, 20) + '...' : rule.folder}</span>
-        </div>
-      `;
-    }).join('');
-    
-    // Add click handlers to rule previews
-    activeRulesList.querySelectorAll('.rule-preview[data-rule-index]').forEach(preview => {
-      preview.addEventListener('click', () => {
-        const index = parseInt(preview.dataset.ruleIndex);
-        if (!isNaN(index) && index >= 0 && index < this.rules.length) {
-          this.openEditRuleModal(index);
-        }
-      });
-    });
-  }
-
-  /**
-   * Renders all rules
-   */
-  renderAllRules() {
-    const allRulesList = document.getElementById('all-rules-list');
-    const allRulesSection = document.getElementById('all-rules-preview');
-    const activeRulesSection = document.getElementById('rules-preview');
-    const addRuleQuickBtn = document.getElementById('add-rule-quick');
-    const activeRulesList = document.getElementById('active-rules-list');
-    if (!allRulesList) return;
-
-    const enabledRules = this.rules.filter(r => r.enabled !== false);
-    const currentDomain = this.extractDomain(this.currentTabUrl);
-
-    if (enabledRules.length === 0) {
-      // No rules - keep active rules section visible to show the button
-      if (activeRulesSection) {
-        activeRulesSection.style.display = 'block';
-      }
-      if (activeRulesList) {
-        activeRulesList.innerHTML = '<p class="empty-text">No matching rules for this site</p>';
-      }
-      if (allRulesSection && allRulesSection.querySelector('h3')) {
-        allRulesSection.querySelector('h3').textContent = 'All Rules';
-      }
-      allRulesList.innerHTML = '<p class="empty-text">No rules configured</p>';
-
-      // Update + Add button to show current site
-      if (addRuleQuickBtn && currentDomain) {
-        addRuleQuickBtn.textContent = `+ Add ${currentDomain}`;
-      }
-      return;
-    }
-
-    // Has rules - show both sections normally
-    if (activeRulesSection) {
-      activeRulesSection.style.display = 'block';
-    }
-    if (allRulesSection && allRulesSection.querySelector('h3')) {
-      allRulesSection.querySelector('h3').textContent = 'All Rules';
-    }
-
-    // Sort by priority then by type
-    enabledRules.sort((a, b) => {
-      const priorityA = a.priority !== undefined ? parseFloat(a.priority) : 2.0;
-      const priorityB = b.priority !== undefined ? parseFloat(b.priority) : 2.0;
-      if (priorityA !== priorityB) return priorityA - priorityB;
-      // If same priority, domain rules first
-      if (a.type === 'domain' && b.type !== 'domain') return -1;
-      if (a.type !== 'domain' && b.type === 'domain') return 1;
-      return 0;
-    });
-
-    allRulesList.innerHTML = enabledRules.slice(0, 5).map(rule => {
-      const iconName = rule.type === 'domain' ? 'globe' : 'search';
-      const iconHTML = typeof getIcon !== 'undefined' ? getIcon(iconName, 16) : '';
-      const ruleIndex = this.rules.findIndex(r => r === rule);
-      return `
-        <div class="rule-preview" data-rule-index="${ruleIndex}" style="cursor: pointer;">
-          <span class="rule-icon">${iconHTML}</span>
-          <span class="rule-value" title="${rule.value}">${rule.value.length > 25 ? rule.value.substring(0, 25) + '...' : rule.value}</span>
-          <span class="rule-folder" title="${rule.folder}">${rule.folder.length > 18 ? rule.folder.substring(0, 18) + '...' : rule.folder}</span>
-        </div>
-      `;
-    }).join('');
-    
-    // Add click handlers to rule previews
-    allRulesList.querySelectorAll('.rule-preview[data-rule-index]').forEach(preview => {
-      preview.addEventListener('click', () => {
-        const index = parseInt(preview.dataset.ruleIndex);
-        if (!isNaN(index) && index >= 0 && index < this.rules.length) {
-          this.openEditRuleModal(index);
-        }
-      });
-    });
-
-    if (enabledRules.length > 5) {
-      allRulesList.innerHTML += `<p class="more-rules">+${enabledRules.length - 5} more</p>`;
-    }
-  }
-
-  /**
-   * Updates the "+ Add" button text to show the current site domain
-   */
-  updateAddRuleButton() {
-    const addRuleQuickBtn = document.getElementById('add-rule-quick');
-    if (!addRuleQuickBtn) return;
-
-    const currentDomain = this.extractDomain(this.currentTabUrl);
-
-    if (currentDomain) {
-      addRuleQuickBtn.textContent = `+ Add ${currentDomain}`;
-      addRuleQuickBtn.title = `Add rule for ${currentDomain}`;
-    } else {
-      addRuleQuickBtn.textContent = '+ Add Rule';
-      addRuleQuickBtn.title = 'Add a new rule';
-    }
-  }
-
-  /**
-   * Loads and displays recent download activity in the popup.
-   * Shows up to 5 most recent downloads or empty state if none exist.
-   * 
-   * Inputs: None (uses this.stats.recentActivity)
-   * 
-   * Outputs: None (updates activity list DOM)
-   * 
-   * External Dependencies:
-   *   - document.getElementById: Browser DOM API to find element
-   *   - innerHTML: DOM property to set element HTML content
-   *   - Array.slice: JavaScript array method to extract subset
-   *   - Array.map: JavaScript array method to transform elements
-   *   - Array.join: JavaScript array method to combine strings
-   *   - createActivityItem: Method in this class to generate activity HTML
-   */
-  loadRecentActivity() {
-    const activityList = document.getElementById('activity-list');
-    const recentActivitySection = document.getElementById('recent-activity');
-    const activities = this.stats.recentActivity || [];
-
-    // Show empty state if no activities
-    if (activities.length === 0) {
-      // Hide entire "Recent Downloads" section when empty
-      if (recentActivitySection) {
-        recentActivitySection.style.display = 'none';
-      }
-      return;
-    }
-
-    // Show section and populate activities
-    if (recentActivitySection) {
-      recentActivitySection.style.display = 'block';
-    }
-
-    // Generate HTML for activity items
-    // slice: Returns array subset (first 5 items)
-    //   Inputs: Start index (0), end index (5)
-    //   Outputs: New array with subset elements
-    // map: Transforms each activity to HTML string
-    //   Inputs: Transform function (createActivityItem)
-    //   Outputs: Array of HTML strings
-    // join: Combines array elements into single string
-    //   Inputs: Separator string ('')
-    //   Outputs: Combined string
-    activityList.innerHTML = activities
-      .slice(0, 5) // Show only last 5
-      .map(activity => this.createActivityItem(activity))
-      .join('');
-  }
-
-  /**
-   * Creates HTML string for a single activity item in the recent activity list.
-   * Formats filename, folder path, timestamp, and routing status.
-   * 
-   * Inputs:
-   *   - activity: Object containing activity data:
-   *     - filename: String name of downloaded file
-   *     - folder: String destination folder
-   *     - timestamp: Number milliseconds since epoch
-   *     - routed: Boolean indicating if rule was applied
-   * 
-   * Outputs: String containing HTML for activity item
-   * 
-   * External Dependencies:
-   *   - getTimeAgo: Method in this class to format timestamp
-   *   - getFileIcon: Method in this class to get icon for file type
-   */
-  createActivityItem(activity) {
-    // Format relative time (e.g., "5m ago", "2h ago")
-    // getTimeAgo: Converts timestamp to human-readable relative time
-    const timeAgo = this.getTimeAgo(activity.timestamp);
-    // Get appropriate icon for file type
-    // getFileIcon: Returns Lucide icon markup based on file extension
-    const icon = this.getFileIcon(activity.filename);
-    // Use the folder property stored in activity (already formatted correctly)
-    // folder is set by updateDownloadStats to the actual destination folder
-    let displayPath = activity.folder || 'Downloads';
-    
-    // Format path for display based on whether it's absolute or relative
-    displayPath = this.formatActivityPath(displayPath);
-    
-    // Show routing badge if file was routed by a rule
-    const routedBadge = activity.routed && typeof getIcon !== 'undefined' 
-      ? `<span class="routed-badge">${getIcon('folder', 14)}</span>` 
-      : '';
-    
-    // Generate HTML template string with activity data
-    // Use data attribute instead of inline onclick for CSP compliance
-    // Use filePath if available, otherwise fall back to folder (for backward compat)
-    const clickPath = activity.filePath || activity.folder || '';
-    const filePath = clickPath ? clickPath.replace(/"/g, '&quot;') : '';
-    const downloadId = activity.downloadId || '';
-    
-    return `
-      <div class="activity-item ${activity.routed ? 'routed' : ''}" style="cursor: pointer;" ${filePath ? `data-file-path="${filePath}"` : ''} ${downloadId ? `data-download-id="${downloadId}"` : ''}>
-        <div class="activity-icon">${icon}</div>
-        <div class="activity-info">
-          <div class="activity-filename" title="${activity.filename}">${activity.filename} ${routedBadge}</div>
-          <div class="activity-path" title="${activity.folder}">${displayPath}</div>
-        </div>
-        <div class="activity-time">${timeAgo}</div>
-      </div>
-    `;
-  }
-
-
-  /**
-   * Converts timestamp to human-readable relative time string.
-   * Formats as "Xd ago", "Xh ago", "Xm ago", or "Just now".
-   * 
-   * Inputs:
-   *   - timestamp: Number milliseconds since epoch
-   * 
-   * Outputs: String relative time description
-   * 
-   * External Dependencies:
-   *   - Date.now: JavaScript built-in function to get current timestamp
-   *   - Math.floor: JavaScript built-in function to round down
-   */
-  getTimeAgo(timestamp) {
-    // Date.now: Returns current timestamp in milliseconds
-    //   Inputs: None
-    //   Outputs: Number (milliseconds since epoch)
-    const now = Date.now();
-    // Calculate time difference in milliseconds
-    const diff = now - timestamp;
-    // Convert to different time units
-    // Math.floor: Rounds number down to nearest integer
-    //   Inputs: Number
-    //   Outputs: Integer
-    const minutes = Math.floor(diff / 60000); // 60,000 ms = 1 minute
-    const hours = Math.floor(diff / 3600000); // 3,600,000 ms = 1 hour
-    const days = Math.floor(diff / 86400000); // 86,400,000 ms = 1 day
-
-    // Return appropriate time format based on duration
-    if (days > 0) return `${days}d ago`;
-    if (hours > 0) return `${hours}h ago`;
-    if (minutes > 0) return `${minutes}m ago`;
-    return 'Just now';
-  }
-
-  /**
-   * Formats folder path for display in activity items.
-   * Shows relative paths as-is, absolute paths condensed with drive and last folders.
-   * 
-   * Inputs:
-   *   - path: String folder path (relative or absolute)
-   * 
-   * Outputs: String formatted for display (e.g., "scope-test" or "T:/../github > repo")
-   */
-  formatActivityPath(path) {
-    if (!path) return 'Downloads';
-    
-    // Check if it's an absolute path (Windows or Unix)
-    const isAbsolute = /^([A-Za-z]:[\\/]|\/(?!\/))/.test(path);
-    
-    if (!isAbsolute) {
-      // Relative path - just show as-is (e.g., "scope-test", "Images/Screenshots")
-      return path.replace(/\\/g, '/');
-    }
-    
-    // Absolute path - condense for display
-    // Normalize to forward slashes
-    const normalizedPath = path.replace(/\\/g, '/');
-    const parts = normalizedPath.split('/').filter(p => p);
-    
-    if (parts.length === 0) return 'Downloads';
-    
-    // Get drive letter if present (e.g., "T:")
-    let drive = '';
-    let folderParts = parts;
-    if (/^[A-Za-z]:$/.test(parts[0])) {
-      drive = parts[0];
-      folderParts = parts.slice(1);
-    }
-    
-    // Show last 2 folder levels with separator
-    if (folderParts.length <= 2) {
-      // Short path - show all folders
-      const displayFolders = folderParts.join(' > ');
-      return drive ? `${drive}/${displayFolders}` : displayFolders;
-    } else {
-      // Long path - show drive/../lastTwo > lastOne
-      const lastTwo = folderParts.slice(-2).join(' > ');
-      return drive ? `${drive}/../${lastTwo}` : `../${lastTwo}`;
-    }
-  }
-
-  /**
-   * Toggles extension enabled/disabled state.
-   * Saves state to storage, notifies background script, and updates UI.
-   * 
-   * Inputs: None (toggles this.isExtensionEnabled)
-   * 
-   * Outputs: None (updates state, storage, and UI)
-   * 
-   * External Dependencies:
-   *   - chrome.storage.sync.set: Chrome API for saving state
-   *   - chrome.runtime.sendMessage: Chrome API for notifying background script
-   *   - updateDisplay: Method in this class to refresh UI
-   *   - showToast: Method in this class to display feedback
-   */
-  async toggleExtension() {
-    // Toggle extension state
-    this.isExtensionEnabled = !this.isExtensionEnabled;
-    
-    // Save new state to sync storage
-    // chrome.storage.sync.set: Stores data in sync storage
-    //   Inputs: Object with key-value pairs
-    //   Outputs: Promise resolving when stored
-    await chrome.storage.sync.set({ 
-      extensionEnabled: this.isExtensionEnabled 
-    });
-    
-    // Notify background script of state change
-    // chrome.runtime.sendMessage: Sends message to background script
-    //   Inputs: Message object with type and data
-    //   Outputs: None (fire-and-forget message)
-    chrome.runtime.sendMessage({
-      type: 'toggleExtension',
-      enabled: this.isExtensionEnabled
-    });
-    
-    // Refresh UI to reflect new state
-    this.updateDisplay();
-    
-    // Show user feedback toast notification
-    // showToast: Displays temporary notification message
-    this.showToast(
-      this.isExtensionEnabled 
-        ? 'Extension enabled' 
-        : 'Extension paused'
-    );
-  }
-
-  /**
-   * Displays a temporary toast notification message.
-   * Creates, animates, and automatically removes toast after 2 seconds.
-   * 
-   * Inputs:
-   *   - message: String message to display in toast
-   * 
-   * Outputs: None (creates and removes DOM element)
-   * 
-   * External Dependencies:
-   *   - document.createElement: Browser DOM API to create element
-   *   - document.body.appendChild: Browser DOM API to add element
-   *   - setTimeout: Browser built-in function for delayed execution
-   *   - Element.remove: Browser DOM API to remove element
-   */
-  showToast(message) {
-    // Create toast notification element
-    // document.createElement: Creates new DOM element
-    //   Inputs: Tag name string ('div')
-    //   Outputs: HTMLElement object
-    const toast = document.createElement('div');
-    // Apply inline styles for positioning and appearance
-    // cssText: Sets element's inline CSS as string
-    //   Inputs: CSS string
-    //   Outputs: None (applies styles)
-    toast.style.cssText = `
-      position: fixed;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: var(--surface);
-      color: var(--text-primary);
-      padding: 8px 16px;
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-      box-shadow: var(--shadow-md);
-      font-size: 12px;
-      z-index: 1000;
-      animation: slideIn 0.3s ease;
-    `;
-    // textContent: Sets element's text content
-    toast.textContent = message;
-    
-    // Add toast to page
-    // document.body.appendChild: Adds element to page body
-    //   Inputs: Element to append
-    //   Outputs: Appended element
-    document.body.appendChild(toast);
-    
-    // Remove toast after 2 seconds with slide-out animation
-    // setTimeout: Executes callback after delay
-    //   Inputs: Callback function, delay in milliseconds (2000 = 2 seconds)
-    //   Outputs: Timeout ID (not stored)
-    setTimeout(() => {
-      // Trigger slide-out animation
-      toast.style.animation = 'slideOut 0.3s ease';
-      // Remove element after animation completes
-      setTimeout(() => {
-        // remove: Removes element from DOM
-        //   Inputs: None
-        //   Outputs: None (removes element)
-        toast.remove();
-      }, 300); // Wait for animation duration
-    }, 2000);
-  }
-
-  /**
-   * Returns Lucide icon markup based on file extension extracted from filename.
-   * Maps common file types to appropriate visual icons.
-   * 
-   * Inputs:
-   *   - filename: String filename (may include extension)
-   * 
-   * Outputs: String HTML with Lucide icon markup
-   */
-  getFileIcon(filename) {
-    // Extract file extension from filename
-    // split: Splits string by delimiter into array
-    //   Inputs: Delimiter string ('.')
-    //   Outputs: Array of strings
-    // pop: Removes and returns last array element
-    //   Inputs: None
-    //   Outputs: Last element or undefined
-    // toLowerCase: Converts string to lowercase
-    //   Inputs: None
-    //   Outputs: Lowercase string
-    const extension = filename.split('.').pop().toLowerCase();
-    const iconMap = {
-      // Images
-      'jpg': 'image', 'jpeg': 'image', 'png': 'image', 'gif': 'image', 'bmp': 'image', 'svg': 'image', 'webp': 'image',
-      // Videos
-      'mp4': 'video', 'mov': 'video', 'avi': 'video', 'mkv': 'video', 'wmv': 'video', 'flv': 'video', 'webm': 'video',
-      // Audio
-      'mp3': 'music', 'wav': 'music', 'flac': 'music', 'aac': 'music', 'm4a': 'music',
-      // Documents
-      'pdf': 'file-text', 'doc': 'file-text', 'docx': 'file-text', 'txt': 'file-text', 'rtf': 'file-text', 'odt': 'file-text',
-      // Archives
-      'zip': 'archive', 'rar': 'archive', '7z': 'archive', 'tar': 'archive', 'gz': 'archive',
-      // Code
-      'js': 'file-code', 'html': 'file-code', 'css': 'file-code', 'py': 'file-code', 'cpp': 'file-code', 'java': 'file-code',
-      // 3D Files
-      'stl': 'box', 'obj': 'box', '3mf': 'box', 'step': 'box', 'stp': 'box', 'ply': 'box',
-      // Software
-      'exe': 'package', 'msi': 'package', 'dmg': 'package', 'deb': 'package', 'rpm': 'package', 'pkg': 'package'
-    };
-    
-    const iconName = iconMap[extension] || 'file';
-    if (typeof getIcon !== 'undefined') {
-      return getIcon(iconName, 16);
-    }
-    return '';
-  }
-
-  /**
-   * Helper method to check companion app status with retry logic.
-   */
-  async checkCompanionAppStatusHelper() {
-    let status = { installed: false };
-    const maxRetries = 3;
-    
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        status = await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            resolve({ installed: false, error: 'Timeout waiting for response' });
-          }, 6000);
-          
-          chrome.runtime.sendMessage({ type: 'checkCompanionApp' }, (response) => {
-            clearTimeout(timeout);
-            if (chrome.runtime.lastError) {
-              const errorMsg = chrome.runtime.lastError.message || '';
-              if (errorMsg.includes('message port closed') || errorMsg.includes('Receiving end does not exist')) {
-                resolve({ installed: false, error: 'Service worker not ready', retry: true });
-              } else {
-                resolve({ installed: false, error: errorMsg });
-              }
-            } else {
-              resolve(response || { installed: false });
-            }
-          });
-        });
-        
-        if (!status.error || !status.retry) {
-          break;
-        }
-        
-        if (attempt < maxRetries - 1) {
-          await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1)));
-        }
-      } catch (error) {
-        console.error(`Companion app check attempt ${attempt + 1} failed:`, error);
-        if (attempt === maxRetries - 1) {
-          status = { installed: false, error: error.message };
-        }
-      }
-    }
-    
-    return status;
-  }
-
-  /**
-   * Opens folder picker - uses native OS dialog if companion app available.
-   */
-  /**
-   * Converts a clickable folder display to a text input with autocomplete for non-companion app users.
-   * For companion app users, keeps the clickable display.
-   */
-  async setupFolderInput(displayElement, hiddenInput, textSpan, onFolderChange = null) {
-    if (!displayElement || !hiddenInput) return;
-    
-    try {
-      const companionStatus = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ type: 'checkCompanionApp' }, (response) => {
-          resolve(response || { installed: false });
-        });
-      });
-      
-      if (companionStatus && companionStatus.installed) {
-        // Companion app available - keep clickable display
-        displayElement.addEventListener('click', () => {
-          this.openFolderPicker((folder) => {
-            if (folder && hiddenInput && textSpan) {
-              const normalizedFolder = folder.replace(/[\/\\]+$/, '');
-              hiddenInput.value = normalizedFolder;
-              if (textSpan) textSpan.textContent = normalizedFolder;
-              if (onFolderChange) onFolderChange(normalizedFolder);
-            }
-          });
-        });
-      } else {
-        // No companion app - convert to text input with autocomplete
-        const textInput = document.createElement('input');
-        textInput.type = 'text';
-        textInput.className = 'form-input';
-        textInput.value = hiddenInput.value || 'Downloads';
-        textInput.style.cssText = 'width: 100%; padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: 4px;';
-        textInput.placeholder = 'Type folder path (e.g., Documents/Subfolder)';
-        
-        // Replace display with input
-        displayElement.replaceWith(textInput);
-        
-        // Update hidden input when text input changes
-        textInput.addEventListener('input', () => {
-          const normalized = textInput.value ? textInput.value.replace(/\\/g, '/') : '';
-          hiddenInput.value = normalized;
-          if (textSpan) textSpan.textContent = normalized;
-          if (onFolderChange) onFolderChange(normalized);
-        });
-        
-        // Attach autocomplete
-        this.attachFolderAutocomplete(textInput, (selectedPath) => {
-          if (selectedPath) {
-            hiddenInput.value = selectedPath;
-            if (textSpan) textSpan.textContent = selectedPath;
-            if (onFolderChange) onFolderChange(selectedPath);
-          }
-        });
-      }
-    } catch (error) {
-      console.error('Error setting up folder input:', error);
-    }
-  }
-
-  /**
-   * Attaches autocomplete dropdown to a folder input field for non-companion app users.
-   */
-  attachFolderAutocomplete(inputElement, callback = null) {
-    if (!inputElement) return;
-    
-    let dropdown = null;
-    let selectedIndex = -1;
-    let suggestions = [];
-    
-    // Create dropdown container
-    const createDropdown = () => {
-      if (dropdown) return;
-      
-      dropdown = document.createElement('div');
-      dropdown.className = 'folder-autocomplete-dropdown';
-      dropdown.style.cssText = `
-        position: absolute;
-        top: 100%;
-        left: 0;
-        right: 0;
-        max-height: 200px;
-        overflow-y: auto;
-        background: var(--surface-elevated, #ffffff);
-        border: 1px solid var(--border-subtle, #ddd);
-        border-top: none;
-        border-radius: 0 0 4px 4px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        z-index: 10000;
-        display: none;
-      `;
-      
-      const inputParent = inputElement.parentElement;
-      if (inputParent) {
-        inputParent.style.position = 'relative';
-        inputParent.appendChild(dropdown);
-      }
-    };
-    
-    const updateDropdown = (filteredSuggestions) => {
-      if (!dropdown) createDropdown();
-      
-      suggestions = filteredSuggestions;
-      selectedIndex = -1;
-      
-      if (filteredSuggestions.length === 0) {
-        dropdown.style.display = 'none';
-        return;
-      }
-      
-      dropdown.innerHTML = filteredSuggestions.map((path, index) => `
-        <div class="autocomplete-item" data-index="${index}" style="
-          padding: 8px 12px;
-          cursor: pointer;
-          border-bottom: 1px solid var(--border-subtle, #eee);
-          background: ${index === selectedIndex ? 'var(--surface-hover, #f0f0f0)' : 'transparent'};
-        ">
-          ${path}
-        </div>
-      `).join('');
-      
-      dropdown.style.display = 'block';
-      
-      dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
-        item.addEventListener('click', () => {
-          const path = filteredSuggestions[parseInt(item.dataset.index)];
-          inputElement.value = path;
-          if (callback) callback(path);
-          hideDropdown();
-        });
-      });
-    };
-    
-    const hideDropdown = () => {
-      if (dropdown) {
-        dropdown.style.display = 'none';
-        selectedIndex = -1;
-      }
-    };
-    
-    let allPaths = [];
-    chrome.runtime.sendMessage({ type: 'getUsedFolderPaths' }, (response) => {
-      if (response && response.success && response.paths) {
-        allPaths = response.paths;
-      }
-    });
-    
-    let debounceTimer = null;
-    inputElement.addEventListener('input', (e) => {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        const value = e.target.value.trim();
-        const normalizedValue = value.replace(/\\/g, '/').toLowerCase();
-        
-        if (normalizedValue === '') {
-          updateDropdown(allPaths);
-        } else {
-          const filtered = allPaths.filter(path => 
-            path.toLowerCase().includes(normalizedValue)
-          );
-          updateDropdown(filtered);
-        }
-      }, 150);
-    });
-    
-    inputElement.addEventListener('keydown', (e) => {
-      if (!dropdown || dropdown.style.display === 'none') return;
-      
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        selectedIndex = Math.min(selectedIndex + 1, suggestions.length - 1);
-        updateDropdown(suggestions);
-        const item = dropdown.querySelector(`[data-index="${selectedIndex}"]`);
-        if (item) item.scrollIntoView({ block: 'nearest' });
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        selectedIndex = Math.max(selectedIndex - 1, -1);
-        updateDropdown(suggestions);
-        if (selectedIndex >= 0) {
-          const item = dropdown.querySelector(`[data-index="${selectedIndex}"]`);
-          if (item) item.scrollIntoView({ block: 'nearest' });
-        }
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        if (selectedIndex >= 0 && suggestions[selectedIndex]) {
-          inputElement.value = suggestions[selectedIndex];
-          if (callback) callback(suggestions[selectedIndex]);
-          hideDropdown();
-        }
-      } else if (e.key === 'Escape') {
-        hideDropdown();
-      }
-    });
-    
-    document.addEventListener('click', (e) => {
-      if (dropdown && !dropdown.contains(e.target) && e.target !== inputElement) {
-        hideDropdown();
-      }
-    });
-    
-    inputElement.addEventListener('focus', () => {
-      if (allPaths.length > 0) {
-        updateDropdown(allPaths);
-      }
-    });
-  }
-
-  async openFolderPicker(callback) {
-    if (this.folderPickerOpen) {
-      console.log('Folder picker already open, ignoring');
-      return;
-    }
-    
-    this.folderPickerOpen = true;
-    this.folderSelectCallback = callback;
-    
-    try {
-      const companionStatus = await this.checkCompanionAppStatusHelper();
-      
-      if (companionStatus && companionStatus.installed) {
-        try {
-          const response = await new Promise((resolve, reject) => {
-            chrome.runtime.sendMessage({
-              type: 'pickFolderNative',
-              startPath: null
-            }, (response) => {
-              if (chrome.runtime.lastError) {
-                console.error('Error calling native folder picker:', chrome.runtime.lastError.message);
-                resolve({ success: false, error: chrome.runtime.lastError.message });
-              } else {
-                resolve(response || { success: false, error: 'No response' });
-              }
-            });
-          });
-          
-          if (response && response.success) {
-            if (response.path) {
-              console.log('Folder selected:', response.path);
-              if (callback) {
-                callback(response.path);
-              }
-              return;
-            } else {
-              console.log('User cancelled folder selection');
-              if (callback) callback(null);
-              return;
-            }
-          } else if (response && response.error) {
-            if (response.error.includes('cancelled') || response.error.includes('CANCELLED')) {
-              console.log('User cancelled folder selection (error)');
-              if (callback) callback(null);
-              return;
-            } else {
-              console.error('Native folder picker error:', response.error);
-              if (callback) callback(null);
-              return;
-            }
-          } else {
-            console.error('Unexpected native folder picker response:', response);
-            if (callback) callback(null);
-            return;
-          }
-        } catch (error) {
-          console.error('Native picker failed:', error.message);
-          if (callback) callback(null);
-          return;
-        }
-      } else {
-        console.log('Companion app not available for folder picking');
-        if (callback) callback(null);
-        return;
-      }
-    } catch (error) {
-      console.log('Companion app check failed:', error);
-      if (callback) callback(null);
-    } finally {
-      this.folderPickerOpen = false;
-    }
-  }
-
-  /**
-   * Sets up modal event listeners
-   */
-  setupModalListeners() {
-    const overlay = document.getElementById('modal-overlay');
-    if (!overlay) return;
-
-    let isSelecting = false;
-
-    overlay.addEventListener('mousedown', (e) => {
-      if (e.target === overlay) {
-        isSelecting = false;
-      }
-    });
-
-    overlay.addEventListener('mousemove', (e) => {
-      if (e.buttons === 1 && e.target !== overlay) {
-        isSelecting = true;
-      }
-    });
-
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay && !isSelecting) {
-        this.closeModal();
-      }
-      isSelecting = false;
-    });
-  }
-
-  /**
-   * Closes the modal and cleans up state
-   */
-  closeModal() {
-    const modal = document.getElementById('modal-overlay');
-    if (modal) {
-      modal.classList.remove('active');
-    }
-    
-    if (this.newlyAddedRuleIndex !== null && this.editingRuleIndex === this.newlyAddedRuleIndex) {
-      this.rules.splice(this.newlyAddedRuleIndex, 1);
-      this.updateDisplay();
-      this.newlyAddedRuleIndex = null;
-    }
-    
-    if (this.newlyAddedGroupName !== null && this.editingGroupName === this.newlyAddedGroupName) {
-      delete this.groups[this.newlyAddedGroupName];
-      this.updateDisplay();
-      this.newlyAddedGroupName = null;
-    }
-    
-    this.folderSelectCallback = null;
-    this.editingRuleIndex = null;
-    this.editingGroupName = null;
-  }
-
-  /**
-   * Opens edit modal for a rule
-   */
-
-
-  closeModal() {
-    const modal = document.getElementById('modal-overlay');
-    if (modal) {
-      modal.classList.remove('active');
-    }
-    
-    this.editingRuleIndex = null;
-    this.editingGroupName = null;
-  }
-
-  saveRule() {
-    const type = document.getElementById('edit-rule-type').value;
-    const value = document.getElementById('edit-rule-value').value.trim();
-    const folderInput = document.getElementById('edit-rule-folder');
-    const folder = folderInput ? folderInput.value.trim() : 'Downloads';
-    
-    if (!value) {
-      alert('Please enter a value for the rule');
-      return;
-    }
-    
-    console.log('[POPUP SAVE RULE] Folder input value:', folderInput?.value);
-    
-    const rule = {
-      type: type,
-      value: value,
-      folder: folder
-    };
-    
-    if (this.editingRuleIndex !== null) {
-      this.rules[this.editingRuleIndex] = rule;
-    } else {
-      this.rules.push(rule);
-    }
-    
-    chrome.storage.sync.set({ rules: this.rules }, () => {
-      this.renderRules();
-      this.closeModal();
-    });
-  }
-
-  saveGroup() {
-    const newName = document.getElementById('edit-group-name').value.trim();
-    const extensions = document.getElementById('edit-group-extensions').value.trim();
-    const folderInput = document.getElementById('edit-group-folder');
-    const folder = folderInput ? folderInput.value.trim() : 'Downloads';
-    
-    if (!newName || !extensions) {
-      alert('Please enter a name and extensions for the file type');
-      return;
-    }
-    
-    console.log('[POPUP SAVE GROUP] Folder input value:', folderInput?.value);
-    
-    // If name changed, need to update the key
-    if (newName !== this.editingGroupName) {
-      // Delete old group
-      delete this.groups[this.editingGroupName];
-      // Create new group with new name
-      this.groups[newName] = {
-        extensions: extensions,
-        folder: folder
-      };
-    } else {
-      // Just update existing group
-      this.groups[newName] = {
-        extensions: extensions,
-        folder: folder
-      };
-    }
-    
-    chrome.storage.sync.set({ groups: this.groups }, () => {
-      this.renderGroups();
-      this.closeModal();
-    });
-  }
-
-  /**
-   * Opens edit modal for a rule
-   */
-  openEditRuleModal(index) {
-    const rule = this.rules[index];
-    if (!rule) return;
-    
-    this.editingRuleIndex = index;
-    
-    const modal = document.getElementById('modal-overlay');
-    const modalBody = document.getElementById('folder-picker-modal');
-    
-    if (!modal || !modalBody) return;
-    
-    modalBody.innerHTML = `
-      <div class="modal-header">
-        <h3>Edit Rule</h3>
-        <button class="modal-close" id="close-modal">
-          ${typeof getIcon !== 'undefined' ? getIcon('x', 16) : '×'}
-        </button>
-      </div>
-      <div class="modal-body edit-form">
-        <div class="form-group">
-          <label class="form-label">Rule Type</label>
-          <select class="form-select" id="edit-rule-type">
-            <option value="domain" ${rule.type === 'domain' ? 'selected' : ''}>Site</option>
-            <option value="contains" ${rule.type === 'contains' ? 'selected' : ''}>Contains</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">${rule.type === 'domain' ? 'Site' : 'Filename contains phrase'}</label>
-          <input type="text" class="form-input" id="edit-rule-value" value="${rule.value || ''}" placeholder="${rule.type === 'domain' ? 'e.g., github.com' : 'e.g., invoice, receipt, report'}">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Destination Folder</label>
-          <div class="folder-display-clickable" id="edit-rule-folder-display" style="cursor: pointer; padding: 12px 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-elevated); display: flex; align-items: center; gap: 8px;">
-            ${typeof getIcon !== 'undefined' ? getIcon('folder', 16) : '📁'}
-            <span id="edit-rule-folder-text" style="flex: 1; color: var(--text-primary);">${rule.folder || 'Downloads'}</span>
-            <span style="color: var(--text-secondary); font-size: 12px;">Click to browse</span>
-          </div>
-          <input type="hidden" id="edit-rule-folder" value="${rule.folder || 'Downloads'}">
-        </div>
-        
-        <div class="rule-edit-warning" style="margin-top: 12px; padding: 8px 12px; background: #e3f2fd; border: 1px solid #2196f3; border-radius: 4px; font-size: 12px; color: #1565c0;">
-          <strong>Note:</strong> Rule edits apply to future downloads. They may not affect current downloads.
-        </div>
-        
-        <div class="advanced-section" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-subtle);">
-          <button type="button" class="advanced-toggle" id="edit-rule-advanced-toggle" style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 13px; font-weight: 500; margin-bottom: 16px;">
-            <span id="edit-rule-advanced-icon" style="display: inline-flex; align-items: center; transition: transform 0.2s;">${typeof getIcon !== 'undefined' ? getIcon('chevron-down', 16) : '▼'}</span>
-            <span>Advanced</span>
-          </button>
-          <div class="advanced-content" id="edit-rule-advanced-content" style="display: none; padding-left: 20px;">
-            <div class="form-group">
-              <label class="form-label">
-                Priority
-                <span class="help-text">1 = highest priority. Use decimals for fine control (e.g., 1.5, 2.7)</span>
-              </label>
-              <input type="number" class="form-input" id="edit-rule-priority" 
-                     value="${rule.priority !== undefined ? parseFloat(rule.priority).toFixed(1) : '2.0'}"
-                     min="0.1" max="10" step="0.1" placeholder="2.0">
-              <div class="priority-hint">Default: 2.0 | Common: 1.0 (highest), 2.0 (medium), 3.0 (file types)</div>
-            </div>
-            <div class="form-group" style="margin-top: 16px;">
-              <label class="toggle-label">
-                <input type="checkbox" id="edit-rule-enabled" ${rule.enabled !== false ? 'checked' : ''}>
-                <span>Enabled</span>
-              </label>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn secondary" id="modal-cancel">Cancel</button>
-        <button class="btn primary" id="modal-save">Save Changes</button>
-      </div>
-    `;
-    
-    document.getElementById('close-modal').addEventListener('click', () => this.closeModal());
-    document.getElementById('modal-cancel').addEventListener('click', () => this.closeModal());
-    
-    const folderDisplay = document.getElementById('edit-rule-folder-display');
-    const folderText = document.getElementById('edit-rule-folder-text');
-    const folderInput = document.getElementById('edit-rule-folder');
-    
-    if (folderDisplay && folderInput) {
-      this.setupFolderInput(folderDisplay, folderInput, folderText, (folder) => {
-        console.log('[POPUP EDIT RULE] Folder updated to:', folder);
-      });
-    }
-    
-    const editRuleType = document.getElementById('edit-rule-type');
-    const editRuleValue = document.getElementById('edit-rule-value');
-    const editRuleLabel = editRuleValue?.closest('.form-group')?.querySelector('.form-label');
-    
-    if (editRuleType && editRuleValue) {
-      editRuleType.addEventListener('change', (e) => {
-        const isDomain = e.target.value === 'domain';
-        if (editRuleLabel) {
-          editRuleLabel.textContent = isDomain ? 'Site' : 'Contains phrase';
-        }
-        editRuleValue.placeholder = isDomain ? 'e.g., github.com' : 'e.g., invoice, receipt, report';
-      });
-    }
-    
-    const advancedToggle = document.getElementById('edit-rule-advanced-toggle');
-    const advancedContent = document.getElementById('edit-rule-advanced-content');
-    const advancedIcon = document.getElementById('edit-rule-advanced-icon');
-    
-    if (advancedToggle && advancedContent) {
-      advancedToggle.addEventListener('click', () => {
-        const isVisible = advancedContent.style.display !== 'none';
-        advancedContent.style.display = isVisible ? 'none' : 'block';
-        advancedIcon.style.transform = isVisible ? 'rotate(0deg)' : 'rotate(-90deg)';
-      });
-    }
-    
-    document.getElementById('modal-save').addEventListener('click', () => this.saveEditedRule());
-    
-    modal.classList.add('active');
-  }
-
-  /**
-   * Opens edit modal for a file type group
-   */
-  openEditGroupModal(groupName) {
-    const group = this.groups[groupName];
-    if (!group) return;
-    
-    this.editingGroupName = groupName;
-    
-    const modal = document.getElementById('modal-overlay');
-    const modalBody = document.getElementById('folder-picker-modal');
-    
-    if (!modal || !modalBody) return;
-    
-    modalBody.innerHTML = `
-      <div class="modal-header">
-        <h3>Edit File Type</h3>
-        <button class="modal-close" id="close-modal">
-          ${typeof getIcon !== 'undefined' ? getIcon('x', 16) : '×'}
-        </button>
-      </div>
-      <div class="modal-body edit-form">
-        <div class="form-group">
-          <label class="form-label">File Type Name</label>
-          <input type="text" class="form-input" id="edit-group-name" value="${groupName}" placeholder="e.g., 3d-files">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Extensions (comma-separated)</label>
-          <input type="text" class="form-input" id="edit-group-extensions" value="${group.extensions || ''}" placeholder="e.g., stl,obj,3mf">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Destination Folder</label>
-          <div class="folder-display-clickable" id="edit-group-folder-display" style="cursor: pointer; padding: 12px 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-elevated); display: flex; align-items: center; gap: 8px;">
-            ${typeof getIcon !== 'undefined' ? getIcon('folder', 16) : '📁'}
-            <span id="edit-group-folder-text" style="flex: 1; color: var(--text-primary);">${group.folder || 'Downloads'}</span>
-            <span style="color: var(--text-secondary); font-size: 12px;">Click to browse</span>
-          </div>
-          <input type="hidden" id="edit-group-folder" value="${group.folder || 'Downloads'}">
-        </div>
-        
-        <div class="rule-edit-warning" style="margin-top: 12px; padding: 8px 12px; background: #e3f2fd; border: 1px solid #2196f3; border-radius: 4px; font-size: 12px; color: #1565c0;">
-          <strong>Note:</strong> Rule edits apply to future downloads. They may not affect current downloads.
-        </div>
-        
-        <div class="advanced-section" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-subtle);">
-          <button type="button" class="advanced-toggle" id="edit-group-advanced-toggle" style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 13px; font-weight: 500; margin-bottom: 16px;">
-            <span id="edit-group-advanced-icon" style="display: inline-flex; align-items: center; transition: transform 0.2s;">${typeof getIcon !== 'undefined' ? getIcon('chevron-down', 16) : '▼'}</span>
-            <span>Advanced</span>
-          </button>
-          <div class="advanced-content" id="edit-group-advanced-content" style="display: none; padding-left: 20px;">
-            <div class="form-group">
-              <label class="form-label">
-                Priority
-                <span class="help-text">1 = highest priority. Use decimals for fine control (e.g., 2.5, 3.2)</span>
-              </label>
-              <input type="number" class="form-input" id="edit-group-priority" 
-                     value="${group.priority !== undefined ? parseFloat(group.priority).toFixed(1) : '3.0'}"
-                     min="0.1" max="10" step="0.1" placeholder="3.0">
-              <div class="priority-hint">Default: 3.0 | File types typically use 2.5-4.0 range</div>
-            </div>
-            <div class="form-group" style="margin-top: 16px;">
-              <label class="toggle-label">
-                <input type="checkbox" id="edit-group-override" ${group.overrideDomainRules ? 'checked' : ''}>
-                <span>Override Site Rules</span>
-              </label>
-              <div class="help-text">Forces file type match even if a domain rule exists</div>
-            </div>
-            <div class="form-group" style="margin-top: 16px;">
-              <label class="toggle-label">
-                <input type="checkbox" id="edit-group-enabled" ${group.enabled !== false ? 'checked' : ''}>
-                <span>Enabled</span>
-              </label>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn secondary" id="modal-cancel">Cancel</button>
-        <button class="btn primary" id="modal-save">Save Changes</button>
-      </div>
-    `;
-    
-    document.getElementById('close-modal').addEventListener('click', () => this.closeModal());
-    document.getElementById('modal-cancel').addEventListener('click', () => this.closeModal());
-    
-    const folderDisplay = document.getElementById('edit-group-folder-display');
-    const folderText = document.getElementById('edit-group-folder-text');
-    const folderInput = document.getElementById('edit-group-folder');
-    
-    if (folderDisplay && folderInput) {
-      this.setupFolderInput(folderDisplay, folderInput, folderText, (folder) => {
-        console.log('[POPUP EDIT GROUP] Folder updated to:', folder);
-      });
-    }
-    
-    const advancedToggle = document.getElementById('edit-group-advanced-toggle');
-    const advancedContent = document.getElementById('edit-group-advanced-content');
-    const advancedIcon = document.getElementById('edit-group-advanced-icon');
-    
-    if (advancedToggle && advancedContent) {
-      advancedToggle.addEventListener('click', () => {
-        const isVisible = advancedContent.style.display !== 'none';
-        advancedContent.style.display = isVisible ? 'none' : 'block';
-        if (advancedIcon) {
-          advancedIcon.style.transform = isVisible ? 'rotate(0deg)' : 'rotate(-90deg)';
-        }
-      });
-    }
-    
-    document.getElementById('modal-save').addEventListener('click', () => this.saveEditedGroup());
-    
-    modal.classList.add('active');
-  }
-
-  /**
-   * Opens add rule modal with optional domain prefilled
-   */
-  openAddRuleModal(domain = '') {
-    this.rules.push({
-      type: 'domain',
-      value: domain,
-      folder: 'Downloads',
-      priority: 2.0,
-      enabled: true
-    });
-    this.newlyAddedRuleIndex = this.rules.length - 1;
-    this.openEditRuleModal(this.rules.length - 1);
-  }
-
-  /**
-   * Saves the currently edited rule
-   */
-  async saveEditedRule() {
-    if (this.editingRuleIndex === null) return;
-    
-    const type = document.getElementById('edit-rule-type').value;
-    const value = document.getElementById('edit-rule-value').value.trim();
-    const folderInput = document.getElementById('edit-rule-folder');
-    const folder = folderInput ? folderInput.value.trim() : 'Downloads';
-    const priorityInput = document.getElementById('edit-rule-priority').value;
-    const priority = Math.max(0.1, Math.min(10, Math.round(parseFloat(priorityInput) * 10) / 10)) || 2.0;
-    const enabled = document.getElementById('edit-rule-enabled').checked;
-    
-    console.log('[POPUP SAVE RULE] Saving rule with folder:', folder);
-    console.log('[POPUP SAVE RULE] Folder input value:', folderInput?.value);
-    
-    this.rules[this.editingRuleIndex] = {
-      type,
-      value,
-      folder,
-      priority,
-      enabled
-    };
-    
-    console.log('[POPUP SAVE RULE] Rule to save:', this.rules[this.editingRuleIndex]);
-    
-    if (this.newlyAddedRuleIndex === this.editingRuleIndex) {
-      this.newlyAddedRuleIndex = null;
-    }
-    
-    await this.saveRules();
-    this.updateDisplay();
-    this.closeModal();
-    this.showToast('Rule saved');
-  }
-
-  /**
-   * Saves the currently edited group
-   */
-  async saveEditedGroup() {
-    if (!this.editingGroupName) return;
-    
-    const newName = document.getElementById('edit-group-name').value.trim();
-    const extensions = document.getElementById('edit-group-extensions').value.trim();
-    const folderInput = document.getElementById('edit-group-folder');
-    const folder = folderInput ? folderInput.value.trim() : 'Downloads';
-    const priorityInput = document.getElementById('edit-group-priority').value;
-    const priority = Math.max(0.1, Math.min(10, Math.round(parseFloat(priorityInput) * 10) / 10)) || 3.0;
-    const overrideDomainRules = document.getElementById('edit-group-override').checked;
-    const enabled = document.getElementById('edit-group-enabled').checked;
-    
-    console.log('[POPUP SAVE GROUP] Saving group with folder:', folder);
-    console.log('[POPUP SAVE GROUP] Folder input value:', folderInput?.value);
-    
-    if (newName && newName !== this.editingGroupName) {
-      delete this.groups[this.editingGroupName];
-      if (this.newlyAddedGroupName === this.editingGroupName) {
-        this.newlyAddedGroupName = newName;
-      }
-    }
-    
-    const saveName = newName || this.editingGroupName;
-    this.groups[saveName] = {
-      extensions,
-      folder,
-      priority,
-      overrideDomainRules,
-      enabled
-    };
-    
-    if (this.newlyAddedGroupName === saveName) {
-      this.newlyAddedGroupName = null;
-    }
-    
-    await this.saveRules();
-    this.updateDisplay();
-    this.closeModal();
-    this.showToast('File type saved');
-  }
-
-  /**
-   * Saves rules and groups to storage
-   */
-  async saveRules() {
-    await chrome.storage.sync.set({
-      rules: this.rules,
-      groups: this.groups
-    });
-    
-    // Notify all tabs that rules have been updated
-    // This will trigger the background script's storage.onChanged listener
-    // which will then notify content scripts to update their overlays
-    chrome.tabs.query({}, (tabs) => {
-      tabs.forEach(tab => {
-        chrome.tabs.sendMessage(tab.id, {
-          type: 'rulesChanged'
-        }).catch(() => {
-          // Ignore errors for tabs without content script
-        });
-      });
-    });
+const V = self.DRValidation;
+const esc = V.escapeHTML;
+const RECENT_LIMIT = 6;
+const IS_MAC = /mac/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
+const SHOW_LABEL = IS_MAC ? 'Show in Finder' : 'Show in folder';
+
+const svg = (body, attrs = 'fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"') =>
+  `<svg viewBox="0 0 24 24" ${attrs} aria-hidden="true">${body}</svg>`;
+
+// 1.5px line icons (DESIGN.md "Icons"); folders are outlines, the current one in accent
+const FOLDER_PATH = '<path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4l2 2h8A1.5 1.5 0 0 1 20.5 9v8.5A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z"/>';
+const FOLDER_ICON = svg(FOLDER_PATH);
+const CHECK_ICON = svg('<path d="M5 12.5l4.5 4.5L19 7"/>', 'fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"');
+const NEW_FOLDER_ICON = svg(FOLDER_PATH + '<path d="M12 10.5v5M9.5 13h5"/>');
+const OTHER_ICON = svg('<circle cx="6" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18" cy="12" r="1.2"/>', 'fill="currentColor"');
+const SEARCH_ICON = svg('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>', 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"');
+
+// Kind of file → neutral tile line icon (same kinds as the card and Settings; color is never used)
+const KINDS = {
+  img: { exts: 'jpg jpeg png gif bmp svg webp ico heic avif tif tiff', icon: svg('<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M20.5 15.5l-4.5-4.5-8.5 8.5"/>') },
+  doc: { exts: 'pdf doc docx txt rtf odt md csv xls xlsx ppt pptx pages numbers key epub', icon: svg('<path d="M14 3.5H7A1.5 1.5 0 0 0 5.5 5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3.5V8h4.5M9 12.5h6M9 16h4"/>') },
+  vid: { exts: 'mp4 mov mkv avi wmv flv webm m4v', icon: svg('<rect x="3.5" y="6" width="12" height="12" rx="2"/><path d="M15.5 10.5l5-3v9l-5-3z"/>') },
+  music: { exts: 'mp3 wav flac aac m4a ogg aiff', icon: svg('<path d="M9 17.5V5.5l10.5-2v12"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="17" cy="15.5" r="2.5"/>') },
+  zip: { exts: 'zip rar 7z tar gz tgz bz2 xz', icon: svg('<rect x="3.5" y="4.5" width="17" height="4.5" rx="1"/><path d="M5 9v9.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V9"/><path d="M10 13h4"/>') },
+  '3d': { exts: 'stl obj 3mf step stp ply gcode', icon: svg('<path d="M20.5 16V8L12 3.5 3.5 8v8l8.5 4.5z"/><path d="M3.8 7.8L12 12l8.2-4.2M12 12v8.5"/>') },
+  app: { exts: 'exe msi dmg deb rpm pkg apk appimage', icon: svg('<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M3.5 8.5h17M6.5 6.5h.01M9 6.5h.01"/>') },
+  else: { exts: '', icon: svg('<path d="M12 4v11m0 0l-4-4m4 4l4-4"/><path d="M5 17.5v2h14v-2"/>') }
+};
+const KIND_BY_EXT = {};
+for (const [kind, { exts }] of Object.entries(KINDS)) {
+  exts.split(' ').filter(Boolean).forEach(ext => { KIND_BY_EXT[ext] = kind; });
+}
+
+const state = {
+  enabled: true,
+  stats: null,         // downloadStats (getStats response / storage)
+  recent: [],
+  url: null,           // active tab URL
+  domain: null,        // host of the active tab without "www.", or null when it isn't a website
+  route: null,         // getSiteRoute response
+  companion: Promise.resolve(false)
+};
+
+const $ = (id) => document.getElementById(id);
+const DAY = 86400000;
+
+/* ---------------------------------------------------------------- helpers */
+
+function kindOf(filename) {
+  const match = /\.([a-z0-9]+)$/i.exec(filename || '');
+  return (match && KIND_BY_EXT[match[1].toLowerCase()]) || 'else';
+}
+
+// "Code", "Finance › Invoices"; absolute folders (companion app) show their last part
+function folderLabel(folder) {
+  const relative = V.isAbsolutePath(folder) ? V.relativeFallbackFolder(folder) : folder;
+  return String(relative || '').replace(/\\/g, '/').split('/').filter(Boolean).join(' › ') || 'Downloads';
+}
+
+const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+const localDateKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const isToday = (timestamp) => startOfDay(new Date(timestamp)) === startOfDay(new Date());
+
+function relativeTime(timestamp) {
+  const then = new Date(timestamp);
+  const now = new Date();
+  const minutes = Math.floor((now - then) / 60000);
+  if (minutes < 1) return 'Now';
+  if (minutes < 60) return `${minutes}m`;
+  const days = Math.round((startOfDay(now) - startOfDay(then)) / DAY);
+  if (days === 0) return `${Math.floor(minutes / 60)}h`;
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return then.toLocaleDateString(undefined, { weekday: 'short' });
+  return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function siteHost(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return parsed.hostname.replace(/^www\./i, '').toLowerCase() || null;
+  } catch {
+    return null;
   }
 }
 
-/**
- * Add CSS animations for toast notifications.
- * Defines slide-in and slide-out animations for toast elements.
- */
-// document.createElement: Creates style element for CSS animations
-const style = document.createElement('style');
-// textContent: Sets CSS keyframe definitions
-style.textContent = `
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
-    to { opacity: 1; transform: translateX(-50%) translateY(0); }
-  }
-  
-  @keyframes slideOut {
-    from { opacity: 1; transform: translateX(-50%) translateY(0); }
-    to { opacity: 0; transform: translateX(-50%) translateY(-10px); }
-  }
-`;
-// document.head.appendChild: Adds style element to page head
-//   Inputs: Element to append
-//   Outputs: Appended element
-document.head.appendChild(style);
-
-/**
- * Helper function to format path display in breadcrumb format.
- * Converts relative paths like "3DPrinting/file.stl" to "Downloads > 3DPrinting"
- * 
- * Inputs:
- *   - relativePath: String relative path
- * 
- * Outputs: String formatted breadcrumb path
- */
-function formatPathDisplay(relativePath) {
-  if (!relativePath || relativePath === '') return 'Downloads';
-  const parts = relativePath.split('/');
-  const filename = parts[parts.length - 1];
-  // If it's just a filename (no folder), return Downloads
-  if (parts.length === 1) {
-    // Check if it contains a dot (likely a file extension)
-    if (filename.includes('.')) {
-      return 'Downloads';
-    }
-    return `Downloads > ${parts[0]}`;
-  }
-  // Show: Downloads > Folder > Subfolder (without filename)
-  const folders = parts.slice(0, -1);
-  return 'Downloads > ' + folders.join(' > ');
+function showToast(message) {
+  document.querySelectorAll('.toast').forEach(t => t.remove());
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.setAttribute('role', 'status');
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('is-visible'));
+  setTimeout(() => {
+    toast.classList.remove('is-visible');
+    setTimeout(() => toast.remove(), 220);
+  }, 2000);
 }
 
 /**
- * Initialize popup app when DOM content is fully loaded.
- * Creates PopupApp instance to manage popup interface.
+ * Footer count. Exact when background keeps per-day counts (downloadStats.dailyCounts,
+ * { "YYYY-MM-DD": n } in local dates). Otherwise counted from recentActivity, which only keeps
+ * the last 10 downloads: that is exact when the list reaches back past a week (or nothing was
+ * ever dropped), and a lower bound otherwise ("recently").
  */
-// document.addEventListener: Listens for DOMContentLoaded event
-//   Inputs: Event type ('DOMContentLoaded'), callback function
-//   Outputs: None (sets up listener)
-document.addEventListener('DOMContentLoaded', () => {
-  // Initialize icons
-  if (typeof getIcon !== 'undefined') {
-    // Set app icon
-    const appIcon = document.getElementById('app-icon');
-    if (appIcon) appIcon.innerHTML = getIcon('folder', 32);
-    
-    // Set settings icon (header)
-    const settingsIconHeader = document.getElementById('settings-icon-header');
-    if (settingsIconHeader) settingsIconHeader.innerHTML = getIcon('settings', 18);
-    
-    // Set toggle icon (header) - will be updated by updateDisplay()
-    const toggleIconHeader = document.getElementById('toggle-icon-header');
-    if (toggleIconHeader) toggleIconHeader.innerHTML = getIcon('pause', 18);
-    
-    // Set welcome icon
-    const welcomeIcon = document.getElementById('welcome-icon');
-    if (welcomeIcon) welcomeIcon.innerHTML = getIcon('folder', 64);
-    
-    // Set clear icon
-    const clearIcon = document.getElementById('clear-icon');
-    if (clearIcon) clearIcon.innerHTML = getIcon('x', 16) || getIcon('trash', 16) || '×';
-    
-    // Set check icons in welcome tips
-    document.querySelectorAll('.check-icon').forEach(icon => {
-      icon.innerHTML = getIcon('check', 18);
-    });
-  }
-  
-  // Check for welcome experience
-  const hasSeenWelcome = localStorage.getItem('downloadRouterHasSeenWelcome');
-  const popupApp = new PopupApp();
-  
-  if (!hasSeenWelcome) {
-    // Show welcome overlay
-    const welcomeOverlay = document.getElementById('welcome-overlay');
-    if (welcomeOverlay) {
-      welcomeOverlay.classList.add('active');
-      
-      // Dismiss welcome overlay
-      document.getElementById('welcome-dismiss').addEventListener('click', () => {
-        welcomeOverlay.classList.remove('active');
-        localStorage.setItem('downloadRouterHasSeenWelcome', 'true');
-      });
+function weeklySummary(stats) {
+  if (!stats) return '';
+  const plural = (n) => `${n} ${n === 1 ? 'file' : 'files'}`;
+  if (stats.dailyCounts && typeof stats.dailyCounts === 'object') {
+    let total = 0;
+    for (let i = 0; i < 7; i++) {
+      const day = new Date();
+      day.setDate(day.getDate() - i);
+      total += Number(stats.dailyCounts[localDateKey(day)]) || 0;
     }
+    return total > 0 ? `Sorted ${plural(total)} this week` : '';
   }
-});
+  const recent = Array.isArray(stats.recentActivity) ? stats.recentActivity : [];
+  const weekAgo = Date.now() - 7 * DAY;
+  const count = recent.filter(entry => entry && entry.timestamp >= weekAgo).length;
+  if (!count) return '';
+  const complete = count < recent.length ||
+    (typeof stats.totalDownloads === 'number' && stats.totalDownloads <= recent.length);
+  return `Sorted ${plural(count)} ${complete ? 'this week' : 'recently'}`;
+}
+
+/* ---------------------------------------------------------------- sorting switch + footer */
+
+function renderEnabled() {
+  const toggle = $('toggle-extension-header');
+  toggle.setAttribute('aria-checked', String(state.enabled));
+  toggle.title = state.enabled ? 'Sorting is on' : 'Sorting is paused';
+  $('paused-banner').hidden = state.enabled;
+  renderFooter();
+}
+
+function renderFooter() {
+  $('sorting-status').textContent = state.enabled ? weeklySummary(state.stats) : 'Sorting paused';
+}
+
+async function toggleEnabled() {
+  state.enabled = !state.enabled;
+  renderEnabled();
+  await chrome.storage.sync.set({ extensionEnabled: state.enabled });
+}
+
+/* ---------------------------------------------------------------- recent */
+
+function rowHTML(item, index) {
+  const kind = kindOf(item.filename);
+  const folder = folderLabel(item.folder);
+  const time = relativeTime(item.timestamp);
+  return `
+    <button type="button" class="row" data-index="${index}" aria-label="${esc(`${item.filename}, in ${folder}, ${time}. ${SHOW_LABEL}`)}">
+      <span class="tile t-${kind}" data-kind="${kind}" aria-hidden="true">${KINDS[kind].icon}</span>
+      <span class="row-name" aria-hidden="true">${esc(item.filename)}</span>
+      <span class="row-folder" aria-hidden="true"><span class="arrow">→</span>${esc(folder)}</span>
+      <span class="row-end" aria-hidden="true"><span class="row-time">${esc(time)}</span><span class="reveal">${SHOW_LABEL}</span></span>
+    </button>`;
+}
+
+function renderRecent() {
+  const list = $('activity-list');
+  const items = state.recent.slice(0, RECENT_LIMIT).map((item, index) => ({ item, index }));
+  $('clear-activity').hidden = items.length === 0;
+
+  if (!items.length) {
+    $('recent-heading').textContent = 'Recent';
+    list.innerHTML = '<div class="list"><p class="empty">Nothing yet. Download something and it\'ll show up here.</p></div>';
+    return;
+  }
+
+  const groups = [
+    { label: 'Today', rows: items.filter(({ item }) => isToday(item.timestamp)) },
+    { label: 'Earlier', rows: items.filter(({ item }) => !isToday(item.timestamp)) }
+  ].filter(group => group.rows.length);
+
+  // The first group's label sits in the section head (next to Clear); later groups get their own
+  $('recent-heading').textContent = groups[0].label;
+  list.innerHTML = groups.map((group, i) => `
+    ${i ? `<div class="section-head"><h2 class="section-label">${group.label}</h2></div>` : ''}
+    <div class="list" role="group" aria-label="${group.label}" data-group="${group.label.toLowerCase()}">
+      ${group.rows.map(({ item, index }) => rowHTML(item, index)).join('')}
+    </div>`).join('');
+}
+
+/**
+ * Shows a downloaded file in its folder. Chrome can do this itself, so it works without the
+ * companion app; files moved by the companion app are opened through it.
+ */
+async function revealDownload(downloadId, filePath) {
+  const [item] = downloadId ? await chrome.downloads.search({ id: downloadId }) : [];
+  if (item && item.exists !== false && item.state === 'complete' &&
+      (!filePath || !filePath.startsWith('/') || item.filename === filePath)) {
+    chrome.downloads.show(downloadId);
+    return;
+  }
+  if (filePath && V.isAbsolutePath(filePath)) {
+    // Moved by the companion app after download: Chrome no longer knows where it is
+    const response = await chrome.runtime.sendMessage({ type: 'openFolder', path: filePath, downloadId: null }).catch(() => null);
+    if (response && response.success) return;
+  }
+  // File was deleted or moved outside Chrome: open the Downloads folder instead
+  chrome.downloads.showDefaultFolder();
+  showToast('That file has moved or been deleted');
+}
+
+async function clearRecent() {
+  // Re-read so activity recorded since the popup opened isn't lost from the other stats
+  const { downloadStats } = await chrome.storage.local.get(['downloadStats']);
+  state.stats = { ...(downloadStats || {}), recentActivity: [] };
+  await chrome.storage.local.set({ downloadStats: state.stats });
+  state.recent = [];
+  renderRecent();
+  renderFooter();
+}
+
+/* ---------------------------------------------------------------- this site */
+
+// The website value a rule from this popup is saved under: the matching rule's own value
+// (so "github.com/octocat" or a parent domain is updated), otherwise the tab's host.
+function ruleSite() {
+  return state.route && state.route.kind === 'site' && state.route.rule ? state.route.rule.value : state.domain;
+}
+
+function renderSite() {
+  const text = $('site-text');
+  const change = $('site-change');
+  change.hidden = !state.domain;
+
+  if (!state.domain) {
+    text.textContent = 'Open a website to set where its downloads go';
+    return;
+  }
+  const site = `<span class="host">${esc(ruleSite())}</span>`;
+  if (!state.route) {
+    text.innerHTML = site;
+  } else if (state.route.kind === 'type') {
+    text.innerHTML = `${site} · sorted by file type`;
+  } else {
+    text.innerHTML = `${site}<span class="arrow"> → </span><b>${esc(folderLabel(state.route.folder))}</b>`;
+  }
+  change.setAttribute('aria-label', `Change where downloads from ${ruleSite()} go`);
+}
+
+async function loadSiteRoute(url) {
+  state.route = await chrome.runtime.sendMessage({ type: 'getSiteRoute', url }).catch(() => null);
+  renderSite();
+}
+
+async function setSiteFolder(folder) {
+  closeMenu();
+  const site = ruleSite();
+  const response = await chrome.runtime.sendMessage({ type: 'addRule', rule: { type: 'domain', value: site, folder } })
+    .catch(error => ({ success: false, error: error.message }));
+  if (!response || !response.success) {
+    showToast('Couldn\'t save that folder');
+    return;
+  }
+  await loadSiteRoute(state.url);
+  showToast(`${site} → ${folderLabel(folder)}`);
+}
+
+/* ---------------------------------------------------------------- folder menu */
+
+const menu = $('folder-menu');
+let menuFolders = [];
+let menuFilter = '';
+let menuCompanion = false;
+
+function currentFolder() {
+  const route = state.route;
+  if (!route || route.kind === 'type') return null;
+  return route.folder || 'Downloads';
+}
+
+// Folders matching the typed filter, in menu order, each with its index in menuFolders
+function visibleFolders() {
+  const query = menuFilter.toLowerCase();
+  return menuFolders
+    .map((folder, index) => ({ folder, index }))
+    .filter(({ folder }) => !query || folderLabel(folder.path).toLowerCase().includes(query) ||
+      folder.path.toLowerCase().includes(query));
+}
+
+function renderMenu() {
+  const current = currentFolder();
+  const folders = visibleFolders();
+  // No check column when no folder is current (the site is sorted by file type)
+  menu.classList.toggle('no-check', !current);
+  const head = menuFilter
+    ? `<span class="menu-filter" id="menu-filter">${SEARCH_ICON}<span>${esc(menuFilter)}</span></span><span>Esc clears</span>`
+    : '<span>Folders you use</span><span>Type to filter</span>';
+  menu.innerHTML = `
+    <div class="menu-head">${head}</div>
+    <div class="menu-scroll">
+      ${folders.map(({ folder, index }, position) => {
+        const selected = folder.path === current;
+        const key = position < 9 ? String(position + 1) : '';
+        return `
+        <button type="button" class="mi" role="menuitemradio" aria-checked="${selected}" data-folder-index="${index}"${key ? ` aria-keyshortcuts="${key}"` : ''}>
+          <span class="ck">${selected ? CHECK_ICON : ''}</span>
+          ${FOLDER_ICON}<span class="name">${esc(folderLabel(folder.path))}</span>
+          ${key ? `<span class="key" aria-hidden="true">${key}</span>` : ''}
+        </button>`;
+      }).join('')}
+      ${folders.length ? '' : '<p class="menu-none">No folders match</p>'}
+    </div>
+    <div class="menu-sep" role="separator"></div>
+    <button type="button" class="mi" role="menuitem" data-action="new"><span class="ck"></span>${NEW_FOLDER_ICON}<span class="name">New Folder…</span></button>
+    ${menuCompanion ? `<button type="button" class="mi" role="menuitem" data-action="other"><span class="ck"></span>${OTHER_ICON}<span class="name">Other Location…</span></button>` : ''}`;
+  positionMenu();
+}
+
+async function openMenu() {
+  const [suggestions, companion] = await Promise.all([
+    chrome.runtime.sendMessage({ type: 'getFolderSuggestions' }).catch(() => null),
+    state.companion
+  ]);
+  menuCompanion = companion;
+  menuFilter = '';
+  menuFolders = ((suggestions && suggestions.folders) || []).filter(f => f && f.path);
+  if (!menuFolders.length) menuFolders = [{ path: 'Downloads', count: 0 }];
+  const current = currentFolder();
+  if (current && !menuFolders.some(f => f.path === current)) menuFolders.unshift({ path: current, count: 0 });
+
+  menu.hidden = false;
+  $('site-change').setAttribute('aria-expanded', 'true');
+  renderMenu();
+  (menu.querySelector('.mi[aria-checked="true"]') || menu.querySelector('.mi')).focus();
+}
+
+// Opens above the Change button when it fits (the popup doesn't grow), otherwise below it,
+// making the popup tall enough to show the whole menu.
+function positionMenu() {
+  document.body.style.minHeight = '';
+  const anchor = $('site-change').getBoundingClientRect();
+  const height = menu.offsetHeight;
+  menu.style.left = `${Math.max(8, Math.min(anchor.right + 4, document.body.clientWidth - 8) - menu.offsetWidth)}px`;
+  if (anchor.top - 8 - height >= 8) {
+    menu.style.top = `${anchor.top - 8 - height}px`;
+    menu.dataset.above = '';
+  } else {
+    const top = anchor.bottom + 8;
+    menu.style.top = `${top}px`;
+    delete menu.dataset.above;
+    document.body.style.minHeight = `${top + height + 8}px`;
+  }
+}
+
+function closeMenu({ restoreFocus = false } = {}) {
+  if (menu.hidden) return;
+  menu.hidden = true;
+  menu.innerHTML = '';
+  menuFilter = '';
+  document.body.style.minHeight = '';
+  $('site-change').setAttribute('aria-expanded', 'false');
+  if (restoreFocus) $('site-change').focus();
+}
+
+function setMenuFilter(value) {
+  menuFilter = value;
+  renderMenu();
+  (menu.querySelector('.mi[data-folder-index]') || menu.querySelector('.mi')).focus();
+}
+
+async function showNewFolderField() {
+  const companion = await state.companion;
+  const hint = `${companion ? 'A folder inside Downloads, or a full path.' : 'A folder inside Downloads.'} Press Return to use it.`;
+  menu.innerHTML = `
+    <form class="new-folder" novalidate>
+      <label for="new-folder-input">New Folder</label>
+      <div class="field">${FOLDER_ICON}<input id="new-folder-input" type="text" spellcheck="false" autocomplete="off" placeholder="Folder name" aria-describedby="new-folder-note"></div>
+      <p class="hint" id="new-folder-note">${hint}</p>
+    </form>`;
+  positionMenu();
+  const input = $('new-folder-input');
+  const note = $('new-folder-note');
+  input.focus();
+
+  input.addEventListener('input', (event) => {
+    note.className = 'hint';
+    note.textContent = hint;
+    // Inline autocomplete from folders you use: complete the rest and select it
+    if (!event.inputType || !event.inputType.startsWith('insert') || input.selectionEnd !== input.value.length) return;
+    const typed = input.value;
+    const match = typed && menuFolders.map(f => f.path).find(path => path.length > typed.length && path.toLowerCase().startsWith(typed.toLowerCase()));
+    if (match) {
+      input.value = typed + match.slice(typed.length);
+      input.setSelectionRange(typed.length, match.length);
+    }
+  });
+
+  menu.querySelector('form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const result = V.validateFolder(input.value, { companionInstalled: companion, allowEmpty: false });
+    if (result.error) {
+      note.className = 'error';
+      note.textContent = result.error;
+      input.focus();
+      return;
+    }
+    setSiteFolder(result.value);
+  });
+}
+
+async function pickOtherLocation() {
+  closeMenu();
+  // The native picker takes focus and closes this popup, so background saves the rule itself
+  const response = await chrome.runtime.sendMessage({
+    type: 'pickFolderNative',
+    thenAddRule: { type: 'domain', value: ruleSite() }
+  }).catch(() => null);
+  if (response && response.success && response.path) {
+    await loadSiteRoute(state.url);
+    showToast(`${ruleSite()} → ${folderLabel(response.path)}`);
+  }
+}
+
+function pickFolder(folder) {
+  if (!folder) return;
+  if (state.route && state.route.kind === 'site' && folder.path === state.route.folder) {
+    closeMenu({ restoreFocus: true });
+    return;
+  }
+  setSiteFolder(folder.path);
+}
+
+function onMenuClick(event) {
+  const item = event.target.closest('.mi');
+  if (!item) return;
+  if (item.dataset.action === 'new') return showNewFolderField();
+  if (item.dataset.action === 'other') return pickOtherLocation();
+  pickFolder(menuFolders[Number(item.dataset.folderIndex)]);
+}
+
+function onMenuKeydown(event) {
+  const inField = event.target.closest('.new-folder');
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    if (!inField && menuFilter) setMenuFilter('');
+    else closeMenu({ restoreFocus: true });
+    return;
+  }
+  if (inField || event.metaKey || event.ctrlKey || event.altKey) return;
+
+  // 1–9 pick the numbered folder
+  if (/^[1-9]$/.test(event.key)) {
+    const match = visibleFolders()[Number(event.key) - 1];
+    if (match) {
+      event.preventDefault();
+      pickFolder(match.folder);
+    }
+    return;
+  }
+  // Typing filters the folder list (a space only counts once a filter has started)
+  if (event.key.length === 1 && (event.key !== ' ' || menuFilter)) {
+    event.preventDefault();
+    setMenuFilter(menuFilter + event.key);
+    return;
+  }
+  if (event.key === 'Backspace' && menuFilter) {
+    event.preventDefault();
+    setMenuFilter(menuFilter.slice(0, -1));
+    return;
+  }
+
+  const items = [...menu.querySelectorAll('.mi')];
+  if (!items.length) return;
+  const index = items.indexOf(document.activeElement);
+  let next = null;
+  if (event.key === 'ArrowDown') next = (index + 1) % items.length;
+  else if (event.key === 'ArrowUp') next = (index - 1 + items.length) % items.length;
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = items.length - 1;
+  if (next === null) return;
+  event.preventDefault();
+  items[next].focus();
+}
+
+/* ---------------------------------------------------------------- setup */
+
+function applyStats(stats) {
+  state.stats = stats || null;
+  state.recent = (stats && stats.recentActivity) || [];
+  renderRecent();
+  renderFooter();
+}
+
+function bindEvents() {
+  $('toggle-extension-header').addEventListener('click', toggleEnabled);
+  $('clear-activity').addEventListener('click', clearRecent);
+  $('open-options-header').addEventListener('click', (event) => {
+    event.preventDefault();
+    chrome.runtime.openOptionsPage();
+  });
+
+  $('activity-list').addEventListener('click', (event) => {
+    const row = event.target.closest('.row');
+    const item = row && state.recent[Number(row.dataset.index)];
+    if (item) revealDownload(item.downloadId, item.filePath);
+  });
+
+  $('site-change').addEventListener('click', () => (menu.hidden ? openMenu() : closeMenu()));
+  menu.addEventListener('click', onMenuClick);
+  menu.addEventListener('keydown', onMenuKeydown);
+  // The pointer and the keyboard share one highlight, like a native menu
+  menu.addEventListener('mousemove', (event) => {
+    const item = event.target.closest('.mi');
+    if (item && document.activeElement !== item) item.focus({ preventScroll: true });
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if (!menu.hidden && !menu.contains(event.target) && !$('site-change').contains(event.target)) closeMenu();
+  });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.downloadStats) applyStats(changes.downloadStats.newValue);
+    if (area === 'sync' && changes.extensionEnabled) {
+      state.enabled = changes.extensionEnabled.newValue !== false;
+      renderEnabled();
+    }
+  });
+}
+
+async function init() {
+  bindEvents();
+  state.companion = chrome.runtime.sendMessage({ type: 'checkCompanionApp' })
+    .then(status => !!(status && status.installed)).catch(() => false);
+
+  const [{ extensionEnabled }, stats, [tab]] = await Promise.all([
+    chrome.storage.sync.get(['extensionEnabled']),
+    chrome.runtime.sendMessage({ type: 'getStats' }).catch(() => null),
+    chrome.tabs.query({ active: true, currentWindow: true }).catch(() => [])
+  ]);
+
+  state.enabled = extensionEnabled !== false;
+  state.url = tab && tab.url;
+  state.domain = siteHost(state.url);
+  applyStats(stats);
+  renderEnabled();
+  renderSite();
+  if (state.domain) await loadSiteRoute(state.url);
+}
+
+init();

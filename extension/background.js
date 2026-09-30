@@ -2193,6 +2193,15 @@ function updateDownloadStats(downloadId) {
 
     // Increment total downloads counter
     stats.totalDownloads++;
+    // Per-day counts (last 8 days) so the popup can say "Sorted N files this week" exactly
+    const today = new Date();
+    const dayKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    stats.dailyCounts = stats.dailyCounts || {};
+    stats.dailyCounts[dayKey(today)] = (stats.dailyCounts[dayKey(today)] || 0) + 1;
+    const oldest = dayKey(new Date(today.getTime() - 8 * 24 * 60 * 60 * 1000));
+    for (const key of Object.keys(stats.dailyCounts)) {
+      if (key < oldest) delete stats.dailyCounts[key];
+    }
     // Increment routed downloads counter if a rule was applied
     if (downloadInfo.finalRule) {
       stats.routedDownloads++;
