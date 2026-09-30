@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Download Router — Glass</title>
+<style>
+  /* ============ Glass design tokens ============ */
+  :root {
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+    --accent: #0a7cff; --accent-2: #5e5ce6;
+    --label: #101014; --secondary: rgba(16,16,20,.58); --tertiary: rgba(16,16,20,.34);
+    --glass: rgba(255,255,255,.52); --glass-strong: rgba(255,255,255,.72); --glass-row: rgba(255,255,255,.38);
+    --glass-edge: rgba(255,255,255,.75); --glass-edge-soft: rgba(255,255,255,.35);
+    --sep: rgba(16,16,20,.08); --fill: rgba(16,16,20,.06);
+    --shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 -1px 0 rgba(255,255,255,.25) inset, 0 20px 50px rgba(40,50,110,.16), 0 2px 6px rgba(40,50,110,.08);
+    --backdrop:
+      radial-gradient(40% 50% at 12% 18%, rgba(94,92,230,.55), transparent 70%),
+      radial-gradient(38% 45% at 88% 12%, rgba(10,132,255,.5), transparent 70%),
+      radial-gradient(45% 55% at 78% 88%, rgba(255,105,180,.38), transparent 70%),
+      radial-gradient(40% 50% at 18% 92%, rgba(48,209,88,.32), transparent 70%),
+      linear-gradient(180deg, #eef1fb, #f6f3fb);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --label: #f5f5f7; --secondary: rgba(245,245,247,.6); --tertiary: rgba(245,245,247,.34);
+      --glass: rgba(38,38,48,.5); --glass-strong: rgba(44,44,54,.72); --glass-row: rgba(255,255,255,.05);
+      --glass-edge: rgba(255,255,255,.22); --glass-edge-soft: rgba(255,255,255,.08);
+      --sep: rgba(255,255,255,.08); --fill: rgba(255,255,255,.08);
+      --shadow: 0 1px 0 rgba(255,255,255,.14) inset, 0 -1px 0 rgba(255,255,255,.04) inset, 0 24px 60px rgba(0,0,0,.45), 0 2px 8px rgba(0,0,0,.3);
+      --backdrop:
+        radial-gradient(40% 50% at 12% 18%, rgba(94,92,230,.45), transparent 70%),
+        radial-gradient(38% 45% at 88% 12%, rgba(10,132,255,.38), transparent 70%),
+        radial-gradient(45% 55% at 78% 88%, rgba(255,55,140,.25), transparent 70%),
+        radial-gradient(40% 50% at 18% 92%, rgba(48,209,88,.18), transparent 70%),
+        linear-gradient(180deg, #0d0e16, #121019);
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font: 13px/18px var(--font); color: var(--label); background: var(--backdrop); background-attachment: fixed; -webkit-font-smoothing: antialiased; padding: 56px 24px 120px; min-height: 100vh; }
+  .page { max-width: 1140px; margin: 0 auto; }
+
+  /* glass primitives */
+  .glass { background: var(--glass); -webkit-backdrop-filter: blur(30px) saturate(180%); backdrop-filter: blur(30px) saturate(180%); border: 1px solid var(--glass-edge-soft); box-shadow: var(--shadow); }
+  .glass-strong { background: var(--glass-strong); }
+  .cap { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0 14px; border-radius: 999px; font-weight: 600; font-size: 13px; white-space: nowrap; }
+  .cap.primary { color: #fff; background: linear-gradient(180deg, #2b93ff, #0a6cf0); box-shadow: 0 1px 0 rgba(255,255,255,.45) inset, 0 -1px 0 rgba(0,0,0,.15) inset, 0 6px 16px rgba(10,124,255,.35); }
+  .cap.clear { color: var(--label); background: rgba(255,255,255,.55); border: 1px solid var(--glass-edge); box-shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 2px 6px rgba(40,50,110,.08); font-weight: 500; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cap.clear { background: rgba(255,255,255,.1); } }
+  .plain { color: var(--accent); font-weight: 600; white-space: nowrap; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .plain { color: #4aa3ff; } }
+
+  /* colorful tiles */
+  .tile { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; flex: none; box-shadow: 0 1px 0 rgba(255,255,255,.45) inset, 0 3px 8px rgba(0,0,0,.14); }
+  .tile svg { width: 16px; height: 16px; }
+  .tile.lg { width: 40px; height: 40px; border-radius: 11px; } .tile.lg svg { width: 21px; height: 21px; }
+  .t-web { background: linear-gradient(160deg, #5ac8fa, #0a7cff); }
+  .t-name { background: linear-gradient(160deg, #bf5af2, #7d3cf0); }
+  .t-img { background: linear-gradient(160deg, #ffb340, #ff5f6d); }
+  .t-doc { background: linear-gradient(160deg, #64d2ff, #2e7cf6); }
+  .t-vid { background: linear-gradient(160deg, #ff6b9d, #d63384); }
+  .t-zip { background: linear-gradient(160deg, #d9a15b, #a8732f); }
+  .t-3d { background: linear-gradient(160deg, #40e0c8, #0ea5a0); }
+  .t-app { background: linear-gradient(160deg, #a1a1aa, #5d5d66); }
+  .t-else { background: linear-gradient(160deg, #8e8e93, #636366); }
+  .folder { display: inline-flex; align-items: center; gap: 5px; font-weight: 500; }
+  .folder svg { width: 15px; height: 15px; }
+  .fold-ico { color: #3c9dff; filter: drop-shadow(0 1px 1px rgba(0,60,160,.25)); }
+
+  /* headings */
+  .hero h1 { font-size: 34px; line-height: 40px; font-weight: 700; letter-spacing: -.025em; }
+  .hero p { font-size: 15px; line-height: 22px; color: var(--secondary); margin-top: 8px; max-width: 70ch; }
+  .label-sm { font-size: 11px; font-weight: 600; letter-spacing: .02em; color: var(--secondary); }
+  section { margin-top: 64px; }
+  .sh { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .sh h2 { font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -.02em; }
+  .sh span { font-size: 11px; color: var(--secondary); padding: 3px 9px; border-radius: 999px; background: var(--glass); border: 1px solid var(--glass-edge-soft); }
+  .why { color: var(--secondary); max-width: 74ch; margin-bottom: 22px; }
+  .stage { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+  .cap-note { font-size: 12px; color: var(--secondary); margin-top: 10px; max-width: 380px; line-height: 16px; }
+  .cap-note b { color: var(--label); }
+
+  /* ====== Rule flow explainer ====== */
+  .flow { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
+  .step { flex: 1 1 180px; border-radius: 18px; padding: 14px 16px; display: flex; gap: 12px; align-items: flex-start; position: relative; }
+  .step .n { position: absolute; top: 10px; right: 12px; font-size: 11px; font-weight: 700; color: var(--tertiary); font-variant-numeric: tabular-nums; }
+  .step b { display: block; font-size: 13px; }
+  .step span { font-size: 12px; line-height: 16px; color: var(--secondary); }
+  .arrow { align-self: center; color: var(--tertiary); font-size: 16px; }
+  .example { margin-top: 12px; border-radius: 14px; padding: 10px 14px; font-size: 12px; color: var(--secondary); }
+  .example b { color: var(--label); font-weight: 600; }
+
+  /* ====== Download card on a page ====== */
+  .site-frame { width: 540px; height: 330px; border-radius: 16px; overflow: hidden; position: relative; background: #fff; box-shadow: 0 20px 50px rgba(40,50,110,.18), 0 0 0 1px rgba(0,0,0,.06); }
+  .site-frame .gh { height: 44px; background: #0d1117; display: flex; align-items: center; padding: 0 16px; gap: 14px; color: #e6edf3; font-weight: 600; }
+  .site-frame .gh i { width: 22px; height: 22px; border-radius: 50%; background: #e6edf3; }
+  .site-frame .body { padding: 16px; }
+  .repo { font-size: 17px; color: #0969da; font-weight: 600; }
+  .files { margin-top: 12px; border: 1px solid #d0d7de; border-radius: 8px; overflow: hidden; }
+  .files div { padding: 9px 12px; border-top: 1px solid #d8dee4; font-size: 12px; color: #1f2328; display: flex; justify-content: space-between; }
+  .files div:first-child { border-top: 0; background: #f6f8fa; }
+  .files .c { color: #57606a; }
+  .codebtn { position: absolute; right: 16px; top: 64px; background: #1f883d; color: #fff; font-weight: 600; font-size: 12px; padding: 6px 12px; border-radius: 6px; }
+  .blob { position: absolute; border-radius: 50%; filter: blur(2px); }
+
+  .card { position: absolute; right: 14px; bottom: 14px; width: 330px; border-radius: 22px; padding: 14px; color: #101014;
+    background: rgba(255,255,255,.58); -webkit-backdrop-filter: blur(26px) saturate(190%); backdrop-filter: blur(26px) saturate(190%);
+    border: 1px solid rgba(255,255,255,.8);
+    box-shadow: 0 1px 0 rgba(255,255,255,.9) inset, 0 -1px 0 rgba(255,255,255,.3) inset, 0 18px 44px rgba(20,30,80,.24), 0 2px 8px rgba(20,30,80,.12); }
+  .card.dark { background: rgba(28,28,36,.55); color: #f5f5f7; border-color: rgba(255,255,255,.18); box-shadow: 0 1px 0 rgba(255,255,255,.16) inset, 0 18px 44px rgba(0,0,0,.45); }
+  .card .top { display: grid; grid-template-columns: 40px 1fr 22px; gap: 11px; align-items: center; }
+  .card .fn { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .meta { font-size: 11px; line-height: 14px; opacity: .6; }
+  .x { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: rgba(120,120,128,.14); }
+  .x svg { width: 8px; height: 8px; opacity: .7; }
+  .dest { margin-top: 12px; display: flex; align-items: center; gap: 8px; }
+  .dest .l { font-size: 12px; opacity: .6; }
+  .folderbtn { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 10px 0 9px; border-radius: 12px; font-weight: 600;
+    background: rgba(255,255,255,.7); border: 1px solid rgba(255,255,255,.95); box-shadow: 0 1px 0 #fff inset, 0 4px 12px rgba(20,30,80,.12); }
+  .card.dark .folderbtn { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.2); box-shadow: 0 1px 0 rgba(255,255,255,.18) inset; }
+  .folderbtn svg { width: 16px; height: 16px; } .folderbtn .chev { width: 10px; height: 10px; opacity: .5; }
+  .folderbtn.focus { box-shadow: 0 0 0 3px rgba(10,124,255,.28), 0 0 0 1px #0a7cff; }
+  .foot { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; }
+  .foot .w { font-size: 11px; opacity: .6; display: inline-flex; align-items: center; gap: 5px; }
+  .foot .w .dot { width: 6px; height: 6px; border-radius: 50%; background: #0a7cff; box-shadow: 0 0 6px #0a7cff; }
+  .ring { width: 16px; height: 16px; }
+  .remember { margin-top: 11px; display: flex; align-items: center; gap: 9px; font-size: 12.5px; padding: 8px 10px; border-radius: 12px; background: rgba(10,124,255,.1); border: 1px solid rgba(10,124,255,.18); }
+  .cb { width: 16px; height: 16px; border-radius: 5px; background: linear-gradient(180deg, #2b93ff, #0a6cf0); display: grid; place-items: center; flex: none; box-shadow: 0 1px 0 rgba(255,255,255,.4) inset; }
+  .cb svg { width: 10px; height: 10px; color: #fff; }
+  .scope { color: #0a6cf0; font-weight: 600; }
+  .menu { position: absolute; width: 236px; border-radius: 16px; padding: 6px; color: #101014;
+    background: rgba(250,250,255,.66); -webkit-backdrop-filter: blur(30px) saturate(200%); backdrop-filter: blur(30px) saturate(200%);
+    border: 1px solid rgba(255,255,255,.85); box-shadow: 0 1px 0 #fff inset, 0 18px 44px rgba(20,30,80,.26); font-size: 13px; }
+  .mi { height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 10px; }
+  .mi svg { width: 16px; height: 16px; } .mi .ck { width: 12px; font-size: 11px; }
+  .mi .sub { margin-left: auto; font-size: 11px; opacity: .55; }
+  .mi.hl { background: linear-gradient(180deg, #2b93ff, #0a6cf0); color: #fff; box-shadow: 0 1px 0 rgba(255,255,255,.35) inset; } .mi.hl .sub { opacity: .85; } .mi.hl .fold-ico { color: #fff; filter: none; }
+  .msep { height: 1px; background: rgba(16,16,20,.08); margin: 5px 10px; }
+  .mh { font-size: 11px; font-weight: 600; opacity: .5; padding: 4px 10px 3px; }
+
+  /* ====== Popup ====== */
+  .popup { width: 340px; border-radius: 16px; overflow: hidden; background: var(--backdrop); box-shadow: 0 24px 60px rgba(20,30,80,.25), 0 0 0 1px rgba(0,0,0,.08); position: relative; }
+  .popup-in { padding: 14px; }
+  .ph { display: flex; align-items: center; gap: 10px; }
+  .ph .appicon { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(160deg, #5ac8fa, #5e5ce6); display: grid; place-items: center; color: #fff; box-shadow: 0 1px 0 rgba(255,255,255,.5) inset, 0 4px 10px rgba(94,92,230,.35); }
+  .ph .appicon svg { width: 17px; height: 17px; }
+  .ph b { font-size: 15px; flex: 1; }
+  .sw { width: 38px; height: 22px; border-radius: 999px; background: linear-gradient(180deg, #34d058, #28a745); position: relative; box-shadow: 0 1px 0 rgba(255,255,255,.35) inset; }
+  .sw::after { content: ''; position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,.25); }
+  .sw.sm { width: 32px; height: 19px; } .sw.sm::after { width: 15px; height: 15px; }
+  .sw.off { background: rgba(120,120,128,.3); } .sw.off::after { right: auto; left: 2px; }
+  .list { border-radius: 16px; overflow: hidden; }
+  .li { display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: center; min-height: 48px; padding: 7px 11px; position: relative; }
+  .li + .li::before { content: ''; position: absolute; top: 0; left: 51px; right: 0; height: 1px; background: var(--sep); }
+  .li .a { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .li .b { font-size: 11px; color: var(--secondary); display: flex; align-items: center; gap: 4px; }
+  .li .b svg { width: 12px; height: 12px; }
+  .li .r { font-size: 11px; color: var(--secondary); }
+  .li.hover { background: rgba(255,255,255,.4); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .li.hover { background: rgba(255,255,255,.07); } }
+  .sect { font-size: 11px; font-weight: 700; letter-spacing: .03em; color: var(--secondary); margin: 16px 6px 7px; text-transform: none; }
+  .sitecard { border-radius: 16px; padding: 12px 13px; display: flex; gap: 11px; align-items: center; }
+  .sitecard .s1 { font-size: 11px; color: var(--secondary); }
+  .sitecard .s2 { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; margin-top: 1px; }
+  .pfoot { display: flex; justify-content: space-between; align-items: center; margin: 12px 6px 0; font-size: 12px; color: var(--secondary); }
+
+  /* ====== Settings ====== */
+  .win { width: 700px; border-radius: 22px; overflow: hidden; background: var(--backdrop); box-shadow: 0 30px 80px rgba(20,30,80,.28), 0 0 0 1px rgba(0,0,0,.08); }
+  .tb { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 16px; }
+  .tb i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; } .tb i:nth-child(2) { background: #febc2e; } .tb i:nth-child(3) { background: #28c840; }
+  .wb { padding: 6px 34px 34px; }
+  .wtitle { display: flex; align-items: center; gap: 12px; }
+  .wtitle h3 { font-size: 26px; line-height: 32px; font-weight: 700; letter-spacing: -.02em; }
+  .wsub { color: var(--secondary); margin-top: 3px; }
+  .gh2 { display: flex; justify-content: space-between; align-items: center; margin: 22px 6px 8px; }
+  .gh2 .t { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; }
+  .gh2 .t em { font-style: normal; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; display: grid; place-items: center; background: var(--fill); color: var(--secondary); }
+  .rr { display: grid; grid-template-columns: 30px 1fr auto auto; gap: 12px; align-items: center; min-height: 50px; padding: 7px 14px; position: relative; }
+  .rr + .rr::before { content: ''; position: absolute; top: 0; left: 56px; right: 0; height: 1px; background: var(--sep); }
+  .rr .m { font-weight: 600; } .rr .m small { display: block; font-weight: 400; font-size: 11px; color: var(--secondary); }
+  .rr .chev { width: 8px; height: 12px; color: var(--tertiary); }
+  .rr.off { opacity: .55; }
+  .welcomebar { margin-top: 18px; border-radius: 18px; padding: 14px 16px; display: flex; gap: 14px; align-items: center; }
+  .welcomebar p { font-size: 12px; line-height: 16px; color: var(--secondary); }
+  .srow { display: flex; justify-content: space-between; align-items: center; gap: 16px; min-height: 50px; padding: 8px 16px; position: relative; }
+  .srow + .srow::before { content: ''; position: absolute; top: 0; left: 16px; right: 0; height: 1px; background: var(--sep); }
+  .srow small { display: block; font-size: 11px; color: var(--secondary); }
+  .seg { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--fill); }
+  .seg span { padding: 3px 12px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+  .seg .on { background: var(--glass-strong); box-shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 2px 6px rgba(20,30,80,.12); }
+  .mt { margin-top: 10px; }
+  @media (max-width: 760px) { .site-frame, .win { width: 100%; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="hero">
+    <div class="label-sm">DOWNLOAD ROUTER · DESIGN CONCEPT 2</div>
+    <h1>Glass, color and one question</h1>
+    <p>The same simple structure, now in a glass design language: frosted panels that let the page and a soft color field show through, bright highlight edges, capsule buttons, and a color for every kind of rule so you can tell them apart at a glance.</p>
+  </div>
+
+  <!-- ============ HOW RULES WORK ============ -->
+  <section>
+    <div class="sh"><h2>How rules work</h2><span>shown at the top of Settings</span></div>
+    <p class="why">Every download is checked in this order. The first match decides the folder; if nothing matches, it goes to Everything else.</p>
+    <div class="flow">
+      <div class="step glass"><div class="tile t-web"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div><div><b>Website</b><span>Where it came from: github.com, and its subdomains</span></div><span class="n">1</span></div>
+      <span class="arrow">›</span>
+      <div class="step glass"><div class="tile t-name"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7V5h16v2M12 5v14M9 19h6"/></svg></div><div><b>Name</b><span>A word in the file name, like "invoice"</span></div><span class="n">2</span></div>
+      <span class="arrow">›</span>
+      <div class="step glass"><div class="tile t-img"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg></div><div><b>File type</b><span>The kind of file: images, documents, videos…</span></div><span class="n">3</span></div>
+      <span class="arrow">›</span>
+      <div class="step glass"><div class="tile t-else"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v3h16v-3"/></svg></div><div><b>Everything else</b><span>Your default folder</span></div></div>
+    </div>
+    <div class="example glass"><b>invoice.pdf</b> from github.com goes to <b>Code</b> (website first). From any other site it goes to <b>Receipts</b> (name). <b>report.pdf</b> goes to <b>Documents</b> (type).</div>
+  </section>
+
+  <!-- ============ CARD ============ -->
+  <section>
+    <div class="sh"><h2>The download card</h2><span>floats over the page, like a notification</span></div>
+    <p class="why">A glass card over the site you're on. The folder button is the one thing to click besides Save, and the glowing dot shows it's counting down.</p>
+    <div class="stage">
+      <div>
+        <div class="site-frame">
+          <div class="gh"><i></i>github.com</div>
+          <div class="body"><div class="repo">octocat / Hello-World</div>
+            <div class="files"><div><span>octocat · Merge pull request #6</span><span class="c">13 years ago</span></div><div><span>README</span><span class="c">Initial commit</span></div><div><span>LICENSE</span><span class="c">Add license</span></div><div><span>index.html</span><span class="c">Update</span></div></div></div>
+          <div class="codebtn">Code ▾</div>
+          <div class="card">
+            <div class="top">
+              <div class="tile lg t-zip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg></div>
+              <div><div class="fn">Hello-World-master.zip</div><div class="meta">351 KB · github.com</div></div>
+              <div class="x"><svg viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M1 1l8 8M9 1l-8 8"/></svg></div>
+            </div>
+            <div class="dest"><span class="l">Save to</span><span class="folderbtn"><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Code<svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 4l3 3 3-3"/></svg></span></div>
+            <div class="foot"><span class="w"><span class="dot"></span>Your github.com rule</span><span class="cap primary">Save<svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="2"/><circle cx="8" cy="8" r="6" fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="37.7" stroke-dashoffset="14" transform="rotate(-90 8 8)" stroke-linecap="round"/></svg></span></div>
+          </div>
+        </div>
+        <p class="cap-note"><b>Default.</b> The ring in Save shows the countdown. Do nothing and it saves.</p>
+      </div>
+
+      <div>
+        <div class="site-frame">
+          <div class="gh"><i></i>github.com</div>
+          <div class="body"><div class="repo">octocat / Hello-World</div>
+            <div class="files"><div><span>octocat · Merge pull request #6</span><span class="c">13 years ago</span></div><div><span>README</span><span class="c">Initial commit</span></div><div><span>LICENSE</span><span class="c">Add license</span></div><div><span>index.html</span><span class="c">Update</span></div></div></div>
+          <div class="menu" style="left: 156px; top: 16px;">
+            <div class="mh">Folders you use</div>
+            <div class="mi"><span class="ck">✓</span><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Code</div>
+            <div class="mi hl"><span class="ck"></span><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Projects<span class="sub">3 files</span></div>
+            <div class="mi"><span class="ck"></span><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Archives</div>
+            <div class="mi"><span class="ck"></span><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Downloads</div>
+            <div class="msep"></div>
+            <div class="mi"><span class="ck"></span>New Folder…</div>
+            <div class="mi"><span class="ck"></span>Rename File…</div>
+          </div>
+          <div class="card">
+            <div class="top">
+              <div class="tile lg t-zip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg></div>
+              <div><div class="fn">Hello-World-master.zip</div><div class="meta">351 KB · github.com</div></div>
+              <div class="x"><svg viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M1 1l8 8M9 1l-8 8"/></svg></div>
+            </div>
+            <div class="dest"><span class="l">Save to</span><span class="folderbtn focus"><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Code<svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 4l3 3 3-3"/></svg></span></div>
+            <div class="foot"><span class="w">Paused</span><span class="cap primary">Save</span></div>
+          </div>
+        </div>
+        <p class="cap-note"><b>Pick a folder.</b> A glass menu of the folders you already use. The countdown pauses while it's open.</p>
+      </div>
+
+      <div>
+        <div class="site-frame" style="background:#0d1117">
+          <div class="gh" style="border-bottom:1px solid #30363d"><i></i>github.com</div>
+          <div class="body"><div class="repo" style="color:#4493f8">octocat / Hello-World</div>
+            <div class="files" style="border-color:#30363d"><div style="background:#161b22;color:#e6edf3"><span>octocat · Merge pull request #6</span><span class="c" style="color:#8b949e">13 years ago</span></div><div style="color:#e6edf3;border-color:#30363d"><span>README</span><span class="c" style="color:#8b949e">Initial commit</span></div><div style="color:#e6edf3;border-color:#30363d"><span>LICENSE</span><span class="c" style="color:#8b949e">Add license</span></div></div></div>
+          <div class="card dark">
+            <div class="top">
+              <div class="tile lg t-zip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg></div>
+              <div><div class="fn">Hello-World-master.zip</div><div class="meta">351 KB · github.com</div></div>
+              <div class="x"><svg viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M1 1l8 8M9 1l-8 8"/></svg></div>
+            </div>
+            <div class="dest"><span class="l">Save to</span><span class="folderbtn"><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Projects<svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 4l3 3 3-3"/></svg></span></div>
+            <div class="remember" style="background:rgba(10,124,255,.18);border-color:rgba(10,124,255,.3)"><span class="cb"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.2l2 2L8 3"/></svg></span><span>Always save files from <span class="scope" style="color:#6cb4ff">github.com ⌄</span> here</span></div>
+            <div class="foot"><span class="w">Paused</span><span class="cap primary">Save</span></div>
+          </div>
+        </div>
+        <p class="cap-note"><b>Teach it.</b> Pick another folder and a tinted checkbox appears. Tick it to make a rule. The ⌄ switches it to "all .zip files" or "names with Hello-World". Shown here on a dark site.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ POPUP ============ -->
+  <section>
+    <div class="sh"><h2>The toolbar popup</h2><span>click the extension icon</span></div>
+    <p class="why">Your recent downloads come first on a soft color field, and clicking one shows it in Finder. Under that, one sentence about the site you're on.</p>
+    <div class="stage">
+      <div>
+        <div class="popup"><div class="popup-in">
+          <div class="ph"><div class="appicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10m0 0l-4-4m4 4l4-4"/><path d="M5 18h14"/></svg></div><b>Download Router</b><span class="sw"></span></div>
+          <div class="sect">RECENT</div>
+          <div class="list glass">
+            <div class="li hover"><div class="tile t-zip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg></div><div><div class="a">Hello-World-master.zip</div><div class="b"><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Code</div></div><span class="cap clear" style="height:24px;padding:0 10px;font-size:11px">Show in Finder</span></div>
+            <div class="li"><div class="tile t-doc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg></div><div><div class="a">invoice-2026-09.pdf</div><div class="b"><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Receipts</div></div><span class="r">2h</span></div>
+            <div class="li"><div class="tile t-3d"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M21 16V8l-9-5-9 5v8l9 5z"/><path d="M3.3 7.5L12 12l8.7-4.5M12 12v9"/></svg></div><div><div class="a">benchy-v2.3mf</div><div class="b"><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>3D Prints</div></div><span class="r">Yesterday</span></div>
+          </div>
+          <div class="sect">THIS SITE</div>
+          <div class="sitecard glass"><div class="tile t-web"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div><div style="flex:1"><div class="s1">Downloads from github.com go to</div><div class="s2"><svg class="fold-ico" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Code</div></div><span class="cap clear">Change</span></div>
+          <div class="pfoot"><span>Sorting is on</span><span class="plain">Settings</span></div>
+        </div></div>
+        <p class="cap-note">The switch turns sorting on and off. Hovering a file shows "Show in Finder", and clicking the row does the same.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SETTINGS ============ -->
+  <section>
+    <div class="sh"><h2>Settings</h2><span>one page, glass panels, colored rules</span></div>
+    <p class="why">One page. The numbered sections follow the matching order, so the layout itself explains the rules. Each kind of rule has its own color everywhere.</p>
+    <div class="stage">
+      <div class="win">
+        <div class="tb"><i></i><i></i><i></i></div>
+        <div class="wb">
+          <div class="wtitle"><div class="tile lg" style="background:linear-gradient(160deg,#5ac8fa,#5e5ce6)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10m0 0l-4-4m4 4l4-4"/><path d="M5 18h14"/></svg></div><div><h3>Where downloads go</h3><div class="wsub">Checked in this order. The first match wins.</div></div></div>
+
+          <div class="welcomebar glass"><div class="tile lg" style="background:linear-gradient(160deg,#ffd60a,#ff9f0a)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/></svg></div><div style="flex:1"><b>You're set up</b><p>New downloads are already sorted by type. To change a folder, pick one on the download card and tick "Always".</p></div><span class="cap clear">Try It</span></div>
+
+          <div class="gh2"><div class="t"><em>1</em>Websites</div><span class="plain">Add Website</span></div>
+          <div class="list glass">
+            <div class="rr"><div class="tile t-web"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div><div class="m">github.com<small>and gist.github.com, api.github.com…</small></div><span class="folder"><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Code</span><svg class="chev" viewBox="0 0 8 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 1l4 5-4 5"/></svg></div>
+            <div class="rr"><div class="tile t-web"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div><div class="m">printables.com</div><span class="folder"><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>3D Prints</span><svg class="chev" viewBox="0 0 8 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 1l4 5-4 5"/></svg></div>
+          </div>
+
+          <div class="gh2"><div class="t"><em>2</em>File names</div><span class="plain">Add Name</span></div>
+          <div class="list glass">
+            <div class="rr"><div class="tile t-name"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7V5h16v2M12 5v14M9 19h6"/></svg></div><div class="m">Names with "invoice" or "receipt"</div><span class="folder"><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Receipts</span><svg class="chev" viewBox="0 0 8 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 1l4 5-4 5"/></svg></div>
+          </div>
+
+          <div class="gh2"><div class="t"><em>3</em>File types</div><span class="plain">Add Type</span></div>
+          <div class="list glass">
+            <div class="rr"><div class="tile t-img"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg></div><div class="m">Images<small>jpg, png, gif, webp…</small></div><span class="folder"><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Images</span><span class="sw sm"></span></div>
+            <div class="rr"><div class="tile t-doc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg></div><div class="m">Documents<small>pdf, docx, txt…</small></div><span class="folder"><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Documents</span><span class="sw sm"></span></div>
+            <div class="rr off"><div class="tile t-vid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="5" width="14" height="14" rx="2"/><path d="M17 10l4-2v8l-4-2"/></svg></div><div class="m">Videos<small>mp4, mov, mkv…</small></div><span class="folder" style="color:var(--secondary)">Off</span><span class="sw sm off"></span></div>
+            <div class="rr"><div class="tile t-zip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/></svg></div><div class="m">Archives<small>zip, rar, 7z…</small></div><span class="folder"><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Archives</span><span class="sw sm"></span></div>
+            <div class="rr"><div class="tile t-3d"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M21 16V8l-9-5-9 5v8l9 5z"/><path d="M3.3 7.5L12 12l8.7-4.5M12 12v9"/></svg></div><div class="m">3D files<small>stl, 3mf, obj…</small></div><span class="folder"><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>3D Files</span><span class="sw sm"></span></div>
+          </div>
+
+          <div class="gh2"><div class="t"><em>4</em>Everything else</div></div>
+          <div class="list glass">
+            <div class="rr"><div class="tile t-else"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v3h16v-3"/></svg></div><div class="m">Anything that doesn't match</div><span class="folder"><svg class="fold-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Downloads</span><svg class="chev" viewBox="0 0 8 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 1l4 5-4 5"/></svg></div>
+          </div>
+
+          <div class="gh2"><div class="t">Download card</div></div>
+          <div class="list glass">
+            <div class="srow"><div>Show the card before saving<small>So you can change the folder. Off saves right away.</small></div><span class="sw sm"></span></div>
+            <div class="srow"><div>Save automatically after</div><span class="seg"><span>3s</span><span class="on">5s</span><span>10s</span></span></div>
+          </div>
+          <div class="list glass mt"><div class="srow"><div>Companion app<small>Optional. Lets you save to any folder on your Mac, not just inside Downloads.</small></div><span class="cap clear">Get the App</span></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

@@ -1,15 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Download Router",
-  "version": "2.1.2",
-  "description": "Automatically routes downloads to specific folders based on rules.",
+  "version": "2.2.0",
+  "description": "Sort downloads into folders by website, file name or type. A small card shows where each file goes and lets you change it.",
+  "minimum_chrome_version": "102",
+  "homepage_url": "https://github.com/Zahin-Mohammad-plug/Download-Router-Chrome-extension",
   "permissions": [
     "downloads",
     "storage",
     "notifications",
-    "activeTab",
-    "tabs",
-    "nativeMessaging"
+    "nativeMessaging",
+    "scripting"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -19,15 +20,13 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "css": ["overlay.css"]
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": ["overlay.css"],
-      "matches": ["<all_urls>"]
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "lib/validation.js",
+        "content.js"
+      ]
     }
   ],
   "options_page": "options.html",
@@ -38,7 +37,8 @@
       "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
-    }
+    },
+    "default_title": "Download Router"
   },
   "icons": {
     "16": "icons/icon16.png",

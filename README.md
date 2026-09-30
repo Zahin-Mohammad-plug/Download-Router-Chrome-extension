@@ -1,88 +1,98 @@
 # Download Router
 
-A Chrome extension that automatically saves your downloads to different folders based on rules you set. Instead of everything landing in Downloads, route files by website domain, filename patterns, or file type.
+A Chrome extension that saves your downloads into different folders based on rules you set. Instead of everything landing in one big Downloads pile, files get sorted by the website they came from, a word in the file name, or the file type.
 
 ## What it does
 
-You create rules like "anything from github.com goes to Code/GitHub" or "all .stl files go to 3DPrinting". When you download something, the extension moves it to the right folder. No more digging through Downloads trying to find stuff.
-
-The extension shows a confirmation overlay so you can see where it's going and change it if needed. It auto-saves after a few seconds if you don't interact with it.
+You set things up like "anything from github.com goes to Code" or "all .stl files go to 3D Printing". When you download something, a small card pops up on the page showing where the file is going. Leave it alone and it saves there after a few seconds. Want it somewhere else? Pick another folder on the card, and tick "Always" if you want that to stick next time.
 
 ## Status
 
-- **Extension**: v2.1.3, works on macOS and Windows
-- **Companion App**: v1.0.0, tested on macOS. Windows builds ready but need testing on actual Windows machine
-- **Chrome Web Store**: Not published yet
-
-The companion app is optional but recommended. Without it, you can only route files to folders within your Downloads directory. With it, you get native folder pickers and can save files anywhere on your computer.
-
-**Companion App Installation**: Currently in progress - the installer is being improved. See `companion/INSTALL.md` for manual installation steps.
+- **Extension**: v2.2.0, works on macOS and Windows (Chrome 102+)
+- **Chrome Web Store**: [Download Router](https://chromewebstore.google.com/detail/download-router/gbdficmkipoplmkhcdbdlfmjfpgbgjbn) (the store has 2.1.3 until 2.2.0 goes through review)
+- **Companion App**: v1.0.0, optional. Tested on macOS; Windows builds exist but still need testing on a real Windows machine
 
 ## Installation
 
-### Quick start (extension only)
+### From the Chrome Web Store
+
+Install it from the [store page](https://chromewebstore.google.com/detail/download-router/gbdficmkipoplmkhcdbdlfmjfpgbgjbn). After install a settings page opens with a "Try It" button that downloads a small sample PDF so you can see the card in action.
+
+### From source
 
 1. Clone or download this repo
 2. Open Chrome → `chrome://extensions/`
-3. Enable "Developer mode" (top right)
-4. Click "Load unpacked" and select the `extension/` folder
+3. Turn on "Developer mode" (top right)
+4. Click "Load unpacked" and pick the `extension/` folder
 
-That's it. The extension works without the companion app, but you'll be limited to routing files within your Downloads folder.
+That's it. Everything works without the companion app, as long as your folders live inside Downloads.
 
-### Companion app (recommended)
+### Companion app (optional)
 
-The companion app enables:
-- Native OS folder picker dialogs
-- Saving files anywhere on your computer (absolute paths)
-- Post-download file moving (download to Downloads, then move elsewhere)
+Chrome only lets extensions save inside your Downloads folder. The companion app is a small helper that gets around that:
 
-Installation steps are in `companion/INSTALL.md`. The installer setup is still being worked on - for now you'll need to manually run the installer script.
+- Save to any folder on your computer (other drives, Documents, a NAS…)
+- Native folder picker ("Other Location…" on the card, "Choose…" in Settings)
+- Moves files on disk when you change your mind after a file was already saved
+
+Right now there's no one-click installer. It's a manual install: build or run it from `companion/`, then register it with Chrome using your extension ID. Steps are in [docs/COMPANION_INSTALL.md](docs/COMPANION_INSTALL.md). Settings shows "Installed ✓" once Chrome can talk to it.
 
 ## How it works
 
 ### Rules
 
-You can create three types of rules:
+Rules are checked in a fixed order, top to bottom. The first one that matches wins:
 
-1. **Domain rules**: Route downloads based on the website domain
-   - Example: `printables.com` → `3DPrinting/`
-   - Example: `github.com` → `Code/GitHub/`
-   - Default priority: 2.0
+1. **Websites**: where the file came from. `github.com` also covers its subdomains (`gist.github.com`, etc.). A rule with a path like `github.com/octocat` beats plain `github.com`.
+2. **File names**: a word in the file name, like "invoice". You can list a few words separated by commas.
+3. **File types**: single-extension rules (".zip files") come first, then groups like Images or Documents. Groups can be switched on and off.
+4. **Everything else**: the default folder, inside Downloads.
 
-2. **Extension rules**: Route downloads based on individual file extensions
-   - Example: `.stl` → `3DPrinting/`
-   - You can create these manually or they're auto-created from file type groups
+That's the whole model. No priority numbers, no "override" switches, no tie-breaking settings. If a website rule and a file type both match, the website wins, every time.
 
-3. **File type groups**: Groups of related file extensions that share a destination
-   - Example: All `.stl`, `.obj`, `.3mf` files → `3DPrinting/`
-   - Example: All `.pdf`, `.doc` files → `Documents/`
-   - Default priority: 3.0
+Coming from an older version? On update your rules get moved over to this order once. Your old rules are backed up locally first, and if the new order could send some of your files somewhere different, Settings shows a one-time note explaining the change.
 
-**Priority system**: Each rule has a priority number (lower = higher priority). Rules are sorted by priority, then by type (domain > extension > filetype) as a tiebreaker. File type groups can have an "override domain rules" option that boosts their priority to beat domain rules.
+### The download card
 
-### Confirmation overlay
+When a download starts, a small card shows up on the page with:
 
-When you download something, a small overlay appears in the bottom-right showing where the file will be saved. You can:
-- Change the destination for just this download
-- Quickly create a new rule
-- Let it auto-save after the countdown (default 5 seconds)
+- The file name, size and site
+- **Save to [folder]**: click the folder to open a menu with the folders you use, **New Folder…**, **Rename File…**, and **Other Location…** (companion app only)
+- An **"Always save files from github.com here"** checkbox when you pick a different folder. The little arrow switches it to "all .zip files" instead. Ticking it creates the rule for you.
+- A **Save** button with a countdown (3, 5 or 10 seconds, 5 by default)
+- A line saying why it's going there ("Your github.com rule", "Matched file type · Archives", "No rule matched")
 
-If the overlay can't be injected (some sites block it), you'll get a Chrome notification instead with the same options.
+Hovering over the card pauses the countdown, so does having the menu open or typing. The ✕ cancels the download.
+
+A couple of Chrome limits worth knowing:
+
+- Chrome only waits about 15 seconds for an extension to pick a location, so the card saves at 12 seconds no matter what (even if you're still hovering). If you pick a new place after that, the file gets moved there. With the companion app it's a real move on disk. Without it, the file is downloaded again into the new folder and the first copy is deleted. That second download isn't possible for `blob:`/`data:` downloads or single-use links, so those stay where they were saved and the card tells you where.
+- The card can't appear on the New Tab page or `chrome://` pages. Downloads started there save right away using your rules.
+
+### Popup
+
+Click the toolbar icon to see:
+
+- **Recent**: your last downloads. Click one to show it in Finder (or Explorer).
+- **This site**: where downloads from the current site go, with a **Change** button that sets a website rule.
+- An on/off switch. When it's off, downloads go to Downloads like normal.
+- A link to Settings.
 
 ### Settings
 
-Access settings by right-clicking the extension icon → Options.
+One page, no tabs. Open it from the popup or by right-clicking the icon → Options.
 
-- **Rules tab**: Add/edit domain and contains (filename pattern) routing rules, set priorities
-- **Groups tab**: Organize file extensions into groups (videos, images, documents, etc.), configure group priorities and override options
-- **Settings tab**: Configure confirmation timeout, conflict resolution behavior, companion app status
-- **Folders tab**: Browse and manage your download destinations
+- The four numbered sections in the order they're checked: Websites, File names, File types, Everything else. Click a row to edit or delete it, or use the Add button in each section.
+- **Download card**: show the card before saving (off = save right away), and how long to wait (3s / 5s / 10s).
+- **Companion app**: whether it's installed, with a link to the install guide if not.
 
-The extension popup (click the icon) shows quick stats and recent downloads.
+### Without the companion app
 
-## Default file groups
+Folders are always inside Downloads. If you sync your settings from another computer that has the companion app and a rule points to something like `/Users/me/Documents/Invoices`, this computer saves to a folder with the same name inside Downloads (`Downloads/Invoices`) instead.
 
-The extension comes with these pre-configured file type groups:
+## Default file types
+
+New installs start with these file type groups:
 
 - **Videos** → `Videos/`: mp4, mov, mkv, avi, wmv, flv, webm
 - **Images** → `Images/`: jpg, jpeg, png, gif, bmp, svg, webp
@@ -91,60 +101,67 @@ The extension comes with these pre-configured file type groups:
 - **Archives** → `Archives/`: zip, rar, 7z, tar, gz
 - **Software** → `Software/`: exe, msi, dmg, deb, rpm, pkg
 
-Each group has priority 3.0 by default and can be modified, disabled, or deleted. You can create your own groups with any extensions you want.
+Change the folder, switch any of them off, or add your own.
 
 ## Technical stuff
 
 ### Architecture
 
-- Manifest V3 extension
-- Shadow DOM for overlay isolation (doesn't interfere with websites)
-- Service worker handles download interception and routing logic
-- Companion app is Electron-based, uses Chrome native messaging API
+- Manifest V3, service worker (`background.js`) picks the folder using `chrome.downloads.onDeterminingFilename`
+- The card is a content script in a closed Shadow DOM, so it doesn't mess with the site's styles (and vice versa)
+- Rules and settings live in `chrome.storage.sync`; recent downloads and the one-time notices live in `chrome.storage.local`
+- Companion app is Electron, talks to the extension over Chrome native messaging
+
+Permissions: `downloads`, `storage`, `notifications` (the "Moved to…" / "Couldn't move" messages), `nativeMessaging` (companion app), `scripting` (adds the card to tabs that were already open when the extension was installed or updated), and access to all sites so the card can show on whatever page you download from.
 
 ### Companion app structure
 
-The companion app code is cross-platform - same source works on macOS, Windows, and Linux. Platform-specific stuff (like folder pickers) uses `process.platform` to detect the OS and call the right native commands:
+Same code for macOS, Windows and Linux. Platform-specific bits (folder pickers) check `process.platform`:
 
 - macOS: osascript for dialogs
 - Windows: PowerShell for dialogs
 - Linux: zenity/kdialog for dialogs
 
-File operations (move, verify, create folders) use Node.js fs module which is already cross-platform.
+File operations (move, verify, create folders) use Node's `fs`, which is already cross-platform.
 
 ### File structure
 
 ```
-extension/           # Chrome extension (load this in Chrome)
+extension/             # Chrome extension (load this in Chrome)
   ├── manifest.json
-  ├── background.js  # Service worker, routing logic
-  ├── content.js     # Overlay injection
-  ├── options.js     # Settings page
-  ├── popup.js       # Extension popup
-  └── lib/           # Shared utilities
+  ├── background.js    # Service worker, routing logic, migration
+  ├── content.js       # Download card
+  ├── popup.*          # Toolbar popup
+  ├── options.*        # Settings page
+  ├── lib/             # validation.js, native-messaging-client.js
+  └── assets/          # Sample PDF for "Try It"
 
-companion/           # Electron companion app
-  ├── main.js        # Entry point, native messaging host
-  ├── native-messaging/
-  ├── services/      # Folder picker, file mover, etc.
-  └── install/       # Installation scripts
-
-docs/                # Documentation
-tests/               # Test scripts
+companion/             # Electron companion app (optional)
+docs/                  # Docs (design, testing, deployment, store listing)
+scripts/package.sh     # Builds the Web Store zip
+tests/                 # Companion/native messaging test scripts
 ```
 
 ## Development
 
-### Extension development
+### Extension
 
-1. Load the `extension/` folder in Chrome (Developer mode → Load unpacked)
+1. Load `extension/` in Chrome (Developer mode → Load unpacked)
 2. Make changes
-3. Reload the extension in `chrome://extensions/`
+3. Hit reload on `chrome://extensions/`
 4. Test
 
-No build step needed for development. Use Chrome DevTools for debugging.
+No build step. Use DevTools for debugging (service worker: "Inspect views" on the extensions page).
 
-### Companion app development
+### Packaging for the store
+
+```bash
+STORE_VERSION=2.1.3 scripts/package.sh
+```
+
+This checks the manifest version is higher than what's live, checks every file the manifest references exists, refuses to run with uncommitted changes in `extension/`, and writes `dist/download-router-<version>.zip` without dev files. Upload that zip in the developer dashboard. More in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+### Companion app
 
 ```bash
 cd companion
@@ -154,15 +171,10 @@ npm run build:mac  # Build macOS DMG
 npm run build:win  # Build Windows installer (from macOS, but test on Windows)
 ```
 
-The same codebase builds for both platforms. Platform detection happens at runtime.
-
-**Development logs:**
-
-When running the companion app in development mode (via `npm start` or the batch/shell scripts), logs are written to:
+**Logs:**
 - **macOS**: `~/Library/Logs/Download Router Companion/`
 - **Windows**: `%APPDATA%\Download Router Companion\logs\`
 
-View logs in real-time:
 ```bash
 # macOS/Linux
 tail -f ~/Library/Logs/Download\ Router\ Companion/companion-main-latest.log
@@ -171,65 +183,69 @@ tail -f ~/Library/Logs/Download\ Router\ Companion/companion-main-latest.log
 Get-Content "$env:APPDATA\Download Router Companion\logs\companion-main-latest.log" -Wait -Tail 20
 ```
 
-**Production logs:**
-
-When installed via the DMG/MSI installer, logs are in the same locations as development. The companion app always logs to the user's application data directory regardless of how it was installed.
-
 ## Known issues and limitations
 
-- Companion app installer needs work (documented in progress)
-- Windows companion app builds exist but need real Windows testing
-- Some websites block the overlay injection (falls back to notifications)
-- Extension ID detection could be smoother (working on it)
+- Companion app is manual install only for now; Windows builds need real Windows testing
+- Chrome's ~15 second limit means the card can't hold a download forever (see above)
+- Changing the folder after a file was saved, without the companion app, means downloading it again. Doesn't work for `blob:`/`data:` or single-use links.
+- No card on the New Tab page, `chrome://` pages or the Chrome Web Store; those downloads save straight away using your rules
 
 ## Troubleshooting
 
-**Extension not routing downloads:**
-- Check that it's enabled in `chrome://extensions/`
-- Verify your rules are set up correctly (check spelling)
-- Check rule priorities - lower priority numbers win. Domain rules default to 2.0, file type groups default to 3.0
-- Make sure folders exist (or enable auto-create in settings if using companion app)
+**Downloads aren't being sorted:**
+- Check the switch in the popup is on
+- Check the rule in Settings (spelling of the site or word)
+- Remember the order: a website rule beats a file name rule, which beats a file type. The card's footnote tells you which rule matched.
+
+**Card isn't showing up:**
+- Make sure "Show the card before saving" is on in Settings
+- Reload the page if it was open before you installed or updated the extension
+- It won't show on New Tab / `chrome://` pages; those save right away
 
 **Companion app not connecting:**
-- Check the native messaging host manifest exists (see `companion/INSTALL.md`)
-- Verify the extension ID in the manifest matches your actual extension ID
-- Restart Chrome completely (not just reload)
-- Check companion app logs (see below)
+- Check the native messaging host manifest exists (see [docs/COMPANION_INSTALL.md](docs/COMPANION_INSTALL.md))
+- Make sure the extension ID in it matches yours
+- Quit and reopen Chrome completely
+- Check the companion logs (paths above)
 
-**Companion app logs location:**
-- **macOS**: `~/Library/Logs/Download Router Companion/`
-- **Windows**: `%APPDATA%\Download Router Companion\logs\`
-
-The logs contain detailed information about native messaging communication, folder picker operations, and any errors. The `companion-main-latest.log` file always contains the most recent activity.
-
-**Overlay not appearing:**
-- Some sites block content script injection
-- Check for Chrome notifications instead
-- Enable notifications in Chrome settings if needed
-
-See `docs/TESTING.md` for more detailed troubleshooting.
+See [docs/TESTING.md](docs/TESTING.md) for more.
 
 ## Contributing
 
 Contributions welcome. Some areas that could use help:
 - Windows testing and bug fixes
-- Companion app installer improvements
-- Additional file type groups
+- A proper companion app installer
+- More file type groups
 - Better error messages
 
-Follow the existing code style and test your changes before submitting a PR.
+Follow the existing code style and test your changes before opening a PR.
 
 ## Privacy
 
-This extension does not collect, store, or transmit any personal data. All routing rules and settings are stored locally on your device. No analytics, no tracking, no external servers.
+The extension doesn't collect or send anything anywhere. Rules and settings are stored in Chrome (synced by Chrome if you have sync on). No analytics, no tracking, no servers.
 
-See [PRIVACY.md](PRIVACY.md) for full details.
+See [PRIVACY.md](PRIVACY.md) for details.
 
 ## License
 
 MIT License
 
 ## Version history
+
+See [CHANGELOG.md](CHANGELOG.md) for the full list.
+
+### v2.2.0
+- New download card, popup and settings page (one page, rules in the order they're checked)
+- Fixed rule order: Websites → File names → File types → Everything else. Priority numbers and override/tie settings are gone; old rules are migrated once and backed up
+- Picking a new folder after Chrome already saved the file now moves it there
+- Downloads save right away where the card can't show, and never wait longer than Chrome allows
+- Lots of fixes (trailing commas in rules, nested Downloads folders, input validation)
+- Fewer permissions (`tabs` and `activeTab` removed) and a smaller package
+
+### v2.1.3
+- First Chrome Web Store release
+- File name rules, website rules with paths (`github.com/octocat`), proper subdomain matching
+- Folder autocomplete for people without the companion app
 
 ### v2.1.0
 - Production-ready extension

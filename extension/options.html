@@ -1,216 +1,141 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Download Router - Settings</title>
+  <meta charset="utf-8">
+  <title>Download Router Settings</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <link rel="stylesheet" href="options.css">
-  <script src="lib/icons.js"></script>
+  <script src="lib/validation.js"></script>
 </head>
 <body>
-  <header class="app-header">
-    <div class="app-container">
-      <div class="header-content">
-        <div class="app-icon" id="options-app-icon"></div>
-        <div class="app-title">
-          <h1>Download Router Settings</h1>
-          <p class="app-subtitle">Configure your download routing rules</p>
-        </div>
+  <main class="page">
+    <header class="masthead">
+      <div class="brand">
+        <span class="brand-tile" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3.5v6.5"/><path d="M7 18.5v-6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v6"/>
+            <path d="M4.8 16.3L7 18.7l2.2-2.4"/><path d="M14.8 16.3l2.2 2.4 2.2-2.4"/>
+          </svg>
+        </span>
+        <span class="brand-name">Download Router</span>
       </div>
-      <nav class="tab-navigation">
-        <button class="tab-btn active" data-tab="rules">Rules</button>
-        <button class="tab-btn" data-tab="filetypes">File Types</button>
-        <button class="tab-btn" data-tab="settings">Settings</button>
-      </nav>
+      <h1>Where downloads go</h1>
+      <p class="subtitle">Checked top to bottom · first match wins</p>
+    </header>
+
+    <!-- Shown after install (options.html#welcome) until dismissed -->
+    <div class="notice" id="welcome" hidden>
+      <div class="notice-text">
+        <b>You're set up</b>
+        <p id="welcome-line">New downloads are already sorted by type. To change a folder, pick one on the download card and tick “Always”.</p>
+      </div>
+      <button class="btn secondary sm" id="welcome-try" type="button">Try It</button>
+      <button class="close-btn" id="welcome-close" type="button" aria-label="Dismiss" data-glyph="x"></button>
     </div>
-  </header>
 
-  <div class="app-wrapper">
-    <main class="app-main">
-      <!-- Rules Tab -->
-      <div class="tab-content active" id="rules-tab">
-        <div class="section-header">
-          <h2>Download Rules</h2>
-          <p class="section-description">Create rules to automatically route downloads to specific folders</p>
-        </div>
-        
-        <div class="rules-container" id="rules-container">
-          <div class="empty-state" id="rules-empty">
-            <div class="empty-icon" id="rules-empty-icon"></div>
-            <h3>No rules configured</h3>
-            <p>Create your first rule to start organizing downloads automatically</p>
-          </div>
-        </div>
-        
-        <div class="section-actions">
-          <button class="btn primary" id="add-rule">
-            <span class="btn-icon" id="add-rule-icon"></span>
-            Add Rule
-          </button>
-        </div>
+    <!-- Shown once after updating from a version with priority numbers -->
+    <div class="notice" id="rules-notice" hidden>
+      <div class="notice-text">
+        <b>Rules now follow a simple order</b>
+        <p>Websites, then file names, then file types. Priority numbers and “override” settings were removed. If a download lands somewhere unexpected, edit the rule below.</p>
       </div>
-
-      <!-- File Types Tab -->
-      <div class="tab-content" id="filetypes-tab">
-        <div class="section-header">
-          <h2>File Types</h2>
-          <p class="section-description">Organize file types into groups for easier management</p>
-        </div>
-        
-        <div class="groups-container" id="groups-container">
-          <div class="empty-state" id="groups-empty">
-            <div class="empty-icon" id="groups-empty-icon"></div>
-            <h3>No file types configured</h3>
-            <p>Create file types to organize similar file extensions together</p>
-          </div>
-        </div>
-        
-        <div class="section-actions">
-          <button class="btn primary" id="add-group">
-            <span class="btn-icon" id="add-group-icon"></span>
-            Add File Type
-          </button>
-          <button class="btn secondary" id="load-defaults">
-            <span class="btn-icon" id="load-defaults-icon"></span>
-            Load Default File Types
-          </button>
-        </div>
-      </div>
-
-      <!-- Settings Tab -->
-      <div class="tab-content" id="settings-tab">
-        <div class="section-header">
-          <h2>General Settings</h2>
-          <p class="section-description">Configure how Download Router behaves</p>
-        </div>
-        
-        <div class="settings-grid">
-          <div class="setting-card">
-            <div class="setting-header">
-              <h3>Confirmation Overlay</h3>
-              <label class="toggle-switch">
-                <input type="checkbox" id="confirmation-enabled" checked>
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <p class="setting-description">Show a confirmation overlay before saving downloads</p>
-            
-            <div class="setting-option" id="timeout-setting">
-              <label for="confirmation-timeout">Auto-save timeout (seconds):</label>
-              <input type="range" id="confirmation-timeout" min="1" max="17" value="5" class="range-input">
-              <span class="range-value" id="timeout-value">5s</span>
-            </div>
-            <div class="setting-warning" style="margin-top: 8px; padding: 8px 12px; background: #fff3e0; border: 1px solid #ff9800; border-radius: 4px; font-size: 12px; color: #e65100;">
-              <strong>Chrome Limitation:</strong> The timer may not always work reliably due to Chrome's download handling. Downloads may proceed before the timeout in some cases.
-              <span id="companion-app-timer-note" style="display: none; margin-top: 4px; display: block;">
-                <strong>Tip:</strong> With the companion app installed, files can still be moved after download completes.
-              </span>
-            </div>
-          </div>
-
-          <div class="setting-card">
-            <div class="setting-header">
-              <h3>Default Folder</h3>
-            </div>
-            <p class="setting-description">Where to save downloads when no rules match</p>
-            
-            <div id="default-folder-companion-info" style="display: none; margin-bottom: 12px; padding: 8px 12px; background: #e8f5e9; border: 1px solid #4caf50; border-radius: 4px; font-size: 12px; color: #2e7d32;">
-              <strong>✓ Companion App Installed:</strong> You can select any folder on your system using the Browse button below.
-            </div>
-            
-            <div id="default-folder-non-companion-info" style="display: none; margin-bottom: 12px; padding: 8px 12px; background: #fff3e0; border: 1px solid #ff9800; border-radius: 4px; font-size: 12px; color: #e65100;">
-              <strong>Chrome Limitation:</strong> Without the companion app, this extension cannot change Chrome's base download directory. 
-              You can only specify subdirectories relative to Chrome's download folder (e.g., "Documents", "Videos/2024").
-              <br><br>
-              <strong>To change Chrome's base download directory:</strong> Use the button below to open Chrome's download settings.
-            </div>
-            
-            <div class="setting-input">
-              <input type="text" id="default-folder" value="Downloads" class="form-input" placeholder="Downloads">
-              <button id="browse-default-folder" class="btn secondary">Browse</button>
-            </div>
-            
-            <div id="chrome-downloads-link" style="margin-top: 8px; display: none;">
-              <button id="open-chrome-downloads-settings" class="btn secondary" style="font-size: 12px; padding: 6px 12px;">
-                Open Chrome Download Settings
-              </button>
-              <p style="font-size: 11px; color: #6e6e73; margin-top: 4px;">
-                Change Chrome's default download location in Chrome settings
-              </p>
-            </div>
-          </div>
-
-          <div class="setting-card">
-            <div class="setting-header">
-              <h3>Conflict Resolution</h3>
-            </div>
-            <p class="setting-description">When multiple rules have the same priority:</p>
-            
-            <div class="radio-group">
-              <label class="radio-option">
-                <input type="radio" name="conflict-resolution" value="auto" checked>
-                <span class="radio-custom"></span>
-                <div class="radio-content">
-                  <strong>Auto-resolve</strong>
-                  <small>Use highest priority rule automatically</small>
-                </div>
-              </label>
-              <label class="radio-option">
-                <input type="radio" name="conflict-resolution" value="ask">
-                <span class="radio-custom"></span>
-                <div class="radio-content">
-                  <strong>Ask Every Time</strong>
-                  <small>Show conflict dialog in overlay</small>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          <div class="setting-card">
-            <div class="setting-header">
-              <h3>Save As Dialog</h3>
-            </div>
-            <p class="setting-description">
-              The extension cannot detect if Chrome's "Ask where to save each file before downloading" setting is enabled.
-              If this setting is on, Chrome's Save As dialog will appear, and the extension's routing may not apply as expected.
-            </p>
-            <div style="margin-top: 8px;">
-              <button id="open-chrome-download-behavior" class="btn secondary" style="font-size: 12px; padding: 6px 12px;">
-                Check Chrome Download Behavior Settings
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-    </main>
-  </div>
-
-  <footer class="app-footer">
-    <div class="app-container">
-      <div class="footer-actions">
-          <button class="btn secondary" id="reset-options">
-            <span class="btn-icon" id="reset-options-icon"></span>
-            Reset to Defaults
-          </button>
-      </div>
-      <div class="status-message" id="status"></div>
+      <button class="close-btn" id="rules-notice-close" type="button" aria-label="Dismiss" data-glyph="x"></button>
     </div>
-  </footer>
 
-  <!-- Modals -->
-  <div class="modal-overlay" id="modal-overlay">
-    <div class="modal" id="folder-picker-modal">
-      <div class="modal-header">
-        <h3>Choose Folder</h3>
-        <button class="modal-close" id="close-modal">X</button>
+    <!-- The rule chain: checked in this order, first match wins -->
+    <ol class="chain">
+      <li class="step">
+        <section aria-labelledby="h-websites">
+          <div class="group-head">
+            <div class="head-text">
+              <h2 id="h-websites"><span class="node">1</span>Websites</h2>
+              <p class="desc">Where the file came from</p>
+            </div>
+            <button class="plain" id="add-website" type="button">Add Website</button>
+          </div>
+          <div class="list" id="websites-list"></div>
+        </section>
+      </li>
+
+      <li class="step">
+        <section aria-labelledby="h-names">
+          <div class="group-head">
+            <div class="head-text">
+              <h2 id="h-names"><span class="node">2</span>File names</h2>
+              <p class="desc">A word in the file name</p>
+            </div>
+            <button class="plain" id="add-name" type="button">Add Name</button>
+          </div>
+          <div class="list" id="names-list"></div>
+        </section>
+      </li>
+
+      <li class="step">
+        <section aria-labelledby="h-types">
+          <div class="group-head">
+            <div class="head-text">
+              <h2 id="h-types"><span class="node">3</span>File types</h2>
+              <p class="desc">Single extensions first, then kinds of files</p>
+            </div>
+            <button class="plain" id="add-type" type="button">Add Type</button>
+          </div>
+          <div class="list" id="types-list"></div>
+        </section>
+      </li>
+
+      <li class="step">
+        <section aria-labelledby="h-else">
+          <div class="group-head">
+            <div class="head-text">
+              <h2 id="h-else"><span class="node">4</span>Everything else</h2>
+              <p class="desc">When nothing above matches</p>
+            </div>
+          </div>
+          <div class="list" id="else-list"></div>
+        </section>
+      </li>
+    </ol>
+
+    <section class="group group-settings" aria-labelledby="h-card">
+      <div class="group-head"><h2 id="h-card">Download card</h2></div>
+      <div class="list">
+        <div class="srow">
+          <div class="srow-text">
+            <span id="card-label">Show the card before saving</span>
+            <small>So you can change the folder. Off saves right away.</small>
+          </div>
+          <button class="switch" id="card-switch" type="button" role="switch" aria-checked="true" aria-labelledby="card-label"></button>
+        </div>
+        <div class="srow" id="timeout-row">
+          <div class="srow-text"><span id="timeout-label">Save automatically after</span></div>
+          <div class="seg" id="timeout-seg" role="radiogroup" aria-labelledby="timeout-label">
+            <button type="button" role="radio" data-ms="3000">3s</button>
+            <button type="button" role="radio" data-ms="5000">5s</button>
+            <button type="button" role="radio" data-ms="10000">10s</button>
+          </div>
+        </div>
       </div>
-      <div class="modal-body">
-        <div class="folder-tree" id="folder-tree"></div>
+      <p class="footnote">Where the card can't appear, like the New Tab page, downloads save right away using these rules.</p>
+    </section>
+
+    <section class="group group-tight" aria-label="Companion app">
+      <div class="list">
+        <div class="srow">
+          <div class="srow-text">
+            <span>Companion app</span>
+            <small id="companion-line">Optional. Lets you save to any folder on your computer, not just inside Downloads.</small>
+          </div>
+          <span id="companion-action"></span>
+        </div>
       </div>
-      <div class="modal-footer">
-        <button class="btn secondary" id="modal-cancel">Cancel</button>
-        <button class="btn primary" id="modal-select">Select Folder</button>
-      </div>
-    </div>
+    </section>
+  </main>
+
+  <div class="toast" id="status" role="status" aria-live="polite"></div>
+
+  <div class="scrim" id="scrim" hidden>
+    <form class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" novalidate></form>
   </div>
 
   <script src="options.js"></script>

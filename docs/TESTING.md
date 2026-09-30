@@ -1,429 +1,219 @@
 # Download Router - Testing Guide
 
-This guide provides comprehensive testing procedures for the Download Router Chrome extension and companion app.
+How to test the Download Router extension (v2.2.0) and the optional companion app.
 
 ## Quick Testing Checklist
 
 ### Essential Tests (5 minutes)
-1. ✅ **Reload extension** in `chrome://extensions/`
-2. ✅ **Open Options** → Settings tab → Check companion status
-3. ✅ **Open Options** → Rules tab → Click Browse → Should open folder picker
-4. ✅ **Check logs**: `cat companion/logs/companion.log`
+1. **Reload extension** in `chrome://extensions/`, no errors under "Errors"
+2. **Settings** → "Try It" → sample PDF lands in `Downloads/Documents`, card appears
+3. **Download from a site** → card shows, counts down, saves to the rule's folder
+4. **Popup** → file is under Recent, "This site" line is right
+5. **Companion (if installed)**: Settings → Companion app row says "Installed ✓"
 
 ---
 
-## Testing Steps
+## Extension Testing
 
-### Step 1: Reload Extension
-1. Open Chrome → `chrome://extensions/`
-2. Find "Download Router" extension
-3. Click **Reload** button
-4. Check for errors in "Errors" button (should be none)
+### Load and sanity check
+1. `chrome://extensions/` → Developer mode → Load unpacked → `extension/`
+2. Service worker: "Inspect views: service worker". No errors on load.
+3. On a fresh install, Settings opens with the "You're set up" note and the default file types (Videos, Images, Documents, 3D Files, Archives, Software).
+4. Popup opens: Recent, This site, on/off switch, Settings link.
+5. Settings is one page: 1 Websites, 2 File names, 3 File types, 4 Everything else, Download card, Companion app. No tabs, no priority fields.
 
-### Step 2: Check Companion App Connection
-1. Right-click extension icon → **Options**
-2. Click **Settings** tab
-3. Look for companion app status:
-   - ✅ **Green box** = Connected
-   - ⚠️ **Yellow box** = Not installed (check logs)
+### Rule order (first match wins)
+Set up these rules, then download a file for each row. The card's footnote says which rule matched.
 
-### Step 3: Test Folder Picker
-1. In Options → **Rules** tab
-2. Click **+ Add Rule** or **Edit** on existing rule
-3. Click **Browse** button next to Folder field
-4. Should open **native OS folder picker** (macOS Finder, Windows Explorer, or Linux dialog)
-5. Select a folder (platform-appropriate path)
-6. Click **Save Changes**
+| Setup | Download | Expected folder |
+|---|---|---|
+| Website `github.com` → Code | any file from github.com or a subdomain | Code |
+| Website `github.com/octocat` → Forks, plus `github.com` → Code | a file under github.com/octocat/… | Forks (path beats plain domain) |
+| File name `invoice` → Invoices | `invoice-2026.pdf` from a site with no website rule | Invoices (beats the Documents type) |
+| Website `github.com` → Code, File name `invoice` → Invoices | `invoice.pdf` from github.com | Code (websites beat names) |
+| `.zip files` → Zips, Archives group on | `a.zip` | Zips (single extension beats group) |
+| Images group switched off | `a.png` from a site with no rules | Everything else (default folder) |
+| File name `invoice,` (trailing comma) | `photo.jpg` | NOT Invoices (empty words are ignored) |
+| Default folder `Downloads/Misc` | unmatched file | `Downloads/Misc`, not `Downloads/Downloads/Misc` |
 
-### Step 4: Test Download Routing
-1. Go to https://github.com
-2. Download any file (e.g., icon.png)
-3. Extension overlay should appear
-4. File should route to configured folder
+### Download card
+- Appears when a download starts; shows file name, size · site, "Save to <folder>", Save with countdown.
+- Countdown matches the setting (3/5/10s, default 5s). Hover pauses it ("Paused"), leaving resumes.
+- Folder menu: "Folders you use" (checkmark on current), New Folder…, Rename File…, Other Location… (only with companion).
+- New Folder…: inline field with autocomplete; Return confirms. Invalid names (`a:b`, `..`) show one red line.
+- Rename File…: saves under the new name.
+- Changing the folder shows "Always save files from <site> here"; the arrow switches to "all .<ext> files". Tick + Save creates the website / `.ext` rule (check Settings).
+- ✕ cancels the download (nothing in the downloads list/folder).
+- File names and sites containing HTML (e.g. `<b>x</b>.txt`) display as plain text.
 
-### Step 5: Check Logs
-```bash
-# All logs are in logs/debug directory
+### Chrome's time limit
+- Hover over the card and keep hovering: the file is saved at ~12 seconds anyway (Chrome only waits ~15s). Footnote: "Saved in <folder> for now · Save moves it".
+- Then pick another folder and Save:
+  - **With companion**: file is moved on disk, card says "Moved to <folder>".
+  - **Without companion**: the file is downloaded again into the new folder and the first copy is deleted. Popup Recent points to the new location.
+  - `blob:` / `data:` downloads or single-use links: card/notification says it couldn't move and where the file is.
 
-# View latest companion log
-cat logs/debug/companion-latest.log
+### Where the card can't appear
+- Start a download from the New Tab page or a `chrome://` page (e.g. drag a link or use `chrome://downloads`): it saves immediately using rules, no card.
+- Tabs open before install/update: the card should still appear (the extension adds it to open tabs); reload the page if not.
+- Settings → "Show the card before saving" off: every download saves immediately using rules.
+- Popup switch off: downloads go to plain Downloads.
 
-# View all logs
-ls -lth logs/debug/
+### Popup
+- Recent: click a row → shows the file in Finder/Explorer. Empty state text when nothing downloaded.
+- This site: on a site with a rule shows its folder; Change → folder menu → sets/replaces the website rule. On a non-website tab: "Open a website to set where its downloads go."
 
-# Watch companion log in real-time
-tail -f logs/debug/companion-latest.log
+### Settings
+- Click a row → sheet with match field, folder field (autocomplete; "Choose…" only with companion), Delete / Cancel / Save.
+- File type rows have switches; off rows are dimmed and show "Off".
+- Validation: bad domains, empty names, folders with `<>:"|?*`, absolute folders without the companion → one red error line, nothing saved.
+- Welcome note: Try It downloads the bundled PDF; ✕ hides it for good.
 
-# View environment check log
-cat logs/debug/environment-check.log
+### Upgrade / migration (from 2.1.x)
+1. Load the old 2.1.x code in a fresh Chrome profile (e.g. `git worktree add ../dr-old main`, then Load unpacked `../dr-old/extension`), add rules with custom priorities, an "override site rules" group, and "ask when rules tie".
+2. Copy the 2.2.0 `extension/` files over `../dr-old/extension` (same folder keeps the same extension ID and storage) and click Reload. Chrome treats that as an update.
+3. Check:
+   - `chrome.storage.local.get('rulesBackupV1')` in the service worker console has the old rules
+   - Priorities are gone from the UI, rules follow the fixed order
+   - Settings shows "Rules now follow a simple order" once; ✕ hides it and it doesn't come back
+   - A user with only default priorities sees no notice
+   - Migration runs only once (`rulesModelVersion: 2` in local storage)
 
-# View test flow log
-cat logs/debug/test-complete-flow-latest.log
-```
+### Without the companion app
+- Folder fields reject absolute paths ("Folders outside Downloads need the companion app").
+- A rule with an absolute folder synced from another computer (e.g. `/Users/me/Documents/Invoices`) saves to `Downloads/Invoices`.
 
 ---
 
-## Component Testing
+## Automated end-to-end tests (approach)
 
-### Companion App Testing
+There's no committed e2e suite yet. The approach that works for this extension:
 
-#### 1. Installation Test
-**Verify `companion/install/install-macos.sh` works:**
+- **Playwright + Chrome for Testing**: branded Chrome no longer allows `--load-extension`, so use a Chrome for Testing build and launch a persistent context with `--disable-extensions-except=<path>/extension --load-extension=<path>/extension`.
+- **Fake sites**: serve test files from a local server and map real-looking hostnames to it with `--host-resolver-rules="MAP github.com 127.0.0.1:<port>, MAP *.github.com 127.0.0.1:<port>"`, so website/subdomain/path rules can be tested without the network.
+- **Downloads**: set a temp download directory, trigger downloads from the fake pages, then assert on the file's final path.
+- **Card**: it lives in a closed shadow root, so drive it through the page with keyboard/mouse (or read state through the service worker) rather than DOM selectors.
+- **Storage/migration**: seed `chrome.storage.sync` / `local` from the service worker (`context.serviceWorkers()`), reload, assert.
 
+Cover at least: the rule-order table above, the 12s cap, late move without companion, card-less routing, and migration.
+
+---
+
+## Companion App Testing
+
+### 1. Installation
 ```bash
 cd companion
 bash install/install-macos.sh
 ```
 
-**Check manifest file created:**
+Check the manifest was created and has your extension ID in `allowed_origins`:
 ```bash
 cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.downloadrouter.host.json
 ```
 
-**Verify extension ID is correctly set:**
-- Check the manifest file contains your extension ID in `allowed_origins`
-- Extension ID can be found at `chrome://extensions/`
+Test with both the unpacked (development) ID and the Web Store ID (`gbdficmkipoplmkhcdbdlfmjfpgbgjbn`).
 
-**Test with both development and Web Store extension IDs:**
-- Development: Use the unpacked extension ID
-- Web Store: Use the published extension ID (if available)
-
-#### 2. Native Messaging Connection
-**Run connection test:**
+### 2. Native messaging connection
 ```bash
 ./tests/test-native-connection.sh
+cd companion && bash run-companion.sh
 ```
+Check the companion logs for initialization messages and no connection errors.
 
-**Test companion app starts:**
+### 3. Functionality
+- **Status**: Settings → Companion app row → "Installed ✓" (restart Chrome after installing)
+- **Folder picker**: card → folder menu → Other Location…, and Settings → edit a rule → Choose… → native picker opens; cancelling it is not an error
+- **Absolute folders**: rule → `/Users/<you>/Documents/Test` → download → file ends up there
+- **Missing folder**: rule → a folder that doesn't exist yet → it's created and the file goes inside it (not saved as a file named after the folder)
+- **Late move**: see "Chrome's time limit" above
+
+---
+
+## Chrome Web Store Readiness
+
+### Manifest check
+- Version is higher than the store (2.1.3 live)
+- Permissions: `downloads`, `storage`, `notifications`, `nativeMessaging`, `scripting`; host `<all_urls>`. No `tabs`, no `activeTab`.
+- `minimum_chrome_version: 102`
+
+### Build the zip
 ```bash
-cd companion
-bash run-companion.sh
+STORE_VERSION=2.1.3 scripts/package.sh
 ```
+It fails if the version isn't higher than the store, a manifest file is missing, remote/dynamic code patterns are found, or `extension/` has uncommitted changes (`ALLOW_DIRTY=1` to override while testing). Output: `dist/download-router-<version>.zip`.
 
-**Verify native messaging host can be reached:**
-- Check companion app logs for initialization messages
-- Verify no connection errors
+### Test the zip
+1. Unzip `dist/download-router-<version>.zip` into a temp folder
+2. Remove the dev copy from Chrome, Load unpacked → the temp folder
+3. Run the Essential Tests above
 
-#### 3. Functionality Tests
+The store takes the zip, not a `.crx`.
 
-**Folder Picker:**
-1. Open extension options → Rules → Browse button
-2. Verify native macOS folder picker opens
-3. Select a folder
-4. Verify selected path is saved in rule editor
-
-**Folder Operations:**
-```bash
-# Test folder verification (exists)
-# Use test script or manual test in extension
-
-# Test folder verification (doesn't exist)
-# Test with non-existent folder path
-
-# Test folder creation
-# Create a rule with non-existent folder path
-# Extension should create folder automatically
-```
-
-**File Moving:**
-1. Download a test file from any website
-2. Verify it routes to configured folder
-3. Check file is moved correctly:
-   ```bash
-   ls -la /path/to/configured/folder
-   ```
-
-### Extension Testing
-
-#### 1. Basic Functionality
-**Load extension in Chrome:**
-1. Open `chrome://extensions/`
-2. Enable "Developer mode"
-3. Click "Load unpacked"
-4. Select the `extension/` directory
-
-**Verify no errors:**
-- Check service worker console: Click "Inspect views: service worker"
-- Should see no error messages
-- Should see initialization messages
-
-**Test popup:**
-1. Click extension icon in toolbar
-2. Popup should open without errors
-3. Should display extension status and statistics
-
-**Test options page:**
-1. Right-click extension icon → Options
-2. Options page should load without errors
-3. All tabs should be accessible (Rules, Groups, Settings, Folders)
-
-#### 2. Download Routing
-
-**Create Domain Rule:**
-1. Go to Options → Rules tab
-2. Click "+ Add Rule"
-3. Enter domain: `github.com`
-4. Enter folder: `Code/GitHub`
-5. Click "Save Changes"
-
-**Create File Type Rule:**
-1. Go to Options → Groups tab
-2. Create or edit a group (e.g., "Documents")
-3. Add extensions: `pdf`, `doc`, `docx`
-4. Set folder: `Documents`
-5. Save changes
-
-**Test Download:**
-1. Visit https://github.com
-2. Download any file
-3. Verify overlay appears in bottom-right corner
-4. Verify file routes to configured folder
-5. Test overlay countdown (5 seconds auto-save)
-6. Test overlay buttons (Edit Rules, Change Location)
-
-#### 3. Communication Testing
-
-**Background ↔ Popup/Options:**
-1. Open popup
-2. Toggle extension enable/disable
-3. Verify background script receives message
-4. Open options page
-5. Make configuration changes
-6. Verify background script receives and processes updates
-
-**Content ↔ Background:**
-1. Trigger a download
-2. Verify content script sends download info to background
-3. Verify overlay is displayed by content script
-4. Test overlay actions (save, change location, edit rules)
-5. Verify messages are sent to background correctly
-
-**Native Messaging:**
-1. Install companion app
-2. Open options → Settings tab
-3. Verify companion status shows "Installed"
-4. Click Browse button in Rules tab
-5. Verify folder picker opens (companion app)
-6. Select folder and verify path is returned
-
-### Chrome Web Store Readiness
-
-#### 1. Manifest Validation
-**Verify extension/manifest.json is valid:**
-- All required fields present
-- Version number is valid
-- All permissions are justified
-- All referenced files exist
-
-**Check permissions:**
-- `downloads` - Required for download routing
-- `storage` - Required for rules storage
-- `notifications` - Required for fallback notifications
-- `activeTab` - Required for overlay injection
-- `nativeMessaging` - Required for companion app
-- `host_permissions` - Required for overlay injection
-
-**Verify all referenced files exist:**
-```bash
-# Check all files referenced in manifest
-ls -la extension/background.js extension/content.js extension/popup.html extension/popup.js extension/options.html extension/options.js extension/overlay.css
-ls -la extension/icons/icon*.png
-```
-
-#### 2. Pack Extension
-```bash
-# In Chrome:
-# 1. Go to chrome://extensions/
-# 2. Click "Pack extension"
-# 3. Select the extension/ directory
-# 4. Pack the extension
-```
-
-**Test packed extension:**
-1. Remove unpacked extension from Chrome
-2. Load the packed `.crx` file (or unpack and load)
-3. Verify all functionality works
-4. Test companion app with packed extension ID
-
-#### 3. Extension ID Handling
-
-**Development Extension ID:**
-- Generated automatically when loading unpacked extension
-- Changes if you reload the extension
-- Find at `chrome://extensions/`
-
-**Web Store Extension ID:**
-- Assigned by Chrome Web Store when published
-- Permanent and stable
-- Users need this ID for companion app installation
-
-**Testing with different extension IDs:**
-1. Test companion app installation with development ID
-2. Test companion app installation with a dummy Web Store ID format
-3. Verify manifest allows both formats
+### Extension IDs
+- **Development**: assigned when loading unpacked; tied to the folder path
+- **Web Store**: `gbdficmkipoplmkhcdbdlfmjfpgbgjbn`, same for every user
+- The companion's native messaging manifest must list whichever ID you're testing
 
 ---
 
 ## Troubleshooting
 
-### Companion App Issues
+### Companion shows "Not installed"
+1. Check the manifest exists (path above) and `allowed_origins` has `chrome-extension://YOUR_EXTENSION_ID/`
+2. Check the script path in it: `ls -la /path/to/project/companion/run-companion.sh`
+3. Run it by hand: `cd companion && bash run-companion.sh`
+4. Service worker console: look for native messaging errors
+5. Fully quit and reopen Chrome (it caches native messaging hosts)
 
-#### Companion App Shows "Not Installed"
+### Folder picker doesn't open
+1. Check the companion status in Settings
+2. DevTools on the Settings page / service worker for errors
+3. `ps aux | grep electron`
+4. Check the companion logs
 
-1. **Check manifest exists:**
-   ```bash
-   cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.downloadrouter.host.json
-   ```
+### File moves fail
+1. Companion logs
+2. Destination is writable
+3. Source file still exists (not deleted/renamed by the user)
 
-2. **Check script path:**
-   ```bash
-   ls -la /path/to/project/companion/run-companion.sh
-   ```
+### Downloads don't route
+1. Popup switch is on
+2. Rule is saved and spelled right (Settings)
+3. Remember the order: websites → names → types → everything else. The card footnote shows which rule matched.
+4. Download wasn't cancelled with ✕
 
-3. **Test script manually:**
-   ```bash
-   cd companion
-   bash run-companion.sh
-   ```
-
-4. **Check Chrome console:**
-   - `chrome://extensions/` → Inspect views: service worker
-   - Look for native messaging errors
-
-5. **Verify extension ID in manifest:**
-   - Manifest must contain your extension ID in `allowed_origins`
-   - Format: `chrome-extension://YOUR_EXTENSION_ID/`
-
-6. **Restart Chrome:**
-   - Fully quit and restart Chrome (not just reload extension)
-   - Chrome caches native messaging hosts on startup
-
-#### Folder Picker Doesn't Open
-
-1. Check companion app status in Settings tab
-2. Open Chrome DevTools console (Options page → F12)
-3. Check for errors when clicking Browse
-4. Verify companion app is running:
-   ```bash
-   ps aux | grep electron
-   ```
-5. Check companion app logs:
-   ```bash
-   tail -f companion/logs/companion.log
-   ```
-
-#### File Moves Fail
-
-1. Check companion app logs:
-   ```bash
-   cat companion/logs/companion.log
-   ```
-2. Verify destination folder exists and is writable
-3. Check file permissions
-4. Verify source file exists before moving
-
-### Extension Issues
-
-#### Extension Not Loading
-
-1. Check for syntax errors in extension/manifest.json
-2. Verify all referenced files exist
-3. Check service worker console for errors
-4. Verify Chrome version supports Manifest V3
-
-#### Downloads Don't Route
-
-1. Verify rule is saved (check Rules tab)
-2. Check rule matches domain/file type
-3. Verify target folder exists or can be created
-4. Check extension is enabled (popup toggle)
-5. Verify download wasn't manually cancelled
-
-#### Overlay Not Appearing
-
-1. Check if website blocks content scripts
-2. Look for fallback notifications in Chrome
-3. Verify extension permissions
-4. Check content script console for errors
-5. Test on different websites
-
-#### Rules Not Saving
-
-1. Check Chrome storage quota
-2. Verify background script is running
-3. Check service worker console for errors
-4. Try reloading extension
-
----
-
-## Expected Behavior
-
-### ✅ Working Correctly:
-- Options page shows companion app status
-- Browse button opens native folder picker
-- Selected folder path appears in rule editor
-- Downloads route to configured folders
-- Overlay appears on downloads
-- Files move to absolute paths (if companion app connected)
-- Countdown timer works and auto-saves after timeout
-- All overlay buttons function correctly
-
-### ⚠️ Known Limitations:
-- Companion app connection requires Chrome restart after installation
-- Folder picker falls back to modal if companion not available
-- Relative paths work as fallback without companion app
-- Extension ID changes when reloading unpacked extension in development
-
----
-
-## File Locations
-
-- **Extension**: `/path/to/project/extension/`
-- **Companion App**: `/path/to/project/companion/`
-- **Logs**: `/path/to/project/logs/debug/`
-- **Tests**: `/path/to/project/tests/`
-- **Manifest**: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.downloadrouter.host.json`
-- **Documentation**: `/path/to/project/docs/`
-
----
-
-## Test Scripts
-
-### Manual Test Scripts
-
-**Test Native Messaging Connection:**
-```bash
-./tests/test-native-connection.sh
-```
-
-**Test Companion App (requires Electron):**
-```bash
-cd companion
-node ../tests/test-messaging.js
-```
-
-**Test Simple Native Host (Python):**
-```bash
-./tests/test-native-host.sh
-```
-
-See `tests/README.md` for more details on test scripts.
+### Card doesn't appear
+1. "Show the card before saving" is on
+2. Not on New Tab / `chrome://` / Web Store pages
+3. Reload the page
+4. Page DevTools console for `[Download Router]` errors
 
 ---
 
 ## Log Files
 
-### Companion App Logs
-- `companion/logs/companion.log` - Companion app runtime logs
+### Companion app
+- **macOS**: `~/Library/Logs/Download Router Companion/`
+- **Windows**: `%APPDATA%\Download Router Companion\logs\`
+- Test scripts: `logs/debug/`
 
-### Extension Logs
-Check Chrome DevTools console for extension errors:
-- **Service Worker**: `chrome://extensions` → Inspect views: service worker
-- **Options Page**: Right-click extension → Options → DevTools
-- **Content Scripts**: Chrome DevTools on any webpage
+### Extension
+- **Service worker**: `chrome://extensions` → Inspect views: service worker
+- **Settings / popup**: right-click → Inspect
+- **Card**: DevTools on the page you downloaded from
 
-### Native Messaging Logs
-Native messaging host initialization and errors are logged to `companion/logs/companion.log`
+## Test Scripts
+
+```bash
+./tests/check-environment.sh      # dependencies
+./tests/test-native-connection.sh # native messaging manifest
+./tests/test-complete-flow.sh     # companion end to end
+./tests/view-logs.sh              # show logs
+cd companion && node ../tests/test-messaging.js  # messaging protocol
+```
+
+See `tests/README.md` for more.
 
 ## Additional Resources
 

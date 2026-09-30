@@ -1,19 +1,6 @@
 # Quick Start Guide
 
-## Environment Setup
-
-1. **Check your environment:**
-   ```bash
-   ./tests/check-environment.sh
-   ```
-   This will verify all dependencies and show any issues.
-
-2. **Install companion app dependencies (if needed):**
-   ```bash
-   cd companion
-   npm install
-   cd ..
-   ```
+This gets the extension running from source. The companion app is optional; skip that part if your folders are all inside Downloads.
 
 ## Load Extension in Chrome
 
@@ -21,50 +8,56 @@
 2. Enable "Developer mode" (toggle in top-right)
 3. Click "Load unpacked"
 4. **Select the `extension/` folder** (NOT the repository root)
-5. Note your extension ID (shown below extension name)
+5. A Settings page opens. Click **Try It** in the "You're set up" note: a sample PDF downloads, the download card appears on the page, and the file lands in `Downloads/Documents`
+6. Note your extension ID (shown below the extension name) if you plan to install the companion app
 
-## Install Companion App
+## Try the Basics
 
-**Note:** Companion app is cross-platform - same codebase works on macOS, Windows, and Linux.
+1. Open any website and download a file. The card shows where it's going and saves after 5 seconds.
+2. Click the folder on the card to pick another one, tick **Always save files from <site> here**, then **Save**. Download again: it goes straight to the new folder.
+3. Click the toolbar icon: the file is under **Recent** (click it to show it in Finder), and **This site** shows the rule you just made.
+4. Open **Settings** from the popup. The rule is under **1 Websites**. Click it to edit or delete it.
 
-1. Save your extension ID:
+## Install Companion App (optional)
+
+Needed only to save outside Downloads. It's a manual install for now; full steps are in `docs/COMPANION_INSTALL.md`.
+
+1. Check your environment:
+   ```bash
+   ./tests/check-environment.sh
+   ```
+
+2. Install dependencies and save your extension ID:
    ```bash
    cd companion
+   npm install
    echo "YOUR_EXTENSION_ID_HERE" > .extension-id
    ```
 
-2. Install companion app:
+3. Register it with Chrome:
    ```bash
    # macOS
    bash install/install-macos.sh
-   
+
    # Windows (PowerShell)
    .\install\install-windows.ps1
    ```
 
-3. **Restart Chrome completely** (quit and relaunch)
+4. **Restart Chrome completely** (quit and relaunch)
 
-## Test Everything
+5. Check it:
+   - Settings → **Companion app** row should say "Installed ✓"
+   - On the download card, the folder menu now has **Other Location…** (native folder picker)
+   - In Settings, editing a rule shows a **Choose…** button next to the folder
 
-1. **Run complete flow test:**
+6. Optional end-to-end companion test:
    ```bash
    ./tests/test-complete-flow.sh
    ```
 
-2. **Check extension in Chrome:**
-   - Right-click extension icon → Options
-   - Go to Settings tab
-   - Check companion app status (should show "Installed")
-
-3. **Test folder picker:**
-   - Options → Rules tab
-   - Click "+ Add Rule" or edit existing
-   - Click "Browse" button
-   - Should open native folder picker
-
 ## View Logs
 
-All logs are saved to `logs/debug/`
+Companion and test-script logs are saved to `logs/debug/`. Extension logs are in Chrome DevTools (see Troubleshooting).
 
 **Quick log viewer:**
 ```bash
@@ -99,7 +92,8 @@ If something doesn't work:
 
 3. **Check Chrome console:**
    - `chrome://extensions/` → Inspect views: service worker
-   - Options page → Right-click → Inspect
+   - Settings page → Right-click → Inspect
+   - Download card: DevTools on the page where you downloaded
 
 4. **Verify companion app:**
    ```bash

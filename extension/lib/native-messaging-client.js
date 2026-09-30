@@ -132,10 +132,10 @@ class NativeMessagingClient {
         // port.postMessage: Sends message to native host
         //   Inputs: Message object (must be JSON-serializable)
         //   Outputs: None (sends asynchronously)
-        console.log('Sending message to native host:', JSON.stringify(message));
+        (self.DR_DEBUG ? console.log : () => {})('Sending message to native host:', JSON.stringify(message));
         try {
           port.postMessage(message);
-          console.log('Message posted successfully');
+          (self.DR_DEBUG ? console.log : () => {})('Message posted successfully');
         } catch (postError) {
           console.error('Error posting message:', postError);
           responseHandled = true;
@@ -168,6 +168,10 @@ class NativeMessagingClient {
       
       if (response.success && response.path) {
         return response.path;
+      } else if (/^(NO_SELECTION|CANCELLED|USER_CANCELLED)$/i.test(response.code || '') ||
+                 /cancel|no folder selected/i.test(response.error || '')) {
+        // The user closed the picker: not an error
+        return null;
       } else {
         throw new Error(response.error || 'Failed to pick folder');
       }
@@ -180,72 +184,6 @@ class NativeMessagingClient {
   }
 
   /**
-   * Verifies if a folder exists.
-   * 
-   * Inputs:
-   *   - folderPath: String absolute path to folder
-   * 
-   * Outputs: Promise resolving to boolean (true if exists and accessible)
-   */
-  async verifyFolder(folderPath) {
-    try {
-      const response = await this.sendMessage({
-        type: 'verifyFolder',
-        path: folderPath
-      });
-      
-      return response.success && response.exists === true;
-    } catch (error) {
-      return false;
-    }
-  }
-
-  /**
-   * Creates a folder (and parent directories if needed).
-   * 
-   * Inputs:
-   *   - folderPath: String absolute path to folder to create
-   * 
-   * Outputs: Promise resolving to boolean (true if created successfully)
-   */
-  async createFolder(folderPath) {
-    try {
-      const response = await this.sendMessage({
-        type: 'createFolder',
-        path: folderPath
-      });
-      
-      return response.success && response.created === true;
-    } catch (error) {
-      return false;
-    }
-  }
-
-  /**
-   * Lists folder contents.
-   * 
-   * Inputs:
-   *   - folderPath: String absolute path to folder
-   * 
-   * Outputs: Promise resolving to array of folder items or empty array on error
-   */
-  async listFolders(folderPath) {
-    try {
-      const response = await this.sendMessage({
-        type: 'listFolders',
-        path: folderPath
-      });
-      
-      if (response.success && response.items) {
-        return response.items;
-      }
-      return [];
-    } catch (error) {
-      return [];
-    }
-  }
-
-  /**
    * Moves a file from source to destination.
    * 
    * Inputs:
@@ -254,16 +192,18 @@ class NativeMessagingClient {
    * 
    * Outputs: Promise resolving to boolean (true if moved successfully)
    */
-  async moveFile(sourcePath, destinationPath) {
+  async moveFile(sourcePath, destinationPath, { destIsFile = false } = {}) {
     try {
-      console.log('moveFile called:', sourcePath, '->', destinationPath);
-      // Use 30 second timeout for file operations (large files may take time)
+      (self.DR_DEBUG ? console.log : () => {})('moveFile called:', sourcePath, '->', destinationPath);
+      // destIsFile tells companion 2.2+ the destination is the exact file path (older builds
+      // ignore it). Moves across slow drives can take minutes: give them 10.
       const response = await this.sendMessage({
         type: 'moveFile',
         source: sourcePath,
-        destination: destinationPath
-      }, 30000);
-      console.log('moveFile response:', response);
+        destination: destinationPath,
+        destIsFile
+      }, 10 * 60 * 1000);
+      (self.DR_DEBUG ? console.log : () => {})('moveFile response:', response);
 
       // Return full response object with actual destination path
       if (response.success && response.moved === true) {
@@ -277,41 +217,6 @@ class NativeMessagingClient {
     } catch (error) {
       console.error('moveFile error:', error);
       return { success: false, moved: false };
-    }
-  }
-
-  /**
-   * Shows a native OS Save As dialog with pre-filled filename.
-   * 
-   * Inputs:
-   *   - filename: String filename to pre-fill in dialog
-   *   - defaultDirectory: Optional string absolute path to default directory
-   * 
-   * Outputs: Promise resolving to selected file path string or null if cancelled
-   */
-  async showSaveAsDialog(filename, defaultDirectory = null) {
-    try {
-      // Use longer timeout (60 seconds) since user needs time to interact with dialog
-      const response = await this.sendMessage({
-        type: 'showSaveAsDialog',
-        filename: filename,
-        defaultDirectory: defaultDirectory
-      }, 60000);
-      
-      if (response.success && response.filePath) {
-        return response.filePath;
-      } else {
-        // User cancelled or error
-        if (response.code === 'CANCELLED' || response.error?.includes('cancelled')) {
-          return null; // User cancelled - return null instead of throwing
-        }
-        throw new Error(response.error || 'Failed to show Save As dialog');
-      }
-    } catch (error) {
-      if (error.message.includes('cancelled') || error.message.includes('CANCELLED')) {
-        return null; // User cancelled - return null instead of throwing
-      }
-      throw error;
     }
   }
 
