@@ -184,72 +184,6 @@ class NativeMessagingClient {
   }
 
   /**
-   * Verifies if a folder exists.
-   * 
-   * Inputs:
-   *   - folderPath: String absolute path to folder
-   * 
-   * Outputs: Promise resolving to boolean (true if exists and accessible)
-   */
-  async verifyFolder(folderPath) {
-    try {
-      const response = await this.sendMessage({
-        type: 'verifyFolder',
-        path: folderPath
-      });
-      
-      return response.success && response.exists === true;
-    } catch (error) {
-      return false;
-    }
-  }
-
-  /**
-   * Creates a folder (and parent directories if needed).
-   * 
-   * Inputs:
-   *   - folderPath: String absolute path to folder to create
-   * 
-   * Outputs: Promise resolving to boolean (true if created successfully)
-   */
-  async createFolder(folderPath) {
-    try {
-      const response = await this.sendMessage({
-        type: 'createFolder',
-        path: folderPath
-      });
-      
-      return response.success && response.created === true;
-    } catch (error) {
-      return false;
-    }
-  }
-
-  /**
-   * Lists folder contents.
-   * 
-   * Inputs:
-   *   - folderPath: String absolute path to folder
-   * 
-   * Outputs: Promise resolving to array of folder items or empty array on error
-   */
-  async listFolders(folderPath) {
-    try {
-      const response = await this.sendMessage({
-        type: 'listFolders',
-        path: folderPath
-      });
-      
-      if (response.success && response.items) {
-        return response.items;
-      }
-      return [];
-    } catch (error) {
-      return [];
-    }
-  }
-
-  /**
    * Moves a file from source to destination.
    * 
    * Inputs:
@@ -283,41 +217,6 @@ class NativeMessagingClient {
     } catch (error) {
       console.error('moveFile error:', error);
       return { success: false, moved: false };
-    }
-  }
-
-  /**
-   * Shows a native OS Save As dialog with pre-filled filename.
-   * 
-   * Inputs:
-   *   - filename: String filename to pre-fill in dialog
-   *   - defaultDirectory: Optional string absolute path to default directory
-   * 
-   * Outputs: Promise resolving to selected file path string or null if cancelled
-   */
-  async showSaveAsDialog(filename, defaultDirectory = null) {
-    try {
-      // Use longer timeout (60 seconds) since user needs time to interact with dialog
-      const response = await this.sendMessage({
-        type: 'showSaveAsDialog',
-        filename: filename,
-        defaultDirectory: defaultDirectory
-      }, 60000);
-      
-      if (response.success && response.filePath) {
-        return response.filePath;
-      } else {
-        // User cancelled or error
-        if (response.code === 'CANCELLED' || response.error?.includes('cancelled')) {
-          return null; // User cancelled - return null instead of throwing
-        }
-        throw new Error(response.error || 'Failed to show Save As dialog');
-      }
-    } catch (error) {
-      if (error.message.includes('cancelled') || error.message.includes('CANCELLED')) {
-        return null; // User cancelled - return null instead of throwing
-      }
-      throw error;
     }
   }
 

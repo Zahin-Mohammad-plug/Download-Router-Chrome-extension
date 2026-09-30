@@ -150,6 +150,9 @@
       toast(/quota/i.test(error.message || '')
         ? 'Couldn\'t save: too many rules for Chrome sync storage'
         : `Couldn't save: ${error.message}`, true);
+      // Show what is actually stored, not the change that failed
+      await load();
+      if (!state.sheetOpen) render();
       return false;
     }
   }
@@ -695,6 +698,18 @@
     $('scrim').addEventListener('mousedown', e => { if (e.target === $('scrim')) closeSheet(); });
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape' && state.sheetOpen) { e.preventDefault(); closeSheet(); }
+      // The sheet is modal: keep Tab / Shift+Tab inside it
+      if (e.key === 'Tab' && state.sheetOpen) {
+        const panel = document.getElementById('sheet');
+        const focusable = panel ? [...panel.querySelectorAll('button, input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+          .filter(el => !el.disabled && el.offsetParent !== null) : [];
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (!panel.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+        else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
     });
 
     // Keep in step with rules added from the card or popup

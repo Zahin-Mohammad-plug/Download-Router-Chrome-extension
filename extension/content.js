@@ -316,7 +316,8 @@ class DownloadOverlay {
         sendResponse({ success: true });
         return true;
       } else if (message.type === 'closeOverlay') {
-        if (isCurrent(message.downloadId)) {
+        // Background saved it (timer). If the card is mid-save it shows its own result instead.
+        if (isCurrent(message.downloadId) && !this.saving) {
           this.cleanup(message.downloadId);
         }
         sendResponse({ success: true });
@@ -357,10 +358,22 @@ class DownloadOverlay {
    * Creates the closed Shadow DOM host (fixed, full-viewport, click-through) and injects CSS.
    */
   createShadowDOM() {
-    const host = document.createElement('div');
+    // A custom tag and "all: initial" keep page rules like "div { filter: invert(1) !important }"
+    // or "body > * { transform: scale(1.5) !important }" off the card (inline !important wins)
+    const host = document.createElement('download-router-card');
     host.id = 'download-router-shadow-host';
     host.style.cssText = `
+      all: initial !important;
+      display: block !important;
       position: fixed !important;
+      filter: none !important;
+      transform: none !important;
+      opacity: 1 !important;
+      visibility: visible !important;
+      clip-path: none !important;
+      mask: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
       top: 0 !important;
       left: 0 !important;
       width: 100% !important;
@@ -2049,18 +2062,26 @@ class DownloadOverlay {
           const where = response.savedPath ? this.folderNameFromPath(response.savedPath) : this.folderNameFromPath(this.savedEarlyPath);
           this.showResult('Couldn’t move it', `It’s in ${where}`, true);
           this.closeLater(downloadInfo.id, 3000);
+        } else if (ruleError) {
+          // The file was saved, but "Always save…" didn't stick: say so instead of failing silently
+          this.showResult(`Saved to ${folderName}`, ruleError, true);
+          this.closeLater(downloadInfo.id, 4000);
         } else {
           this.closeLater(downloadInfo.id, moving ? 900 : 600);
         }
       });
     };
+    let ruleError = null;
 
     if (rememberRule) {
       // Save the rule first, so the next download from this site/type already goes there
       this.sendMessage({ type: 'addRule', rule: rememberRule }, (response) => {
         void chrome.runtime.lastError;
-        if (response && response.success === false) {
-          console.warn('[Download Router] Could not save the rule:', response.error);
+        if (!response || response.success === false) {
+          const full = /quota/i.test((response && response.error) || '');
+          ruleError = full
+            ? 'Rule not saved: too many rules for Chrome sync. Remove some in Settings.'
+            : 'Rule not saved. Try again from Settings.';
         }
         proceed();
       });

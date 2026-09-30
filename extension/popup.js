@@ -77,6 +77,7 @@ const isToday = (timestamp) => startOfDay(new Date(timestamp)) === startOfDay(ne
 
 function relativeTime(timestamp) {
   const then = new Date(timestamp);
+  if (!timestamp || Number.isNaN(then.getTime())) return ''; // old or damaged history entry
   const now = new Date();
   const minutes = Math.floor((now - then) / 60000);
   if (minutes < 1) return 'Now';
