@@ -132,10 +132,10 @@ class NativeMessagingClient {
         // port.postMessage: Sends message to native host
         //   Inputs: Message object (must be JSON-serializable)
         //   Outputs: None (sends asynchronously)
-        console.log('Sending message to native host:', JSON.stringify(message));
+        (self.DR_DEBUG ? console.log : () => {})('Sending message to native host:', JSON.stringify(message));
         try {
           port.postMessage(message);
-          console.log('Message posted successfully');
+          (self.DR_DEBUG ? console.log : () => {})('Message posted successfully');
         } catch (postError) {
           console.error('Error posting message:', postError);
           responseHandled = true;
@@ -168,6 +168,10 @@ class NativeMessagingClient {
       
       if (response.success && response.path) {
         return response.path;
+      } else if (/^(NO_SELECTION|CANCELLED|USER_CANCELLED)$/i.test(response.code || '') ||
+                 /cancel|no folder selected/i.test(response.error || '')) {
+        // The user closed the picker: not an error
+        return null;
       } else {
         throw new Error(response.error || 'Failed to pick folder');
       }
@@ -256,14 +260,14 @@ class NativeMessagingClient {
    */
   async moveFile(sourcePath, destinationPath) {
     try {
-      console.log('moveFile called:', sourcePath, '->', destinationPath);
+      (self.DR_DEBUG ? console.log : () => {})('moveFile called:', sourcePath, '->', destinationPath);
       // Use 30 second timeout for file operations (large files may take time)
       const response = await this.sendMessage({
         type: 'moveFile',
         source: sourcePath,
         destination: destinationPath
       }, 30000);
-      console.log('moveFile response:', response);
+      (self.DR_DEBUG ? console.log : () => {})('moveFile response:', response);
 
       // Return full response object with actual destination path
       if (response.success && response.moved === true) {

@@ -83,17 +83,26 @@ async function moveFile(sourcePath, destinationPath) {
         finalDestination = path.join(destinationPath, filename);
       }
     } catch (error) {
-      // Destination doesn't exist - assume it's a file path
-      // Ensure parent directory exists
-      const parentDir = path.dirname(finalDestination);
-      const parentExists = await folderOperations.verifyFolder(parentDir);
+      // Destination doesn't exist yet. The extension sends folder paths, so only treat it
+      // as a full file path when it clearly names a file with the source's extension.
+      // Otherwise a missing "/Volumes/NAS/Models" would become a file called "Models".
+      const sourceExt = path.extname(sourcePath).toLowerCase();
+      const endsWithSeparator = /[\\/]$/.test(destinationPath);
+      const looksLikeFile = !endsWithSeparator && sourceExt !== '' &&
+        path.extname(destinationPath).toLowerCase() === sourceExt;
+      const folderToCreate = looksLikeFile ? path.dirname(destinationPath) : destinationPath;
+      if (!looksLikeFile) {
+        finalDestination = path.join(destinationPath, path.basename(sourcePath));
+      }
       
-      if (!parentExists.success || !parentExists.exists) {
-        // Create parent directory
-        const createResult = await folderOperations.createFolder(parentDir);
+      const folderExists = await folderOperations.verifyFolder(folderToCreate);
+      if (!folderExists.success || !folderExists.exists) {
+        // Create the destination folder (recursively)
+        const createResult = await folderOperations.createFolder(folderToCreate);
         if (!createResult.success) {
           return {
             success: false,
+            moved: false,
             error: 'Failed to create destination folder',
             code: 'CREATE_FOLDER_ERROR',
             destination: destinationPath
