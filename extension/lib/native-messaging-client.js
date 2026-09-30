@@ -258,15 +258,17 @@ class NativeMessagingClient {
    * 
    * Outputs: Promise resolving to boolean (true if moved successfully)
    */
-  async moveFile(sourcePath, destinationPath) {
+  async moveFile(sourcePath, destinationPath, { destIsFile = false } = {}) {
     try {
       (self.DR_DEBUG ? console.log : () => {})('moveFile called:', sourcePath, '->', destinationPath);
-      // Use 30 second timeout for file operations (large files may take time)
+      // destIsFile tells companion 2.2+ the destination is the exact file path (older builds
+      // ignore it). Moves across slow drives can take minutes: give them 10.
       const response = await this.sendMessage({
         type: 'moveFile',
         source: sourcePath,
-        destination: destinationPath
-      }, 30000);
+        destination: destinationPath,
+        destIsFile
+      }, 10 * 60 * 1000);
       (self.DR_DEBUG ? console.log : () => {})('moveFile response:', response);
 
       // Return full response object with actual destination path

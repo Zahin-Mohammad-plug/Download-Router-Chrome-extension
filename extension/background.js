@@ -925,7 +925,7 @@ async function relocateDownload(saved, target) {
       const root = sourceSegments.slice(0, sourceSegments.length - depth).join('/');
       destination = root + '/' + target.relativePath;
     }
-    const result = await moveFileNative(done.filename, destination);
+    const result = await moveFileNative(done.filename, destination, { destIsFile: true });
     if (result && result.moved) {
       notify('Moved', `${target.filename || extractFilename(target.relativePath)} moved to ${extractFilename(destination.replace(/\/[^/]*$/, '')) || 'Downloads'}`);
       return { success: true, relocated: true, destination: result.destination || destination };
@@ -1678,14 +1678,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: false, error: error.message });
     });
     return true; // Required for async sendResponse
-  } else if (message.type === 'moveFileNative') {
-    // moveFileNative: Move file using companion app (post-download)
-    moveFileNative(message.source, message.destination).then(result => {
-      sendResponse({ success: !!(result && result.moved), result });
-    }).catch(error => {
-      sendResponse({ success: false, error: error.message });
-    });
-    return true; // Required for async sendResponse
   } else if (message.type === 'getFolderSuggestions') {
     // Folders for the card's folder menu: most recently used first, then folders from rules
     getFolderSuggestions().then(folders => sendResponse({ success: true, folders }))
@@ -1774,7 +1766,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true });
     return true; // Required for async sendResponse
   } else if (message.type === 'openFolder') {
-    // openFolder: Open folder containing the file
+    // openFolder: Open folder containing the file. Only our own pages (the popup) may ask:
+    // web pages run content scripts and must never choose paths for the companion app.
+    if (!sender.url || !sender.url.startsWith(chrome.runtime.getURL(''))) {
+      sendResponse({ success: false, error: 'Not allowed' });
+      return;
+    }
     const filePath = message.path;
     const downloadId = message.downloadId;
     
@@ -2688,6 +2685,14 @@ async function checkCompanionAppStatus() {
 
 let companionStatusCheckPromise = null;
 
+/**
+ * After a failed companion call, re-check the companion next time instead of trusting the
+ * 5-minute cache, so a broken or removed companion falls back to folders inside Downloads.
+ */
+function markCompanionSuspect() {
+  companionAppStatus.lastChecked = 0;
+}
+
 async function runCompanionAppStatusCheck(now) {
 
   // Check if native messaging client is available
@@ -2797,29 +2802,28 @@ async function verifyFolderNative(folderPath) {
  * External Dependencies:
  *   - nativeMessagingClient: Native messaging client
  */
-async function moveFileNative(sourcePath, destinationPath) {
+async function moveFileNative(sourcePath, destinationPath, { destIsFile = false } = {}) {
   if (!self.nativeMessagingClient || !self.nativeMessagingClient.moveFile) {
     console.error('Native messaging client not available for file move');
     return { success: false, moved: false };
   }
-  
-  // Always send a full file path. Companion builds before 2.2 turned a missing destination
-  // folder into a file named after that folder, so "/Volumes/NAS/Models" must become
-  // "/Volumes/NAS/Models/part.stl" unless it already names a file of the same type.
-  const sourceName = String(sourcePath || '').split(/[\\/]/).pop();
-  const extOf = name => (/\.([^./\\]+)$/.exec(name || '') || [])[1]?.toLowerCase() || '';
-  const destinationName = String(destinationPath || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop();
-  const namesAFile = !/[\\/]$/.test(destinationPath) && extOf(sourceName) && extOf(destinationName) === extOf(sourceName);
-  if (!namesAFile && sourceName) {
+
+  // Always send the companion a full file path. Callers say whether they passed a folder
+  // (the file keeps its name inside it) or the exact file path (e.g. after a rename).
+  // Guessing from extensions nested extensionless or renamed files ("README/README").
+  if (!destIsFile) {
+    const sourceName = String(sourcePath || '').split(/[\\/]/).pop();
     const separator = destinationPath.includes('\\') && !destinationPath.includes('/') ? '\\' : '/';
     destinationPath = destinationPath.replace(/[\\/]+$/, '') + separator + sourceName;
   }
 
   try {
-    const result = await self.nativeMessagingClient.moveFile(sourcePath, destinationPath);
+    const result = await self.nativeMessagingClient.moveFile(sourcePath, destinationPath, { destIsFile: true });
+    if (!result || !result.moved) markCompanionSuspect();
     return result;
   } catch (error) {
     console.error('Failed to move file:', error);
+    markCompanionSuspect();
     return { success: false, moved: false };
   }
 }
@@ -3031,7 +3035,7 @@ async function handleSaveAsDialog(downloadId, sourceFilePath = null) {
       // Verify source file exists before attempting move
       // If file was moved by auto-routing, it should exist at absoluteDestination
       // The moveFile service will also check, but we provide better error handling here
-      const moveResult = await moveFileNative(sourcePath, selectedFilePath);
+      const moveResult = await moveFileNative(sourcePath, selectedFilePath, { destIsFile: true });
       debugLog('moveFileNative result:', moveResult);
       
       if (moveResult && moveResult.moved) {
